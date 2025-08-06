@@ -71,7 +71,7 @@ class CaptureGUI(QWidget):
         main_area = QVBoxLayout()
         # Top toolbar: toggle YOLO
         toolbar = QHBoxLayout()
-        self.yolo_checkbox = QCheckBox("Bật YOLO trên stream")
+        self.yolo_checkbox = QCheckBox("Bật nhận diện bia trên màn hình stream (có thể gây giật lag)")
         self.yolo_checkbox.setChecked(True)
         toolbar.addWidget(self.yolo_checkbox)
         toolbar.addStretch()

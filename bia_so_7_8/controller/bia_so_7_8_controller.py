@@ -2,23 +2,23 @@
 from ultralytics import YOLO
 import cv2
 from typing import Dict, Optional, Tuple
-from bia_so_4.service.bia_so_4_service import BiaSo4Service
+from bia_so_7_8.service.bia_so_7_8_service import BiaSo7_8Service
 import logging
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL_PATH = "/Users/thaiduong/Desktop/python/webcam_capture_app_mac/my_model.pt"
-TARGET_LABEL = "bia_so_4"
+TARGET_LABEL = "bia_so_7"
 
-class BiaSo4Controller:
-    def __init__(self, model_path: str = DEFAULT_MODEL_PATH, service: Optional[BiaSo4Service] = None):
+class BiaSo7_8Controller:
+    def __init__(self, model_path: str = DEFAULT_MODEL_PATH, service: Optional[BiaSo7_8Service] = None):
         logger.info("[controller] Khởi tạo controller")
         self.model = YOLO(model_path)
-        self.service = service or BiaSo4Service()
+        self.service = service or BiaSo7_8Service()
         self.target_label = TARGET_LABEL
 
     def test_controller(self):
-        logger.debug("[controller] Controller bia số 4 được gọi")
+        logger.debug("[controller] Controller bia số 7 8 được gọi")
 
     def check_bia_hit(self, frame, target_label: Optional[str] = None, conf_thresh: float = 0.3) -> Dict:
         label_to_check = target_label or self.target_label
@@ -63,7 +63,7 @@ class BiaSo4Controller:
         if warped_bia is None:
             return None, "không cắt được ảnh bia!"
 
-        original_path = "images/original/original_bia_so_4.jpg"
+        original_path = "images/original/original_bia_so_4.jpg" # thay sau
         img_Warp_To_Original, position2 = self.service.warp_back_to_original(original_path, position1)
         if img_Warp_To_Original is None:
             return None, "không warp về ảnh chuẩn được!"
