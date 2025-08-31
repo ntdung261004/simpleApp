@@ -3,9 +3,9 @@ import logging
 import cv2
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtCore import QTimer, QObject, Signal
+from PySide6.QtCore import QTimer, QObject, Signal, QPoint
 from PySide6.QtGui import QScreen
-
+from datetime import datetime
 # THAY ĐỔI: Sử dụng lại pynput
 from pynput import keyboard
 
@@ -92,6 +92,9 @@ class MainWindow(QMainWindow):
         
         # CHÚ THÍCH: Khởi tạo trình quản lý âm thanh
         self.audio_manager = AudioManager()
+        
+        # THÊM DÒNG NÀY: Biến để lưu tọa độ tâm đã hiệu chỉnh
+        self.calibrated_center = None 
     
         self.video_timer = QTimer(self)
         self.video_timer.timeout.connect(self.update_frame)
@@ -101,11 +104,15 @@ class MainWindow(QMainWindow):
         self.bt_trigger.start_listening()
         self.bt_trigger.triggered.connect(self.capture_photo)
 
-        # Kết nối các widget
-        self.gui.calibrate_button.clicked.connect(self.capture_photo)
+        # THAY ĐỔI: Kết nối nút "Hiệu chỉnh tâm" với hàm bật/tắt chế độ
+        self.gui.calibrate_button.clicked.connect(self.toggle_calibration_mode)
+
         self.gui.zoom_slider.valueChanged.connect(self.on_zoom_changed)
         self.gui.refresh_button.clicked.connect(self.refresh_camera_connection)
 
+        # THÊM DÒNG NÀY: Kết nối tín hiệu click từ GUI với hàm xử lý
+        self.gui.camera_view_label.clicked.connect(self.set_new_center)
+    
     def crop_and_resize_frame(self, frame):
         if frame is None: return None
         h, w, _ = frame.shape
@@ -129,6 +136,58 @@ class MainWindow(QMainWindow):
         cropped = frame[start_y : start_y + crop_h, start_x : start_x + crop_w]
         zoomed_frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
         return zoomed_frame
+
+    # CHÚ THÍCH: Thêm hai hàm mới này vào lớp MainWindow trong main_window.py
+
+    def toggle_calibration_mode(self):
+        """Bật hoặc tắt chế độ hiệu chỉnh tâm trên giao diện."""
+        # Lấy trạng thái hiện tại
+        is_currently_calibrating = self.gui.camera_view_label._is_calibrating
+        # Đảo ngược trạng thái
+        self.gui.camera_view_label.set_calibration_mode(not is_currently_calibrating)
+        
+        if not is_currently_calibrating:
+            logger.info("Bật chế độ hiệu chỉnh tâm. Click vào video để chọn tâm mới.")
+            self.gui.calibrate_button.setText("Hủy") # Đổi chữ trên nút
+        else:
+            logger.info("Đã tắt chế độ hiệu chỉnh tâm.")
+            self.gui.calibrate_button.setText("Hiệu chỉnh tâm") # Trả về chữ cũ
+
+    def set_new_center(self, click_pos: QPoint):
+        """
+        Nhận tọa độ click từ GUI, chuyển đổi sang tọa độ ảnh và lưu lại.
+        """
+        # Kích thước của widget hiển thị video
+        widget_size = self.gui.camera_view_label.size()
+        # Kích thước của ảnh thật (luôn là 480x640)
+        img_w, img_h = self.final_size
+
+        # Tính toán tỷ lệ và kích thước thực của ảnh đang được vẽ bên trong widget
+        scale_w = widget_size.width() / img_w
+        scale_h = widget_size.height() / img_h
+        scale = min(scale_w, scale_h)
+        
+        display_w = int(img_w * scale)
+        display_h = int(img_h * scale)
+        
+        # Tính toán khoảng trống (viền đen) xung quanh ảnh
+        offset_x = (widget_size.width() - display_w) // 2
+        offset_y = (widget_size.height() - display_h) // 2
+
+        # Chỉ xử lý click nếu nó nằm trong vùng ảnh thực
+        if offset_x <= click_pos.x() < offset_x + display_w and \
+        offset_y <= click_pos.y() < offset_y + display_h:
+
+            # Chuyển đổi tọa độ từ widget về tọa độ của ảnh 480x640
+            img_x = int((click_pos.x() - offset_x) / scale)
+            img_y = int((click_pos.y() - offset_y) / scale)
+            
+            self.calibrated_center = (img_x, img_y)
+            logger.info(f"Đã cập nhật tâm ngắm mới tại tọa độ ảnh: {self.calibrated_center}")
+            
+            # Tự động tắt chế độ hiệu chỉnh sau khi đã chọn xong
+            self.gui.camera_view_label.set_calibration_mode(False)
+            self.gui.calibrate_button.setText("Hiệu chỉnh tâm")
 
     def refresh_camera_connection(self):
         logger.info("Người dùng yêu cầu làm mới kết nối camera...")
@@ -163,24 +222,33 @@ class MainWindow(QMainWindow):
         self.cam = None
         self.gui.clear_video_feed("Vui lòng kết nối camera và nhấn 'Làm mới'")
 
+# CHÚ THÍCH: Cập nhật hàm update_frame trong main_window.py
+
     def update_frame(self):
         if self.cam and self.cam.is_opened():
             frame = self.cam.grab()
             if frame is not None:
                 processed_frame = self.crop_and_resize_frame(frame)
                 zoomed_frame = self.apply_digital_zoom(processed_frame, self.zoom_level)
-                h, w, _ = zoomed_frame.shape
-                center_point = (w // 2, h // 2)
+                
+                # THAY ĐỔI: Xác định điểm vẽ dựa trên tâm đã hiệu chỉnh hoặc tâm mặc định
+                if self.calibrated_center:
+                    center_point = self.calibrated_center
+                else:
+                    # Nếu chưa hiệu chỉnh, dùng tâm mặc định của ảnh 480x640
+                    h, w, _ = zoomed_frame.shape
+                    center_point = (w // 2, h // 2)
+                
                 color = (0, 0, 255)
                 cv2.drawMarker(zoomed_frame, center_point, color, 
-                               markerType=cv2.MARKER_CROSS, 
-                               markerSize=40,
-                               thickness=2)
+                            markerType=cv2.MARKER_CROSS, 
+                            markerSize=40,
+                            thickness=2)
+                
                 self.gui.display_frame(zoomed_frame)
             else:
                 self.disconnect_camera()
-
-    # Trong file main_window.py, bên trong lớp MainWindow
+        # Trong file main_window.py, bên trong lớp MainWindow
 
     def capture_photo(self):
         """
@@ -206,9 +274,16 @@ class MainWindow(QMainWindow):
         self.audio_manager.play_sound('shot')
         
         logger.info("Đã chụp ảnh, đang hiển thị kết quả...")
-        # 3. Hiển thị ảnh đã được zoom ở khung kết quả
-        self.gui.update_results(zoomed_photo)
-        
+        # ======================================================================
+    # THAY ĐỔI: Gọi hàm update_results với đầy đủ 4 tham số yêu cầu
+    # ======================================================================
+        self.gui.update_results(
+            time_str=datetime.now().strftime('%H:%M:%S'),
+            target_name="--", 
+            score="--", 
+            result_frame=zoomed_photo
+        )
+
     def on_zoom_changed(self, value):
         self.zoom_level = value / 10.0
 
