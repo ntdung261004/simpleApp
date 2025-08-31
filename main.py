@@ -16,7 +16,7 @@ def main():
     app = QApplication(sys.argv)
     try:
         window = MainWindow()
-        window.show()
+        window.showMaximized()
         exit_code = app.exec()
         sys.exit(exit_code)
     except Exception:
