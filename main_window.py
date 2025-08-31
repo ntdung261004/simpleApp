@@ -10,8 +10,8 @@ from PySide6.QtGui import QScreen
 from pynput import keyboard
 
 from gui.gui import MainGui
-from core.camera import Camera
-from core.audio import AudioManager
+from utils.camera import Camera
+from utils.audio import AudioManager
 
 logger = logging.getLogger(__name__)
 
