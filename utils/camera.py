@@ -63,7 +63,7 @@ class Camera:
             return None
         
         return frame
-
+    
     def release(self):
         """
         Giải phóng thiết bị camera.
@@ -71,3 +71,13 @@ class Camera:
         if self.is_opened() and self.cap is not None:
             self.cap.release()
             logger.info(f"Đã giải phóng camera có chỉ số {self.index}")
+            
+def find_available_cameras(max_cameras_to_check=10):
+    available_cameras = []
+    for i in range(max_cameras_to_check):
+        api_preference = cv2.CAP_ANY
+        cap = cv2.VideoCapture(i, api_preference)
+        if cap.isOpened():
+            available_cameras.append(i)
+            cap.release()
+    return available_cameras

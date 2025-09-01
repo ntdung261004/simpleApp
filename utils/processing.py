@@ -24,7 +24,7 @@ def check_object_center(detections, image, calibrated_center):
     """
     # Xác định tâm ngắm sẽ sử dụng
     if calibrated_center:
-        center_x, center_y = calibrated_center['x'], calibrated_center['y']
+        center_x, center_y = calibrated_center
     else:
         h, w, _ = image.shape
         center_x, center_y = w // 2, h // 2
