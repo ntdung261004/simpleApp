@@ -31,6 +31,19 @@ class ProcessingWorker(QObject):
         # ----------------------------------------------------------
 
         logger.info("Worker: Đã khởi tạo, tải xong mô hình và tài sản.")
+        # --- THÊM VÀO: LOGIC "LÀM NÓNG" MODEL ---
+        logger.info("Worker: Thực hiện warm-up cho mô hình YOLO...")
+        try:
+            # Tạo một ảnh giả (đen) với kích thước tiêu chuẩn
+            dummy_image = np.zeros((480, 640, 3), dtype=np.uint8)
+            # Chạy nhận diện một lần để buộc model khởi tạo hoàn toàn
+            self.detector.detect(dummy_image)
+            logger.info("Worker: Warm-up hoàn tất.")
+        except Exception as e:
+            logger.error(f"Worker: Lỗi trong quá trình warm-up: {e}")
+        # ------------------------------------------
+
+        logger.info("Worker: Đã khởi tạo, tải xong mô hình và tài sản.")
 
     def _load_assets(self):
         base_dir = "images"
@@ -58,7 +71,7 @@ class ProcessingWorker(QObject):
 
     @Slot(np.ndarray, object)
     def process_image(self, photo_frame, calibrated_center):
-        detections = self.detector.detect(image=photo_frame, conf=0.5)
+        detections = self.detector.detect(image=photo_frame, conf=0.1)
         status, hit_info = check_object_center(detections, photo_frame, calibrated_center)
 
         result_data = None

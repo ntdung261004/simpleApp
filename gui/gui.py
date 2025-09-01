@@ -122,7 +122,7 @@ class MainGui(QWidget):
         video_area_layout = QVBoxLayout(video_area)
         video_area_layout.setContentsMargins(20, 20, 20, 15)
         video_area_layout.setSpacing(15)
-        title = QLabel("Camera lắp trên súng")
+        title = QLabel("Đường ngắm")
         title.setProperty("class", "panel-title")
         video_area_layout.addWidget(title)
 
@@ -148,7 +148,7 @@ class MainGui(QWidget):
         separator.setFrameShape(QFrame.VLine)
         separator.setFrameShadow(QFrame.Sunken)
         controls_layout.addWidget(separator)
-        zoom_text_label = QLabel("Zoom:")
+        zoom_text_label = QLabel("Khoảng cách:")
         self.zoom_slider = QSlider(Qt.Horizontal)
         self.zoom_slider.setMinimum(10)
         self.zoom_slider.setMaximum(50)

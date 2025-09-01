@@ -15,7 +15,7 @@ class ObjectDetector:
             print(f"❌ Lỗi khi tải model YOLO: {e}")
             self.model = None
 
-    def detect(self, image, conf=0.5):
+    def detect(self, image, conf=0.3):
         """
         Thực hiện nhận dạng đối tượng trên ảnh.
 

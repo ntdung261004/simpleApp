@@ -1,4 +1,5 @@
 # main_window.py
+import os
 import logging
 import cv2
 import numpy as np
@@ -59,6 +60,15 @@ class MainWindow(QMainWindow):
         self.processing_thread.start()
         self.bt_trigger.start_listening()
         self.refresh_camera_connection()
+        
+                # ======================================================================
+        # CHÚ THÍCH: THÊM VÀO LOGIC TẠO THƯ MỤC LƯU ẢNH
+        # ======================================================================
+        self.save_dir = "captured_images"
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
+            logger.info(f"Đã tạo thư mục lưu ảnh training: {self.save_dir}")
+        # ======================================================================
 
     def update_frame(self):
         if not (self.cam and self.cam.is_opened()): return
@@ -76,26 +86,90 @@ class MainWindow(QMainWindow):
         self.gui.display_frame(zoomed_frame)
     
     def capture_photo(self):
-        """Gửi tín hiệu yêu cầu xử lý, không trực tiếp quản lý luồng."""
-        if self.gui.current_frame is not None:
-            self.audio_manager.play_sound('shot')
-            # Chỉ cần phát tín hiệu mang theo dữ liệu cần xử lý
-            self.request_processing.emit(self.gui.current_frame, self.calibrated_center)
-            logger.info("GUI: Đã gửi yêu cầu xử lý cho worker.")
-        else:
-            logger.warning("Không có frame nào để chụp.")
+        """
+        Lưu lại frame ảnh đã zoom (không có tâm ngắm) để training, sau đó gửi đi xử lý.
+        """
+        # Kiểm tra xem có frame nào từ camera không
+        if self.cam is None or not self.cam.is_opened():
+            logger.warning("Camera chưa được kết nối hoặc đang đóng. Không thể chụp ảnh.")
+            return
+
+        # Lấy frame mới nhất trực tiếp từ camera
+        # Việc này đảm bảo chúng ta có một frame hoàn toàn mới, chưa bị vẽ gì lên
+        raw_frame = self.cam.grab() 
+        if raw_frame is None:
+            logger.warning("Không thể lấy frame từ camera. Không thể chụp ảnh.")
+            return
+            
+        # Xử lý frame thô: crop và resize về kích thước tiêu chuẩn
+        processed_frame = self.crop_and_resize_frame(raw_frame)
+
+        # Phát âm thanh bắn
+        self.audio_manager.play_sound('shot')
+
+        # ======================================================================
+        # CHÚ THÍCH: LOGIC LƯU ẢNH CHÍNH XÁC HƠN
+        # ======================================================================
+        try:
+            # 1. Áp dụng thông số zoom hiện tại trực tiếp lên processed_frame
+            #    để tạo ra ảnh cần lưu. Đảm bảo ảnh này không có dấu thập đỏ.
+            image_to_save = self.apply_digital_zoom(processed_frame, self.zoom_level)
+
+            # 2. Tạo tên file duy nhất dựa trên ngày giờ và mili giây
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            filename = f"shot_{timestamp}.png"
+            save_path = os.path.join(self.save_dir, filename)
+
+            # 3. Lưu ảnh ra file
+            cv2.imwrite(save_path, image_to_save)
+            logger.info(f"Đã lưu ảnh để training tại: {save_path}")
+
+        except Exception as e:
+            logger.error(f"Lỗi khi đang lưu ảnh training: {e}")
+        # ======================================================================
+
+        # Gửi processed_frame đi để xử lý tính điểm như bình thường
+        # (Lưu ý: worker sẽ tự áp dụng zoom nếu cần cho việc hiển thị,
+        #         nhưng việc tính toán gốc là trên processed_frame này)
+        self.request_processing.emit(processed_frame, self.calibrated_center)
+        logger.info("GUI: Đã gửi yêu cầu xử lý cho worker.")
             
     @Slot(dict)
-    
     def on_processing_finished(self, result):
-        """Nhận kết quả từ luồng nền và cập nhật lên giao diện."""
+        """
+        Nhận kết quả, xử lý zoom có điều kiện và cập nhật giao diện.
+        """
         logger.info("GUI: Nhận được kết quả, đang cập nhật giao diện...")
-        zoomed_photo = self.apply_digital_zoom(result['result_frame'], self.zoom_level)
+
+        target_name = result.get('target_name')
+        score = result.get('score')
+        result_frame = result.get('result_frame')
+        
+        # ======================================================================
+        # CHÚ THÍCH: LOGIC XỬ LÝ ZOOM CÓ ĐIỀU KIỆN
+        # ======================================================================
+        final_image_to_display = None
+
+        # 1. Nếu là bắn trượt, áp dụng zoom vào ảnh frame camera
+        if target_name == 'Trượt':
+            final_image_to_display = self.apply_digital_zoom(result_frame, self.zoom_level)
+        # 2. Nếu là bắn trúng, giữ nguyên ảnh bia gốc, không zoom
+        else:
+            final_image_to_display = result_frame
+        # ======================================================================
+        
+        # Phát âm thanh tương ứng
+        if score is not None and score > 0:
+            self.audio_manager.play_score(score)
+        else:
+            self.audio_manager.play_sound('miss')
+
+        # Cập nhật giao diện với ảnh đã được xử lý đúng
         self.gui.update_results(
-            time_str=result['time_str'],
-            target_name=result['target_name'],
-            score=result['score'],
-            result_frame=zoomed_photo
+            time_str=result.get('time_str'),
+            target_name=target_name,
+            score=score,
+            result_frame=final_image_to_display
         )
 
     def closeEvent(self, event):
@@ -154,15 +228,33 @@ class MainWindow(QMainWindow):
         else:
             self.disconnect_camera()
 
-    def disconnect_camera(self):
+    def disconnect_camera(self, message="Vui lòng kết nối camera"):
+        """Ngắt kết nối camera hiện tại và hiển thị thông báo tùy chỉnh."""
         self.video_timer.stop()
-        if self.cam: self.cam.release()
+        if self.cam:
+            self.cam.release()
         self.cam = None
-        self.gui.clear_video_feed("Vui lòng kết nối camera")
+        # Sử dụng biến 'message' được truyền vào
+        self.gui.clear_video_feed(message)
     
     def refresh_camera_connection(self):
+        """
+        Làm mới kết nối, chỉ chọn camera 0 nếu có nhiều hơn 1 camera được phát hiện.
+        """
+        logger.info("Đang tìm kiếm camera theo logic tùy chỉnh...")
         all_cameras = find_available_cameras()
-        if all_cameras:
-            self.connect_camera(all_cameras[0])
+        
+        # THAY ĐỔI: Áp dụng logic mới
+        if len(all_cameras) > 1:
+            # Nếu có nhiều hơn 1 camera, kết nối với camera 0
+            target_index = 0
+            logger.info(f"Phát hiện {len(all_cameras)} camera. Kết nối với camera USB tại chỉ số {target_index}.")
+            self.connect_camera(target_index)
+        elif len(all_cameras) == 1:
+            # Nếu chỉ có 1 camera, đó là camera laptop, không kết nối
+            logger.warning("Chỉ phát hiện camera laptop. Vui lòng kết nối camera USB.")
+            self.disconnect_camera(message="Vui lòng kết nối USB Camera")
         else:
-            self.disconnect_camera()
+            # Nếu không có camera nào
+            logger.warning("Không tìm thấy bất kỳ camera nào.")
+            self.disconnect_camera(message="Không tìm thấy camera")
