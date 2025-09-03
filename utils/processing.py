@@ -9,44 +9,27 @@ def friendly_object_name(filename: str) -> str:
     return name.replace('_', ' ')
 
 def check_object_center(detections, image, calibrated_center):
-    """
-    Kiểm tra xem tâm ngắm có nằm trong bounding box của vật thể nào không.
-
-    Args:
-        detections: Danh sách các vật thể đã được nhận dạng từ ObjectDetector.
-        image: Khung hình gốc.
-        calibrated_center: Tọa độ tâm đã hiệu chỉnh (hoặc None).
-
-    Returns:
-        Tuple: (status, hit_info)
-        status (str): "TRÚNG" hoặc "TRƯỢT".
-        hit_info (dict): Thông tin của vật thể bị trúng, hoặc tọa độ tâm ngắm nếu trượt.
-    """
-    # Xác định tâm ngắm sẽ sử dụng
     if calibrated_center:
         center_x, center_y = calibrated_center
     else:
         h, w, _ = image.shape
         center_x, center_y = w // 2, h // 2
 
-    # Tìm vật thể bị bắn trúng có độ tin cậy cao nhất
     highest_conf_hit = None
     for det in detections:
         x1, y1, x2, y2 = det['box']
-        
         if x1 <= center_x <= x2 and y1 <= center_y <= y2:
             if highest_conf_hit is None or det['conf'] > highest_conf_hit['conf']:
                 highest_conf_hit = det
 
     if highest_conf_hit:
         x1, y1, x2, y2 = highest_conf_hit['box']
-        obj_crop = image[y1:y2, x1:x2].copy()
-        shot_point_relative = (center_x - x1, center_y - y1)
         
         hit_info = {
             'name': highest_conf_hit['class_name'],
-            'crop': obj_crop,
-            'shot_point': shot_point_relative,
+            'crop': image[y1:y2, x1:x2].copy(),
+            'shot_point_relative': (center_x - x1, center_y - y1),
+            'shot_point_absolute': (center_x, center_y), # Đảm bảo trả về tọa độ tuyệt đối
             'conf': highest_conf_hit['conf']
         }
         print(f"✅ TRÚNG | Mục tiêu: {hit_info['name']} (Conf: {hit_info['conf']:.2f})")
@@ -59,7 +42,7 @@ def warp_crop_to_original(
     original_img: np.ndarray,
     obj_crop: np.ndarray,
     shot_point: Optional[Tuple[float, float]] = None,
-    min_inliers: int = 10,
+    min_inliers: int = 5,
     ratio_thresh: float = 0.75,
     ransac_thresh: float = 4.0,
     max_reproj: float = 5.0,

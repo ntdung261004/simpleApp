@@ -3,7 +3,7 @@ import cv2
 import base64
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QFrame, QSizePolicy,
-    QGraphicsDropShadowEffect
+    QGraphicsDropShadowEffect, QGroupBox, QComboBox
 )
 from PySide6.QtGui import QFont, QImage, QPixmap, QPainter, QColor, QIcon, QCursor
 from PySide6.QtCore import Qt, QSize, QPoint, QByteArray, Signal
@@ -179,6 +179,34 @@ class MainGui(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(20)
         layout.setAlignment(Qt.AlignTop)
+        
+                # ======================================================================
+        # CHÚ THÍCH: THÊM KHU VỰC QUẢN LÝ LẦN BẮN
+        # ======================================================================
+        session_box = QGroupBox("Quản lý Lần bắn")
+        session_layout = QVBoxLayout(session_box)
+        
+        # Layout cho việc chọn người bắn
+        user_select_layout = QHBoxLayout()
+        user_select_label = QLabel("Người bắn:")
+        self.user_selector = QComboBox()
+        user_select_layout.addWidget(user_select_label)
+        user_select_layout.addWidget(self.user_selector, 1) # Cho combobox chiếm nhiều không gian hơn
+        session_layout.addLayout(user_select_layout)
+        
+        # Layout cho các nút điều khiển
+        session_buttons_layout = QHBoxLayout()
+        self.manage_users_button = QPushButton("Quản lý")
+        self.session_button = QPushButton("Bắt đầu Lần bắn")
+        self.stats_button = QPushButton("Xem Thống kê") # NÚT MỚI
+        session_buttons_layout.addWidget(self.manage_users_button)
+        session_buttons_layout.addWidget(self.stats_button)
+        session_buttons_layout.addWidget(self.session_button)
+        session_layout.addLayout(session_buttons_layout)
+        
+        layout.addWidget(session_box)
+        # ======================================================================
+
         
         title = QLabel("Kết quả mới nhất")
         title.setProperty("class", "panel-title")

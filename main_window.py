@@ -3,7 +3,7 @@ import os
 import logging
 import cv2
 import numpy as np
-from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 from PySide6.QtCore import QTimer, QObject, Signal, QPoint, QThread, Slot
 from PySide6.QtGui import QScreen
 from datetime import datetime
@@ -14,19 +14,23 @@ from utils.audio import AudioManager
 from utils.camera import Camera, find_available_cameras
 from core.triggers import BluetoothTrigger
 from core.worker import ProcessingWorker
+from core.database import DatabaseManager
+from gui.user_dialog import UserDialog
+from gui.statistics_window import StatisticsWindow
 
 logger = logging.getLogger(__name__)
 
 class MainWindow(QMainWindow):
     # Tín hiệu để gửi việc cho Worker
-    request_processing = Signal(np.ndarray, object)
+    request_processing = Signal(np.ndarray, object, str)
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Phần Mềm Kiểm Tra Đường Ngắm Súng Tiểu Liên STV")
         screen = QScreen.availableGeometry(QApplication.primaryScreen())
         self.setGeometry(screen)
-
+        # Thêm biến trạng thái cho lần bắn
+        self.active_session_id = None
         # --- Thuộc tính Giao diện & Camera ---
         self.gui = MainGui()
         self.setCentralWidget(self.gui)
@@ -39,6 +43,8 @@ class MainWindow(QMainWindow):
         self.audio_manager = AudioManager()
         self.video_timer = QTimer(self)
         self.bt_trigger = BluetoothTrigger()
+        
+        self.db_manager = DatabaseManager()
 
         # --- Thiết lập Worker bền bỉ ---
         self.processing_thread = QThread()
@@ -55,13 +61,20 @@ class MainWindow(QMainWindow):
         self.gui.zoom_slider.valueChanged.connect(self.on_zoom_changed)
         self.gui.refresh_button.clicked.connect(self.refresh_camera_connection)
         self.gui.camera_view_label.clicked.connect(self.set_new_center)
+        # THÊM KẾT NỐI CHO CÁC NÚT MỚI
+        self.gui.manage_users_button.clicked.connect(self.manage_users)
+        self.gui.session_button.clicked.connect(self.toggle_session)
+        self.gui.stats_button.clicked.connect(self.open_statistics_window)
         
         # --- Khởi động ---
         self.processing_thread.start()
         self.bt_trigger.start_listening()
         self.refresh_camera_connection()
         
-                # ======================================================================
+        # Tải danh sách người dùng lên giao diện
+        self.populate_user_selector()
+        
+        # ======================================================================
         # CHÚ THÍCH: THÊM VÀO LOGIC TẠO THƯ MỤC LƯU ẢNH
         # ======================================================================
         self.save_dir = "captured_images"
@@ -69,6 +82,91 @@ class MainWindow(QMainWindow):
             os.makedirs(self.save_dir)
             logger.info(f"Đã tạo thư mục lưu ảnh training: {self.save_dir}")
         # ======================================================================
+
+    # THÊM CÁC HÀM MỚI NÀY VÀO LỚP MainWindow
+    def open_statistics_window(self):
+        """Mở cửa sổ thống kê cho người dùng đang được chọn."""
+        selected_user_index = self.gui.user_selector.currentIndex()
+        if selected_user_index < 0 or self.gui.user_selector.itemData(selected_user_index) is None:
+            QMessageBox.warning(self, "Lỗi", "Vui lòng chọn một người bắn để xem thống kê.")
+            return
+        
+        user_data = self.gui.user_selector.itemData(selected_user_index)
+        
+        # Tạo và hiển thị cửa sổ thống kê
+        # Chúng ta truyền db_manager và user_data để cửa sổ con có thể tự lấy dữ liệu
+        stats_dialog = StatisticsWindow(db_manager=self.db_manager, user_data=user_data, parent=self)
+        stats_dialog.exec()
+        
+    def toggle_session(self):
+        """Bắt đầu hoặc kết thúc một Lần bắn."""
+        # TRƯỜНГ HỢP 1: BẮT ĐẦU LẦN BẮN MỚI
+        if self.active_session_id is None:
+            selected_user_index = self.gui.user_selector.currentIndex()
+            if selected_user_index < 0 or self.gui.user_selector.itemData(selected_user_index) is None:
+                QMessageBox.warning(self, "Lỗi", "Vui lòng chọn một người bắn.")
+                return
+            
+            user_data = self.gui.user_selector.itemData(selected_user_index)
+            user_id = user_data['id']
+            
+            # Tạo session mới trong DB và lưu lại ID
+            session_id = self.db_manager.create_session(user_id=user_id)
+            if session_id:
+                self.active_session_id = session_id
+                # Cập nhật giao diện
+                self.gui.session_button.setText("Kết thúc Lần bắn")
+                self.gui.user_selector.setEnabled(False)
+                self.gui.manage_users_button.setEnabled(False)
+        
+        # TRƯỜNG HỢP 2: KẾT THÚC LẦN BẮN HIỆN TẠI
+        else:
+            self.db_manager.end_session(self.active_session_id)
+            self.active_session_id = None
+            # Cập nhật giao diện
+            self.gui.session_button.setText("Bắt đầu Lần bắn")
+            self.gui.user_selector.setEnabled(True)
+            self.gui.manage_users_button.setEnabled(True)
+            
+    def populate_user_selector(self):
+        """Lấy danh sách người dùng từ DB và cập nhật vào ComboBox."""
+        self.gui.user_selector.clear()
+        users = self.db_manager.get_all_users()
+        if users:
+            for user in users:
+                # Hiển thị tên, lưu trữ toàn bộ thông tin user vào data
+                self.gui.user_selector.addItem(user['name'], userData=user)
+        else:
+            self.gui.user_selector.addItem("Chưa có người bắn")
+        
+    # VIẾT LẠI HOÀN TOÀN HÀM NÀY
+    def manage_users(self):
+        """Mở hộp thoại tùy chỉnh để thêm người bắn mới."""
+        dialog = UserDialog(self)
+        
+        # Hiển thị hộp thoại và chờ người dùng tương tác
+        # dialog.exec() sẽ trả về True nếu người dùng nhấn OK
+        if dialog.exec():
+            user_data = dialog.get_user_data()
+            name = user_data.get('name')
+            
+            if not name:
+                QMessageBox.warning(self, "Lỗi", "Tên người bắn không được để trống.")
+                return
+
+            # Gọi hàm add_user với đầy đủ thông tin
+            success = self.db_manager.add_user(
+                name=name,
+                unit=user_data.get('unit'),
+                position=user_data.get('position')
+            )
+            
+            if success:
+                QMessageBox.information(self, "Thành công", f"Đã thêm người bắn '{name}'.")
+                # Cập nhật lại danh sách trên ComboBox
+                self.populate_user_selector()
+            else:
+                QMessageBox.warning(self, "Lỗi", f"Người bắn '{name}' đã tồn tại.")
 
     def update_frame(self):
         if not (self.cam and self.cam.is_opened()): return
@@ -79,10 +177,34 @@ class MainWindow(QMainWindow):
         
         processed_frame = self.crop_and_resize_frame(frame)
         self.gui.current_frame = processed_frame.copy()
+        
         zoomed_frame = self.apply_digital_zoom(processed_frame, self.zoom_level)
         
-        center_point = self.calibrated_center or (zoomed_frame.shape[1] // 2, zoomed_frame.shape[0] // 2)
-        cv2.drawMarker(zoomed_frame, center_point, (0, 0, 255), cv2.MARKER_CROSS, 40, 2)
+        # Logic vẽ tâm ngắm đã được đồng bộ với set_new_center
+        point_to_draw = None
+        if self.calibrated_center:
+            # Lấy tọa độ gốc 1x
+            cx, cy = self.calibrated_center
+            h, w, _ = processed_frame.shape
+            
+            # Tính toán lại vị trí của điểm đó trên ảnh đã zoom
+            start_x = (w - int(w / self.zoom_level)) // 2
+            start_y = (h - int(h / self.zoom_level)) // 2
+            
+            # Chỉ vẽ nếu tâm ngắm nằm trong vùng nhìn thấy được sau khi zoom
+            if cx >= start_x and cy >= start_y:
+                zoomed_cx = int((cx - start_x) * self.zoom_level)
+                zoomed_cy = int((cy - start_y) * self.zoom_level)
+                if zoomed_cx < w and zoomed_cy < h:
+                    point_to_draw = (zoomed_cx, zoomed_cy)
+        else:
+            # Tâm mặc định luôn ở giữa
+            h_zoom, w_zoom, _ = zoomed_frame.shape
+            point_to_draw = (w_zoom // 2, h_zoom // 2)
+
+        if point_to_draw:
+            cv2.drawMarker(zoomed_frame, point_to_draw, (0, 0, 255), cv2.MARKER_CROSS, 40, 2)
+
         self.gui.display_frame(zoomed_frame)
     
     def capture_photo(self):
@@ -131,7 +253,7 @@ class MainWindow(QMainWindow):
         # Gửi processed_frame đi để xử lý tính điểm như bình thường
         # (Lưu ý: worker sẽ tự áp dụng zoom nếu cần cho việc hiển thị,
         #         nhưng việc tính toán gốc là trên processed_frame này)
-        self.request_processing.emit(processed_frame, self.calibrated_center)
+        self.request_processing.emit(processed_frame, self.calibrated_center, save_path)
         logger.info("GUI: Đã gửi yêu cầu xử lý cho worker.")
             
     @Slot(dict)
@@ -149,6 +271,16 @@ class MainWindow(QMainWindow):
         # CHÚ THÍCH: LOGIC XỬ LÝ ZOOM CÓ ĐIỀU KIỆN
         # ======================================================================
         final_image_to_display = None
+
+        # THÊM VÀO: LƯU PHÁT BẮN VÀO DATABASE NẾU ĐANG TRONG MỘT LẦN BẮN
+        if self.active_session_id is not None:
+            self.db_manager.add_shot(
+                session_id=self.active_session_id,
+                score=result.get('score'),
+                target_name=result.get('target_name'),
+                coords=result.get('coords'),
+                image_path=result.get('image_path')
+            )
 
         # 1. Nếu là bắn trượt, áp dụng zoom vào ảnh frame camera
         if target_name == 'Trượt':
@@ -178,6 +310,7 @@ class MainWindow(QMainWindow):
         self.bt_trigger.stop_listening()
         self.disconnect_camera()
         
+        self.db_manager.close()
         # Yêu cầu luồng nền dừng lại và chờ nó kết thúc
         self.processing_thread.quit()
         self.processing_thread.wait(3000)
@@ -206,16 +339,47 @@ class MainWindow(QMainWindow):
         self.gui.calibrate_button.setText("Hủy" if is_calibrating else "Hiệu chỉnh tâm")
 
     def set_new_center(self, click_pos: QPoint):
+        """
+        Nhận tọa độ click từ GUI, tính toán ngược lại dựa trên mức zoom,
+        và chuyển đổi sang tọa độ ảnh gốc một cách chính xác.
+        """
+        # Kích thước của widget và ảnh gốc (chưa zoom)
         widget_size = self.gui.camera_view_label.size()
-        img_w, img_h = self.final_size
+        img_w, img_h = self.final_size # Ví dụ: 640, 480
+
+        # --- Bước 1: Tìm ra kích thước và vị trí của ảnh đang được vẽ trên widget ---
         scale = min(widget_size.width() / img_w, widget_size.height() / img_h)
         display_w, display_h = int(img_w * scale), int(img_h * scale)
         offset_x, offset_y = (widget_size.width() - display_w) // 2, (widget_size.height() - display_h) // 2
-        if offset_x <= click_pos.x() < offset_x + display_w and offset_y <= click_pos.y() < offset_y + display_h:
-            img_x = int((click_pos.x() - offset_x) / scale)
-            img_y = int((click_pos.y() - offset_y) / scale)
-            self.calibrated_center = (img_x, img_y)
-            self.toggle_calibration_mode()
+
+        # Chỉ xử lý nếu click nằm trong vùng ảnh thật
+        if not (offset_x <= click_pos.x() < offset_x + display_w and \
+                offset_y <= click_pos.y() < offset_y + display_h):
+            return
+
+        # --- Bước 2: Chuyển tọa độ click trên widget thành tọa độ trên ảnh 1x (chưa zoom) ---
+        # Tọa độ click tương đối so với góc trên bên trái của ảnh đang hiển thị
+        click_on_display_x = click_pos.x() - offset_x
+        click_on_display_y = click_pos.y() - offset_y
+        
+        # Tọa độ trên ảnh đã zoom (nhưng có kích thước img_w, img_h)
+        click_on_zoomed_image_x = int(click_on_display_x / scale)
+        click_on_zoomed_image_y = int(click_on_display_y / scale)
+
+        # --- Bước 3: "Un-zoom" tọa độ để tìm ra tọa độ trên ảnh gốc 1x ---
+        # Logic tính toán ngược lại với hàm apply_digital_zoom
+        start_x_on_original = (img_w - int(img_w / self.zoom_level)) // 2
+        start_y_on_original = (img_h - int(img_h / self.zoom_level)) // 2
+        
+        final_img_x = int(start_x_on_original + (click_on_zoomed_image_x / self.zoom_level))
+        final_img_y = int(start_y_on_original + (click_on_zoomed_image_y / self.zoom_level))
+
+        # Lưu lại tọa độ cuối cùng trên ảnh gốc 1x
+        self.calibrated_center = (final_img_x, final_img_y)
+        logger.info(f"Đã cập nhật tâm ngắm mới (trên ảnh gốc 1x) tại: {self.calibrated_center}")
+        
+        # Tự động tắt chế độ hiệu chỉnh
+        self.toggle_calibration_mode()
 
     def on_zoom_changed(self, value):
         self.zoom_level = value / 10.0

@@ -17,7 +17,7 @@ class ProcessingWorker(QObject):
 
     def __init__(self):
         super().__init__()
-        self.detector = ObjectDetector(model_path="my_model.pt")
+        self.detector = ObjectDetector(model_path="my_modelv8s.pt")
         self.assets = self._load_assets()
         
         # --- THAY ĐỔI: Ánh xạ chính xác 3 object class của bạn ---
@@ -69,9 +69,9 @@ class ProcessingWorker(QObject):
                 logger.error(f"LỖI: Không tìm thấy file tài sản cho '{name}'")
         return assets
 
-    @Slot(np.ndarray, object)
-    def process_image(self, photo_frame, calibrated_center):
-        detections = self.detector.detect(image=photo_frame, conf=0.1)
+    @Slot(np.ndarray, object, str)
+    def process_image(self, photo_frame, calibrated_center, image_path):
+        detections = self.detector.detect(image=photo_frame, conf=0.75)
         status, hit_info = check_object_center(detections, photo_frame, calibrated_center)
 
         result_data = None
@@ -102,7 +102,9 @@ class ProcessingWorker(QObject):
             'time_str': datetime.now().strftime('%H:%M:%S'),
             'target_name': result_data.get('target'),
             'score': result_data.get('score'),
-            'result_frame': result_data.get('image')
+            'result_frame': result_data.get('image'),
+            'coords': result_data.get('coords'), # Key mới
+            'image_path': image_path             # Key mới
         }
         
         self.finished.emit(final_package)
