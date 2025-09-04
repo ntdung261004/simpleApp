@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QPixmap, QImage, QFont, QIcon
 from datetime import datetime
 
-from gui.ui.ui_practice import VideoLabel
+from gui import VideoLabel
 logger = logging.getLogger(__name__)
 # ======================================================================
 # LỚP WIDGET TÙY CHỈNH CHO ITEM TRONG DANH SÁCH

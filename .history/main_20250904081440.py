@@ -4,12 +4,13 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
 
 # Nhớ đổi tên file và di chuyển file theo cấu trúc mới
 from gui.windows.main_menu_window import MainMenuWindow
-from gui.windows.practice_window import PracticeWindow
+from gui.windows.practice_window import MainWindow as PracticeWindow # Đổi tên khi import
 
 class ApplicationController(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Phần Mềm Kiểm Tra Đường Ngắm Súng Tiểu Liên STV")
+        self.setGeometry(100, 100, 1280, 720)
 
         # QStackedWidget để quản lý các màn hình
         self.stacked_widget = QStackedWidget()
@@ -17,7 +18,7 @@ class ApplicationController(QMainWindow):
 
         # Khởi tạo các màn hình (windows)
         self.main_menu = MainMenuWindow()
-        self.practice_screen = PracticeWindow()
+        self.practice_screen = PracticeWindow() # Cửa sổ chức năng chính của bạn
 
         # Thêm các màn hình vào StackedWidget
         self.stacked_widget.addWidget(self.main_menu)
@@ -33,11 +34,6 @@ class ApplicationController(QMainWindow):
         # Khi nút "TẬP LUYỆN" được nhấn, gọi hàm show_practice_screen
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)
         
-        # Khi nút "THOÁT" được nhấn, gọi hàm self.close (hàm có sẵn của QMainWindow)
-        self.main_menu.exit_button.clicked.connect(self.close)
-        
-        # Khi nút "Quay Lại" trên màn hình practice được nhấn, quay về menu chính
-        self.practice_screen.gui.back_button.clicked.connect(self.show_main_menu)
         # TODO: Kết nối các nút khác ở đây khi bạn tạo các màn hình tương ứng
         # self.main_menu.stats_button.clicked.connect(self.show_stats_screen)
 
@@ -55,5 +51,5 @@ class ApplicationController(QMainWindow):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     controller = ApplicationController()
-    controller.showFullScreen()
+    controller.show()
     sys.exit(app.exec())

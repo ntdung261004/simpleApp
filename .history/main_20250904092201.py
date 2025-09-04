@@ -37,7 +37,7 @@ class ApplicationController(QMainWindow):
         self.main_menu.exit_button.clicked.connect(self.close)
         
         # Khi nút "Quay Lại" trên màn hình practice được nhấn, quay về menu chính
-        self.practice_screen.gui.back_button.clicked.connect(self.show_main_menu)
+        self.practice_screen.gui.backButton.clicked.connect(self.show_main_menu)
         # TODO: Kết nối các nút khác ở đây khi bạn tạo các màn hình tương ứng
         # self.main_menu.stats_button.clicked.connect(self.show_stats_screen)
 
