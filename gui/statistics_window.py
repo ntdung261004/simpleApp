@@ -213,6 +213,11 @@ class StatisticsWindow(QDialog):
         if not current_item:
             return
         session_data = current_item.data(Qt.UserRole)
+        if session_data is None:
+            print("Không có dữ liệu phiên bắn được chọn.")
+        # Bạn có thể thêm code để xóa hiển thị cũ ở đây nếu cần
+            return # Thoát khỏi hàm sớm để tránh lỗi
+        
         self.all_shots_for_session = self.db_manager.get_shots_for_session(session_data['id'])
         self.update_statistics()
         self.update_shot_grouping_tabs()
