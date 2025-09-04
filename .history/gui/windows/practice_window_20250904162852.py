@@ -1,0 +1,257 @@
+# file: gui/windows/practice_window.py
+import logging
+from PySide6.QtWidgets import QMainWindow, QMessageBox
+from PySide6.QtCore import QTimer, Signal, QThread, Slot
+from PySide6.QtGui import QGuiApplication
+import cv2
+
+# THAY ĐỔI: Import cả lớp Camera
+from ..ui.ui_practice import MainGui
+from utils.audio import AudioManager
+from utils.camera import find_available_cameras, Camera
+from core.triggers import BluetoothTrigger
+from core.worker import ProcessingWorker
+from core.database import DatabaseManager
+
+logger = logging.getLogger(__name__)
+
+class PracticeWindow(QMainWindow):
+    request_processing = Signal(object, object, str) # Dùng object thay vì np.ndarray
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Màn Hình Tập Luyện")
+        screen = QGuiApplication.primaryScreen().availableGeometry()
+        self.setGeometry(screen)
+        
+        self.gui = MainGui()
+        self.setCentralWidget(self.gui)
+        
+        self.cam = None # Sẽ là một đối tượng của lớp Camera
+        self.calibrated_center = None
+        self.video_timer = QTimer(self)
+        
+        self.audio_manager = AudioManager()
+        self.db_manager = DatabaseManager()
+        self.active_soldier = None
+        self.active_session_id = None
+        self.is_session_active = False
+        
+        self.worker_thread = QThread()
+        self.worker = ProcessingWorker()
+        self.worker.moveToThread(self.worker_thread)
+        self.setup_worker_connections()
+        self.worker_thread.start()
+        
+        self.trigger = BluetoothTrigger()
+        self.trigger.triggered.connect(self.capture_and_process)
+        self.trigger.start_listening()
+        
+        self.setup_gui_connections()
+        self._populate_soldiers()
+
+    def start_camera(self):
+        logger.info("Practice screen is now visible. Starting camera...")
+        self._populate_soldiers()
+        if self.cam is None or not self.cam.isOpened():
+            self.refresh_camera_connection()
+
+    def setup_gui_connections(self):
+        self.gui.zoom_slider.valueChanged.connect(self.handle_zoom_change)
+        self.gui.calibrate_button.clicked.connect(self.calibrate_center)
+        self.gui.session_button.clicked.connect(self.toggle_session)
+        self.gui.soldier_selector.currentIndexChanged.connect(self._on_soldier_selected)
+        self.gui.refresh_button.clicked.connect(self.refresh_camera_connection)
+        self.gui.camera_view_label.clicked.connect(self.handle_camera_view_click)
+        self.video_timer.timeout.connect(self.update_frame)
+
+    def setup_worker_connections(self):
+        self.request_processing.connect(self.worker.process_image)
+        self.worker.finished.connect(self.handle_processing_done)
+
+    def _populate_soldiers(self):
+        try:
+            current_selection = self.gui.soldier_selector.currentData()
+            self.gui.soldier_selector.clear()
+            soldiers = self.db_manager.get_all_soldiers()
+            if soldiers:
+                for soldier in soldiers:
+                    self.gui.soldier_selector.addItem(soldier['name'], soldierData=soldier)
+                if current_selection:
+                    index = self.gui.soldier_selector.findData(current_selection)
+                    if index != -1: self.gui.soldier_selector.setCurrentIndex(index)
+            else:
+                self.gui.soldier_selector.addItem("Chưa có chiến sĩ nào được tạo")
+        except Exception as e:
+            logger.error(f"Lỗi khi tải danh sách chiến sĩ: {e}")
+
+    @Slot(int)
+    def _on_soldier_selected(self, index):
+        soldier_data = self.gui.soldier_selector.itemData(index)
+        if soldier_data:
+            if self.is_session_active:
+                QMessageBox.warning(self, "Phiên đang hoạt động", "Vui lòng kết thúc phiên hiện tại trước khi đổi người bắn.")
+                previous_index = self.gui.soldier_selector.findData(self.active_soldier)
+                if previous_index != -1: self.gui.soldier_selector.setCurrentIndex(previous_index)
+                return
+            self.active_soldier = soldier_data
+            logger.info(f"Đã chọn người bắn: {self.active_soldier['name']}")
+        else:
+            self.active_soldier = None
+
+    def update_frame(self):
+        if not (self.cam and self.cam.is_opened()): return
+        frame = self.cam.grab()
+        if frame is None:
+            self.disconnect_camera()
+            return
+        
+        processed_frame = self.crop_and_resize_frame(frame)
+        self.gui.current_frame = processed_frame.copy()
+        
+        zoomed_frame = self.apply_digital_zoom(processed_frame, self.zoom_level)
+        
+        # Logic vẽ tâm ngắm đã được đồng bộ với set_new_center
+        point_to_draw = None
+        if self.calibrated_center:
+            # Lấy tọa độ gốc 1x
+            cx, cy = self.calibrated_center
+            h, w, _ = processed_frame.shape
+            
+            # Tính toán lại vị trí của điểm đó trên ảnh đã zoom
+            start_x = (w - int(w / self.zoom_level)) // 2
+            start_y = (h - int(h / self.zoom_level)) // 2
+            
+            # Chỉ vẽ nếu tâm ngắm nằm trong vùng nhìn thấy được sau khi zoom
+            if cx >= start_x and cy >= start_y:
+                zoomed_cx = int((cx - start_x) * self.zoom_level)
+                zoomed_cy = int((cy - start_y) * self.zoom_level)
+                if zoomed_cx < w and zoomed_cy < h:
+                    point_to_draw = (zoomed_cx, zoomed_cy)
+        else:
+            # Tâm mặc định luôn ở giữa
+            h_zoom, w_zoom, _ = zoomed_frame.shape
+            point_to_draw = (w_zoom // 2, h_zoom // 2)
+
+        if point_to_draw:
+            cv2.drawMarker(zoomed_frame, point_to_draw, (0, 0, 255), cv2.MARKER_CROSS, 40, 2)
+
+        self.gui.display_frame(zoomed_frame)
+
+    def closeEvent(self, event):
+        self.trigger.stop_listening()
+        self.disconnect_camera()
+        self.worker_thread.quit()
+        self.worker_thread.wait()
+        event.accept()
+
+    @Slot()
+    def capture_and_process(self):
+        if not self.is_session_active:
+            QMessageBox.information(self, "Thông báo", "Vui lòng bắt đầu phiên bắn trước.")
+            return
+        if self.active_soldier is None:
+            QMessageBox.warning(self, "Chưa chọn người bắn", "Vui lòng chọn người bắn từ danh sách.")
+            return
+
+        frame = self.gui.current_frame
+        if frame is not None:
+            self.audio_manager.play_shot_sound()
+            target_type = self.gui.target_type_combo.currentText()
+            self.request_processing.emit(frame, self.calibrated_center, target_type)
+            logger.info("Đã chụp ảnh và gửi yêu cầu xử lý.")
+        else:
+            logger.warning("Không thể chụp ảnh: Camera chưa kết nối.")
+
+    @Slot(dict)
+    def handle_processing_done(self, result):
+        shot_id = self.db_manager.insert_shot_data(
+            session_id=self.active_session_id,
+            score=result.get('score'),
+            hit_x=result.get('coords', (None, None))[0],
+            hit_y=result.get('coords', (None, None))[1],
+            target_type=result.get('target_name'),
+            image_path=result.get('image_path')
+        )
+        logger.info(f"Đã lưu kết quả bắn với ID: {shot_id}")
+        self.gui.update_results(**result)
+
+    @Slot(int)
+    def handle_zoom_change(self, value):
+        zoom_factor = value / 10.0
+        self.gui.zoom_value_label.setText(f"{zoom_factor:.1f}x")
+
+    def calibrate_center(self):
+        is_calibrating = not self.gui.camera_view_label._is_calibrating
+        self.gui.camera_view_label.set_calibration_mode(is_calibrating)
+        self.gui.calibrate_button.setText("Hủy" if is_calibrating else "Hiệu chỉnh tâm")
+        if not is_calibrating:
+            self.calibrated_center = None
+
+    def handle_camera_view_click(self, position):
+        if self.gui.camera_view_label._is_calibrating:
+            self.calibrated_center = (position.x(), position.y())
+            logger.info(f"Tâm ngắm đã được hiệu chỉnh tại: {self.calibrated_center}")
+            self.gui.camera_view_label.set_calibration_mode(False)
+            self.gui.calibrate_button.setText("Hiệu chỉnh tâm")
+
+    def toggle_session(self):
+        if self.is_session_active:
+            # Kết thúc phiên
+            self.is_session_active = False
+            self.active_session_id = None
+            self.gui.session_button.setText("Bắt đầu")
+            self.gui.soldier_selector.setEnabled(True)
+            self.gui.target_type_combo.setEnabled(True)
+            logger.info("Đã kết thúc phiên bắn.")
+        else:
+            # Bắt đầu phiên mới
+            if self.active_soldier is None:
+                QMessageBox.warning(self, "Chưa chọn người bắn", "Vui lòng chọn người bắn trước khi bắt đầu.")
+                return
+            
+            target_type = self.gui.target_type_combo.currentText()
+            self.active_session_id = self.db_manager.create_session(
+                soldier_id=self.active_soldier['id'], 
+                target_type=target_type
+            )
+            
+            if self.active_session_id != -1:
+                self.is_session_active = True
+                self.gui.session_button.setText("Kết thúc")
+                self.gui.soldier_selector.setEnabled(False)
+                self.gui.target_type_combo.setEnabled(False)
+                logger.info(f"Bắt đầu phiên bắn cho '{self.active_soldier['name']}' với session ID: {self.active_session_id}")
+            else:
+                QMessageBox.critical(self, "Lỗi", "Không thể tạo phiên bắn trong cơ sở dữ liệu.")
+                
+    # --- THAY ĐỔI: Sử dụng lớp Camera mới ---
+    def connect_camera(self, index):
+        self.disconnect_camera()
+        self.cam = Camera(index)
+        if self.cam.is_opened() and self.cam.grab() is not None:
+            self.video_timer.start(30)
+        else:
+            self.disconnect_camera()
+
+    def disconnect_camera(self, message="Vui lòng kết nối camera"):
+        self.video_timer.stop()
+        if self.cam:
+            self.cam.release()
+        self.cam = None
+        self.gui.clear_video_feed(message)
+    
+    # --- THAY ĐỔI: Áp dụng logic kết nối bạn yêu cầu ---
+    def refresh_camera_connection(self):
+        logger.info("Đang làm mới kết nối camera...")
+        available_cams = find_available_cameras()
+
+        if available_cams:
+            # Nếu có bất kỳ camera nào được tìm thấy
+            target_index = available_cams[0] # Luôn kết nối với camera đầu tiên
+            logger.info(f"Tìm thấy {len(available_cams)} camera. Đang kết nối với camera tại chỉ số {target_index}.")
+            self.connect_camera(target_index)
+        else:
+            # Nếu không tìm thấy camera nào
+            logger.warning("Không tìm thấy camera nào được kết nối.")
+            self.disconnect_camera("Không tìm thấy camera")
