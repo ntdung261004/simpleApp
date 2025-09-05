@@ -13,7 +13,7 @@ logging.basicConfig(
 
 from gui.windows.main_menu_window import MainMenuWindow
 from gui.windows.practice_window import PracticeWindow
-
+from gui.windows.manage_window import ManageWindow
 def setup_logging():
     logging.basicConfig(
         level=logging.INFO,
@@ -33,10 +33,12 @@ class ApplicationController(QMainWindow):
         # Khởi tạo các màn hình (windows)
         self.main_menu = MainMenuWindow()
         self.practice_screen = PracticeWindow()
+        self.manage_screen = ManageWindow()
 
         # Thêm các màn hình vào StackedWidget
         self.stacked_widget.addWidget(self.main_menu)
         self.stacked_widget.addWidget(self.practice_screen)
+        self.stacked_widget.addWidget(self.manage_screen)
 
         # Kết nối tín hiệu từ các nút bấm của Main Menu
         self.connect_signals()
@@ -46,18 +48,17 @@ class ApplicationController(QMainWindow):
 
     def connect_signals(self):
         # Khi nút "TẬP LUYỆN" được nhấn, gọi hàm show_practice_screen
-        self.main_menu.practice_button.clicked.connect(self.show_practice_screen)
-        
-        # Khi nút "THOÁT" được nhấn, gọi hàm self.close (hàm có sẵn của QMainWindow)
-        self.main_menu.exit_button.clicked.connect(self.close)
-        
+        self.main_menu.practice_button.clicked.connect(self.show_practice_screen)       
         # Khi nút "Quay Lại" trên màn hình practice được nhấn, quay về menu chính
         self.practice_screen.gui.back_button.clicked.connect(self.show_main_menu)
+        
         # TODO: Kết nối các nút khác ở đây khi bạn tạo các màn hình tương ứng
-        # self.main_menu.stats_button.clicked.connect(self.show_stats_screen)
+        self.main_menu.stats_button.clicked.connect(self.show_manage_screen)
+        # Khi nút "Quay Lại" trên màn hình manage được nhấn, quay về menu chính
+        self.manage_screen.ui.back_button.clicked.connect(self.show_main_menu)
 
-        # Khi cửa sổ tập luyện muốn quay về menu (cần thêm nút back trong practice_window)
-        # self.practice_screen.back_button.clicked.connect(self.show_main_menu)
+        # Khi nút "THOÁT" được nhấn, gọi hàm self.close (hàm có sẵn của QMainWindow)
+        self.main_menu.exit_button.clicked.connect(self.close)
 
     def show_main_menu(self):
         # === THÊM VÀO: GỌI HÀM DỌN DẸP TRƯỚC KHI CHUYỂN MÀN HÌNH ===
@@ -70,6 +71,12 @@ class ApplicationController(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.practice_screen)
         # Bắt đầu camera khi chuyển đến màn hình tập luyện
         self.practice_screen.start_camera()
+        
+    def show_manage_screen(self):
+        """Hiển thị màn hình Quản lý và Thống kê."""
+        # Hiện tại chưa cần hành động đặc biệt gì khi mở màn hình này
+        # Sau này có thể thêm hàm load_data() ở đây
+        self.stacked_widget.setCurrentWidget(self.manage_screen)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
