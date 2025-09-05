@@ -1,4 +1,3 @@
-# file: gui/windows/practice_window.py
 import logging
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QApplication
 from PySide6.QtCore import QTimer, Signal, QThread, Slot, QPoint
@@ -9,7 +8,6 @@ import time
 from datetime import datetime
 from PySide6.QtGui import QScreen, QPixmap, QFont
 
-# THAY ĐỔI: Import cả lớp Camera
 from ..ui.ui_practice import MainGui
 from utils.audio import AudioManager
 from utils.camera import find_available_cameras, Camera
@@ -27,9 +25,8 @@ class PracticeWindow(QMainWindow):
         self.setWindowTitle("Phần Mềm Kiểm Tra Đường Ngắm Súng Tiểu Liên STV")
         screen = QScreen.availableGeometry(QApplication.primaryScreen())
         self.setGeometry(screen)
-        # Thêm biến trạng thái cho lần bắn
         self.active_session_id = None
-        # --- Thuộc tính Giao diện & Camera ---
+        
         self.gui = MainGui()
         self.setCentralWidget(self.gui)
         self.cam = None
@@ -37,14 +34,15 @@ class PracticeWindow(QMainWindow):
         self.zoom_level = 1.0
         self.calibrated_center = None
         
+        # <<< THAY ĐỔI: Thêm biến đếm số lần đọc frame thất bại
+        self.frame_read_failures = 0
+        self.FRAME_FAILURE_THRESHOLD = 3 # Ngắt kết nối nếu đọc lỗi 3 lần liên tiếp (khoảng 0.5s)
+
         # --- Các Module phụ trợ ---
         self.audio_manager = AudioManager()
         self.video_timer = QTimer(self)
         self.bt_trigger = BluetoothTrigger()
-        
         self.db_manager = DatabaseManager()
-
-        # --- Thiết lập Worker bền bỉ ---
         self.processing_thread = QThread()
         self.worker = ProcessingWorker()
         self.worker.moveToThread(self.processing_thread)
@@ -59,25 +57,17 @@ class PracticeWindow(QMainWindow):
         self.gui.zoom_slider.valueChanged.connect(self.on_zoom_changed)
         self.gui.refresh_button.clicked.connect(self.refresh_camera_connection)
         self.gui.camera_view_label.clicked.connect(self.set_new_center)
-        # THÊM KẾT NỐI CHO CÁC NÚT MỚI
         self.gui.session_button.clicked.connect(self.toggle_session)
         
         # --- Khởi động ---
         self.processing_thread.start()
         self.bt_trigger.start_listening()
-        #self.refresh_camera_connection()
-        
-        # Tải danh sách người dùng lên giao diện
         self.populate_soldier_selector()
         
-        # ======================================================================
-        # CHÚ THÍCH: THÊM VÀO LOGIC TẠO THƯ MỤC LƯU ẢNH
-        # ======================================================================
         self.save_dir = "captured_images"
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
             logger.info(f"Đã tạo thư mục lưu ảnh training: {self.save_dir}")
-        # ======================================================================
   
     def shutdown_components(self):
         """Hàm dọn dẹp khi người dùng rời khỏi màn hình này."""
@@ -132,41 +122,40 @@ class PracticeWindow(QMainWindow):
 
     def update_frame(self):
         if not (self.cam and self.cam.isOpened()):
+            # Trường hợp này hiếm khi xảy ra nếu logic disconnect đã tốt
             return
 
-        # Lấy cả hai giá trị trả về từ hàm read()
         ret, frame = self.cam.read()
 
-        # KIỂM TRA QUAN TRỌNG: Chỉ xử lý nếu 'ret' là True và 'frame' không rỗng
+        # <<< THAY ĐỔI: Logic xử lý khi rút camera
         if not ret or frame is None:
-            logger.warning("Không thể đọc frame, đang thử lại...")
-            return # Thoát khỏi hàm ngay lập tức
+            self.frame_read_failures += 1
+            logger.warning(f"Không thể đọc frame, lần thất bại thứ: {self.frame_read_failures}")
+            if self.frame_read_failures > self.FRAME_FAILURE_THRESHOLD:
+                logger.error("Mất kết nối với camera (đọc frame thất bại nhiều lần).")
+                self.disconnect_camera("Mất kết nối với camera...")
+            return # Thoát khỏi hàm để không xử lý frame rỗng
 
+        # Nếu đọc thành công, reset bộ đếm lỗi
+        self.frame_read_failures = 0
+        
         # Chỉ khi frame hợp lệ, chúng ta mới tiếp tục xử lý
         processed_frame = self.crop_and_resize_frame(frame)
         self.gui.current_frame = processed_frame.copy()
-        
         zoomed_frame = self.apply_digital_zoom(processed_frame, self.zoom_level)
         
-        # Logic vẽ tâm ngắm đã được đồng bộ với set_new_center
         point_to_draw = None
         if self.calibrated_center:
-            # Lấy tọa độ gốc 1x
             cx, cy = self.calibrated_center
             h, w, _ = processed_frame.shape
-            
-            # Tính toán lại vị trí của điểm đó trên ảnh đã zoom
             start_x = (w - int(w / self.zoom_level)) // 2
             start_y = (h - int(h / self.zoom_level)) // 2
-            
-            # Chỉ vẽ nếu tâm ngắm nằm trong vùng nhìn thấy được sau khi zoom
             if cx >= start_x and cy >= start_y:
                 zoomed_cx = int((cx - start_x) * self.zoom_level)
                 zoomed_cy = int((cy - start_y) * self.zoom_level)
                 if zoomed_cx < w and zoomed_cy < h:
                     point_to_draw = (zoomed_cx, zoomed_cy)
         else:
-            # Tâm mặc định luôn ở giữa
             h_zoom, w_zoom, _ = zoomed_frame.shape
             point_to_draw = (w_zoom // 2, h_zoom // 2)
 
@@ -174,7 +163,7 @@ class PracticeWindow(QMainWindow):
             cv2.drawMarker(zoomed_frame, point_to_draw, (0, 0, 255), cv2.MARKER_CROSS, 40, 2)
 
         self.gui.display_frame(zoomed_frame)
-    
+
     def capture_photo(self):
         """
         Lấy frame ảnh mới nhất từ camera, xử lý và gửi đi cho worker.

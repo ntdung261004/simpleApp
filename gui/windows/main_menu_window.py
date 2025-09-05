@@ -26,7 +26,6 @@ class MainMenuWindow(QMainWindow):
         # ví dụ: self.main_menu.practice_button.clicked.connect(...)
         self.practice_button = self.ui.practice_button
         self.stats_button = self.ui.stats_button
-        self.list_button = self.ui.list_button
         self.guide_button = self.ui.guide_button
         self.exit_button = self.ui.exit_button
         # Tại đây, chúng ta không kết nối trực tiếp các sự kiện (ví dụ: self.practice_button.clicked.connect(...))

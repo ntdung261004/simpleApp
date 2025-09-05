@@ -66,19 +66,13 @@ class Ui_MainMenuWindow(object):
         self.verticalLayout.addWidget(self.practice_button, 0, Qt.AlignHCenter)
 
         # Statistics Button
-        self.stats_button = QPushButton("THỐNG KÊ", self.centralwidget)
+        self.stats_button = QPushButton("QUẢN LÝ - THỐNG KÊ", self.centralwidget)
         self.stats_button.setMinimumSize(QSize(300, 75))
         self.stats_button.setStyleSheet(button_style)
         self.verticalLayout.addWidget(self.stats_button, 0, Qt.AlignHCenter)
 
-        # List Button
-        self.list_button = QPushButton("DANH SÁCH", self.centralwidget)
-        self.list_button.setMinimumSize(QSize(300, 75))
-        self.list_button.setStyleSheet(button_style)
-        self.verticalLayout.addWidget(self.list_button, 0, Qt.AlignHCenter)
-
         # Guide Button
-        self.guide_button = QPushButton("HƯỚNG DẪN", self.centralwidget)
+        self.guide_button = QPushButton("TRỢ GIÚP - HƯỚNG DẪN", self.centralwidget)
         self.guide_button.setMinimumSize(QSize(300, 75))
         self.guide_button.setStyleSheet(button_style)
         self.verticalLayout.addWidget(self.guide_button, 0, Qt.AlignHCenter)
