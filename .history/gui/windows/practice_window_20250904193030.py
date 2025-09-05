@@ -5,7 +5,6 @@ from PySide6.QtCore import QTimer, Signal, QThread, Slot, QPoint
 import cv2
 import numpy as np
 import os
-import time
 from datetime import datetime
 from PySide6.QtGui import QScreen, QPixmap, QFont
 
@@ -65,7 +64,7 @@ class PracticeWindow(QMainWindow):
         # --- Khởi động ---
         self.processing_thread.start()
         self.bt_trigger.start_listening()
-        #self.refresh_camera_connection()
+        self.refresh_camera_connection()
         
         # Tải danh sách người dùng lên giao diện
         self.populate_soldier_selector()
@@ -79,18 +78,6 @@ class PracticeWindow(QMainWindow):
             logger.info(f"Đã tạo thư mục lưu ảnh training: {self.save_dir}")
         # ======================================================================
   
-    def shutdown_components(self):
-        """Hàm dọn dẹp khi người dùng rời khỏi màn hình này."""
-        logger.info("PRACTICE: Dọn dẹp tài nguyên...")
-        self.disconnect_camera()
-        
-        if self.bt_trigger:
-            self.bt_trigger.stop_listening()
-            
-        if self.processing_thread:
-            self.processing_thread.quit()
-            self.processing_thread.wait(2000) # Chờ tối đa 2 giây
-            
     def toggle_session(self):
         """Bắt đầu hoặc kết thúc một Lần bắn."""
         # TRƯỜНГ HỢP 1: BẮT ĐẦU LẦN BẮN MỚI

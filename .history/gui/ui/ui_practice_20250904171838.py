@@ -5,21 +5,17 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QFrame, QSizePolicy,
     QGraphicsDropShadowEffect, QGroupBox, QComboBox
 )
-import logging
 from PySide6.QtGui import QFont, QImage, QPixmap, QPainter, QColor, QIcon
 from PySide6.QtCore import Qt, QSize, QPoint, QByteArray, Signal
 
 # Giữ nguyên icon của bạn
 REFRESH_ICON_BASE64 = b"iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAANQSURBVFhHzZdrSFRhGMefr2w0C6kUStMvS6tQilBZEKVoIYWoKC2K6EKzCKJd2IqINuIiRIsgEhF0I4joRhZkIRZWQWkJq5A0SjNzi/NzzvmeM/fAnR/24MDB+Z7zPZ/5Z+Z5mIxxjPG/a4CgOoCgOoCgOrQpA611B9B5A+g8AfSeIFrrD6jzA5hRB/CtA/haB/C1A/g1sA7g1wDcM0A3AbQZQLcBtBtAtwH01o3WOgD0ngB6TwC9J4hWawDoPAG0HUCbAbQZoNkE0PYY2bVwA0D7A9T6AXQeQOf3g9Y6Cyg6gKADKDoIOgUouoAgs4/WOgcoOgA6D6DTANoMoNkE0H7AbQdoNwF0f5i1hgKFlFrpDdA5AI2L0GkAbQZoNkE0f4DNBtBuB0i1/gCMaFBrLSAo6QA6L0CnATQZoAkA7QZoN4B2E0C7PaDdA4j2+gMwogGt9QZQUgU0f4DNBtBmAC0D6DTAbgdoN4F2E2gfA9uHwPYhsD0I7M1P97sH0FqPAbTWEUDQCzSfgc4DaDMANgM0AagB2k2g/QzsD8D2YbA9COzNR/e1f3kQWB+M1loAKDoAOr+BpgM0AagB2k3A7A9gfwA2fwCbf8DmA2hzgDb/gM0/YANA9QcwtADtL8BqrQHUEoE2g7/Z/Qc0HUCbAbS/AGt/gNY/YH0I3kQh2P0J9P4A2gpAPf3x0g/QagNoM0CbAdoKQPc3sL8Ia91xZpQ3aL0C2gygzQCaAHSfgd4fQOsHYPsQWB/E6/UDMKIBrXUeUFIBtJlAG4CmA+g8gM4DaD+EdhNofwQ2HwKbh8DmoX35TjYFtNYTQNEFtP/A/gM0GaBJAO0maG0A7Z/B5h/Q5h/Q5gNobQDtJkAbQNuHwPYhsDkI3AaB7S/AWvsjWmsaoCgXtH4AmwHQagBNB2gyQBMg2gPQ3QHaLaCt/WB7ANgehLYHsS103x9gRBda6wCgqAroNIDsDUD3AdpdQLcLaLeAtgdQWz9YN4C17gIKKICi1f4DNDmATQdq3QG1/oDWH2C9HxBtdQJQVAE0HUC3AdotoNsF1BqA1g6gfQzsHwK7h8D2IfDtH2Bt/QCMaEBrPQUUf4DdA9DdA9pdQLcLqDUAa+0GaG0A7Z/B5h/Q5gNobQDtJkAbQNuHwPYhsDkI3AaB7S/AWvsdWmuOAGq9gQDtG0C7H6DNAA0AaDZBswGw/QE0HUC3AdpdQN0E1BqA1g6gfQzsHwK7h8D2IfDtH2Bt/QCMaEBrPQIU7RughwvQdADtL2CtPYBWH2CtH5hRB3CtD8yrD8A6gKADKDoAqx6Aqx6AqgcoOoCgOoCgOoCgj/NPGI4xjhV+AYwU9vTxx/IyAAAAAElFTSuQmCC"
 
-logger = logging.getLogger(__name__) 
-
 class VideoLabel(QLabel):
     clicked = Signal(QPoint)
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pixmap = QPixmap()
-        self.setScaledContents(False) # Để tự quản lý việc vẽ
         self.aspect_ratio = 4.0 / 3.0 # Tỉ lệ phổ biến hơn
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setAlignment(Qt.AlignCenter)
@@ -46,9 +42,7 @@ class VideoLabel(QLabel):
         self.update()
 
     def paintEvent(self, event):
- 
         if self._pixmap.isNull():
-            logger.debug("VideoLabel.paintEvent được gọi...")
             super().paintEvent(event)
             return
         scaled_pixmap = self._pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -314,23 +308,9 @@ class MainGui(QWidget):
         logger.debug("MainGui.display_frame được gọi với frame.")
         if frame_bgr is None: return
         self.current_frame = frame_bgr.copy()
-        # === SỬA LỖI QUAN TRỌNG: GỌI LỆNH HIỂN THỊ ẢNH ===
         pixmap = self._convert_cv_to_pixmap(frame_bgr)
-        self.camera_view_label.setPixmap(pixmap)
-        # ===============================================
         
     def clear_video_feed(self, message: str):
         """Xóa hình ảnh khỏi camera view và hiển thị một thông báo."""
         self.camera_view_label.setPixmap(QPixmap())
         self.camera_view_label.setText(message)
-        
-    def update_results(self, time_str, target_name, score, result_frame):
-        self.time_label.setText(f"Thời gian: {time_str}")
-        self.target_name_label.setText(f"Tên mục tiêu: {target_name}")
-        self.score_label.setText(f"Điểm số: {score}")
-        
-        pixmap = self._convert_cv_to_pixmap(result_frame)
-        if pixmap.isNull():
-            self.result_image_label.setText("Không có ảnh kết quả")
-        else:
-            self.result_image_label.setPixmap(pixmap)

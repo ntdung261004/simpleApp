@@ -67,8 +67,8 @@ class ApplicationController(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.main_menu)
 
     def show_practice_screen(self):
+        logger.info("MAIN: Yêu cầu chuyển sang màn hình luyện tập.")
         self.stacked_widget.setCurrentWidget(self.practice_screen)
-        # Bắt đầu camera khi chuyển đến màn hình tập luyện
         self.practice_screen.start_camera()
 
 if __name__ == '__main__':

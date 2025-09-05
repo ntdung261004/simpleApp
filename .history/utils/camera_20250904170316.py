@@ -21,8 +21,8 @@ class Camera:
         else:
             logger.info(f"CAMERA: Đã mở thành công camera index {self.index}.")
             # Vô hiệu hóa để đảm bảo tương thích, bạn có thể mở lại sau
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            # self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            # self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
     def isOpened(self) -> bool: # Sửa tên: is_opened -> isOpened
         return self.cap is not None and self.cap.isOpened()

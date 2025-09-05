@@ -314,23 +314,9 @@ class MainGui(QWidget):
         logger.debug("MainGui.display_frame được gọi với frame.")
         if frame_bgr is None: return
         self.current_frame = frame_bgr.copy()
-        # === SỬA LỖI QUAN TRỌNG: GỌI LỆNH HIỂN THỊ ẢNH ===
         pixmap = self._convert_cv_to_pixmap(frame_bgr)
-        self.camera_view_label.setPixmap(pixmap)
-        # ===============================================
         
     def clear_video_feed(self, message: str):
         """Xóa hình ảnh khỏi camera view và hiển thị một thông báo."""
         self.camera_view_label.setPixmap(QPixmap())
         self.camera_view_label.setText(message)
-        
-    def update_results(self, time_str, target_name, score, result_frame):
-        self.time_label.setText(f"Thời gian: {time_str}")
-        self.target_name_label.setText(f"Tên mục tiêu: {target_name}")
-        self.score_label.setText(f"Điểm số: {score}")
-        
-        pixmap = self._convert_cv_to_pixmap(result_frame)
-        if pixmap.isNull():
-            self.result_image_label.setText("Không có ảnh kết quả")
-        else:
-            self.result_image_label.setPixmap(pixmap)

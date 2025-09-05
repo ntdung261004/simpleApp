@@ -324,13 +324,4 @@ class MainGui(QWidget):
         self.camera_view_label.setPixmap(QPixmap())
         self.camera_view_label.setText(message)
         
-    def update_results(self, time_str, target_name, score, result_frame):
-        self.time_label.setText(f"Thời gian: {time_str}")
-        self.target_name_label.setText(f"Tên mục tiêu: {target_name}")
-        self.score_label.setText(f"Điểm số: {score}")
         
-        pixmap = self._convert_cv_to_pixmap(result_frame)
-        if pixmap.isNull():
-            self.result_image_label.setText("Không có ảnh kết quả")
-        else:
-            self.result_image_label.setPixmap(pixmap)

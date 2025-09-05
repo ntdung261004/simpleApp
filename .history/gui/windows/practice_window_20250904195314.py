@@ -90,7 +90,6 @@ class PracticeWindow(QMainWindow):
         if self.processing_thread:
             self.processing_thread.quit()
             self.processing_thread.wait(2000) # Chờ tối đa 2 giây
-            
     def toggle_session(self):
         """Bắt đầu hoặc kết thúc một Lần bắn."""
         # TRƯỜНГ HỢP 1: BẮT ĐẦU LẦN BẮN MỚI

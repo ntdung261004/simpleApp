@@ -24,73 +24,82 @@ class PracticeWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Phần Mềm Kiểm Tra Đường Ngắm Súng Tiểu Liên STV")
-        screen = QScreen.availableGeometry(QApplication.primaryScreen())
-        self.setGeometry(screen)
-        # Thêm biến trạng thái cho lần bắn
-        self.active_session_id = None
-        # --- Thuộc tính Giao diện & Camera ---
         self.gui = MainGui()
         self.setCentralWidget(self.gui)
+        
+        # --- KHAI BÁO BIẾN, KHÔNG KHỞI TẠO ---
         self.cam = None
-        self.final_size = (480, 640)
+        self.video_timer = QTimer(self)
+        self.db_manager = DatabaseManager()
+        
+        self.audio_manager = None
+        self.bt_trigger = None
+        self.worker = None
+        self.processing_thread = None
+        
+        self.active_session_id = None
+        self.save_dir = "captured_images"
+        self.is_initialized = False # Cờ để chỉ khởi tạo 1 lần
+        
+        self.final_size = (640, 480) # Kích thước tiêu chuẩn
         self.zoom_level = 1.0
         self.calibrated_center = None
-        
-        # --- Các Module phụ trợ ---
-        self.audio_manager = AudioManager()
-        self.video_timer = QTimer(self)
-        self.bt_trigger = BluetoothTrigger()
-        
-        self.db_manager = DatabaseManager()
 
-        # --- Thiết lập Worker bền bỉ ---
-        self.processing_thread = QThread()
+        self.setup_gui_connections()
+        
+    def initialize_components(self):
+        """Khởi tạo các thành phần nặng chỉ khi cần thiết."""
+        if self.is_initialized:
+            return
+            
+        logger.info("PRACTICE: Bắt đầu khởi tạo các thành phần nặng (Worker, Audio, Trigger)...")
+        
+        self.audio_manager = AudioManager()
+        self.bt_trigger = BluetoothTrigger()
         self.worker = ProcessingWorker()
+        self.processing_thread = QThread()
         self.worker.moveToThread(self.processing_thread)
 
-        # --- Kết nối Tín hiệu (Signals) & Tác vụ (Slots) ---
         self.request_processing.connect(self.worker.process_image)
         self.worker.finished.connect(self.on_processing_finished)
-        self.processing_thread.finished.connect(self.worker.deleteLater)
-        self.video_timer.timeout.connect(self.update_frame)
         self.bt_trigger.triggered.connect(self.capture_photo)
-        self.gui.calibrate_button.clicked.connect(self.toggle_calibration_mode)
-        self.gui.zoom_slider.valueChanged.connect(self.on_zoom_changed)
-        self.gui.refresh_button.clicked.connect(self.refresh_camera_connection)
-        self.gui.camera_view_label.clicked.connect(self.set_new_center)
-        # THÊM KẾT NỐI CHO CÁC NÚT MỚI
-        self.gui.session_button.clicked.connect(self.toggle_session)
         
-        # --- Khởi động ---
         self.processing_thread.start()
         self.bt_trigger.start_listening()
-        #self.refresh_camera_connection()
         
-        # Tải danh sách người dùng lên giao diện
-        self.populate_soldier_selector()
-        
-        # ======================================================================
-        # CHÚ THÍCH: THÊM VÀO LOGIC TẠO THƯ MỤC LƯU ẢNH
-        # ======================================================================
-        self.save_dir = "captured_images"
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
-            logger.info(f"Đã tạo thư mục lưu ảnh training: {self.save_dir}")
-        # ======================================================================
-  
+        
+        self.is_initialized = True
+        logger.info("PRACTICE: Đã khởi tạo xong các thành phần.")
+        
+    def start_practice(self):
+        """Được gọi từ main.py để bắt đầu màn hình luyện tập."""
+        logger.info("PRACTICE: Màn hình được kích hoạt.")
+        self.initialize_components()
+        self.populate_soldier_selector()
+        
+        if self.cam is None or not self.cam.isOpened():
+            self.refresh_camera_connection()
+            
     def shutdown_components(self):
-        """Hàm dọn dẹp khi người dùng rời khỏi màn hình này."""
+        """Dọn dẹp tài nguyên khi quay về menu."""
         logger.info("PRACTICE: Dọn dẹp tài nguyên...")
         self.disconnect_camera()
         
-        if self.bt_trigger:
-            self.bt_trigger.stop_listening()
-            
+        if self.bt_trigger: self.bt_trigger.stop_listening()
         if self.processing_thread:
             self.processing_thread.quit()
-            self.processing_thread.wait(2000) # Chờ tối đa 2 giây
-            
+            self.processing_thread.wait(2000)
+
+    def setup_gui_connections(self):
+        self.video_timer.timeout.connect(self.update_frame)
+        self.gui.refresh_button.clicked.connect(self.refresh_camera_connection)
+        self.gui.session_button.clicked.connect(self.toggle_session)
+        self.gui.calibrate_button.clicked.connect(self.toggle_calibration_mode)
+        self.gui.zoom_slider.valueChanged.connect(self.on_zoom_changed)
+        self.gui.camera_view_label.clicked.connect(self.set_new_center)
+  
     def toggle_session(self):
         """Bắt đầu hoặc kết thúc một Lần bắn."""
         # TRƯỜНГ HỢP 1: BẮT ĐẦU LẦN BẮN MỚI

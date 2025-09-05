@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
 
 # === BẮT BUỘC: THÊM CẤU HÌNH LOGGING TẠI ĐÂY ===
 logging.basicConfig(
-    level=logging.INFO,  # Hiển thị log từ mức DEBUG trở lên
+    level=logging.DEBUG,  # Hiển thị log từ mức DEBUG trở lên
     format='%(asctime)s [%(levelname)s] (%(name)s) - %(message)s',
     stream=sys.stdout,
 )
@@ -60,10 +60,6 @@ class ApplicationController(QMainWindow):
         # self.practice_screen.back_button.clicked.connect(self.show_main_menu)
 
     def show_main_menu(self):
-        # === THÊM VÀO: GỌI HÀM DỌN DẸP TRƯỚC KHI CHUYỂN MÀN HÌNH ===
-        if self.stacked_widget.currentWidget() == self.practice_screen:
-            self.practice_screen.shutdown_components()
-        # ==========================================================
         self.stacked_widget.setCurrentWidget(self.main_menu)
 
     def show_practice_screen(self):

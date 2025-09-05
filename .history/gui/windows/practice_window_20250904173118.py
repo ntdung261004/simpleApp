@@ -5,7 +5,6 @@ from PySide6.QtCore import QTimer, Signal, QThread, Slot, QPoint
 import cv2
 import numpy as np
 import os
-import time
 from datetime import datetime
 from PySide6.QtGui import QScreen, QPixmap, QFont
 
@@ -65,7 +64,7 @@ class PracticeWindow(QMainWindow):
         # --- Khởi động ---
         self.processing_thread.start()
         self.bt_trigger.start_listening()
-        #self.refresh_camera_connection()
+        self.refresh_camera_connection()
         
         # Tải danh sách người dùng lên giao diện
         self.populate_soldier_selector()
@@ -79,37 +78,26 @@ class PracticeWindow(QMainWindow):
             logger.info(f"Đã tạo thư mục lưu ảnh training: {self.save_dir}")
         # ======================================================================
   
-    def shutdown_components(self):
-        """Hàm dọn dẹp khi người dùng rời khỏi màn hình này."""
-        logger.info("PRACTICE: Dọn dẹp tài nguyên...")
-        self.disconnect_camera()
-        
-        if self.bt_trigger:
-            self.bt_trigger.stop_listening()
-            
-        if self.processing_thread:
-            self.processing_thread.quit()
-            self.processing_thread.wait(2000) # Chờ tối đa 2 giây
-            
     def toggle_session(self):
         """Bắt đầu hoặc kết thúc một Lần bắn."""
         # TRƯỜНГ HỢP 1: BẮT ĐẦU LẦN BẮN MỚI
         if self.active_session_id is None:
-            selected_soldier_index = self.gui.soldier_selector.currentIndex()
-            if selected_soldier_index < 0 or self.gui.soldier_selector.itemData(selected_soldier_index) is None:
+            selected_user_index = self.gui.soldier_selector.currentIndex()
+            if selected_user_index < 0 or self.gui.user_selector.itemData(selected_user_index) is None:
                 QMessageBox.warning(self, "Lỗi", "Vui lòng chọn một người bắn.")
                 return
-
-            soldier_data = self.gui.soldier_selector.itemData(selected_soldier_index)
-            soldier_id = soldier_data['id']
+            
+            user_data = self.gui.user_selector.itemData(selected_user_index)
+            user_id = user_data['id']
             
             # Tạo session mới trong DB và lưu lại ID
-            session_id = self.db_manager.create_session(soldier_id=soldier_id)
+            session_id = self.db_manager.create_session(user_id=user_id)
             if session_id:
                 self.active_session_id = session_id
                 # Cập nhật giao diện
                 self.gui.session_button.setText("Kết thúc Lần bắn")
-                self.gui.soldier_selector.setEnabled(False)
+                self.gui.user_selector.setEnabled(False)
+                self.gui.manage_users_button.setEnabled(False)
         
         # TRƯỜNG HỢP 2: KẾT THÚC LẦN BẮN HIỆN TẠI
         else:
@@ -177,44 +165,53 @@ class PracticeWindow(QMainWindow):
     
     def capture_photo(self):
         """
-        Lấy frame ảnh mới nhất từ camera, xử lý và gửi đi cho worker.
+        Lưu lại frame ảnh đã zoom (không có tâm ngắm) để training, sau đó gửi đi xử lý.
         """
-        if self.cam is None or not self.cam.isOpened():
-            logger.warning("Camera chưa kết nối, không thể chụp ảnh.")
+        # Kiểm tra xem có frame nào từ camera không
+        if self.cam is None or not self.cam.is_opened():
+            logger.warning("Camera chưa được kết nối hoặc đang đóng. Không thể chụp ảnh.")
             return
 
-        # === SỬA LỖI QUAN TRỌNG TẠI ĐÂY ===
-        # 1. Gọi đúng hàm self.cam.read()
-        # 2. Lấy cả hai giá trị ret và raw_frame
-        ret, raw_frame = self.cam.read()
-        
-        # 3. Kiểm tra xem việc đọc frame có thành công không
-        if not ret or raw_frame is None:
-            logger.error("Không thể lấy frame từ camera khi chụp.")
+        # Lấy frame mới nhất trực tiếp từ camera
+        # Việc này đảm bảo chúng ta có một frame hoàn toàn mới, chưa bị vẽ gì lên
+        raw_frame = self.cam.grab() 
+        if raw_frame is None:
+            logger.warning("Không thể lấy frame từ camera. Không thể chụp ảnh.")
             return
-        # ==================================
             
-        # Từ đây, raw_frame chắc chắn là một frame ảnh hợp lệ
+        # Xử lý frame thô: crop và resize về kích thước tiêu chuẩn
         processed_frame = self.crop_and_resize_frame(raw_frame)
 
+        # Phát âm thanh bắn
         self.audio_manager.play_sound('shot')
-        
-        # Logic lưu ảnh
+
+        # ======================================================================
+        # CHÚ THÍCH: LOGIC LƯU ẢNH CHÍNH XÁC HƠN
+        # ======================================================================
         try:
+            # 1. Áp dụng thông số zoom hiện tại trực tiếp lên processed_frame
+            #    để tạo ra ảnh cần lưu. Đảm bảo ảnh này không có dấu thập đỏ.
             image_to_save = self.apply_digital_zoom(processed_frame, self.zoom_level)
+
+            # 2. Tạo tên file duy nhất dựa trên ngày giờ và mili giây
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
             filename = f"shot_{timestamp}.png"
             save_path = os.path.join(self.save_dir, filename)
+
+            # 3. Lưu ảnh ra file
             cv2.imwrite(save_path, image_to_save)
-            logger.info(f"Đã lưu ảnh tại: {save_path}")
+            logger.info(f"Đã lưu ảnh để training tại: {save_path}")
 
-            # Gửi frame đi để xử lý
-            self.request_processing.emit(processed_frame, self.calibrated_center, save_path)
-            logger.info("GUI: Đã gửi yêu cầu xử lý cho worker.")
-            
         except Exception as e:
-            logger.error(f"Lỗi khi đang lưu ảnh: {e}")
+            logger.error(f"Lỗi khi đang lưu ảnh training: {e}")
+        # ======================================================================
 
+        # Gửi processed_frame đi để xử lý tính điểm như bình thường
+        # (Lưu ý: worker sẽ tự áp dụng zoom nếu cần cho việc hiển thị,
+        #         nhưng việc tính toán gốc là trên processed_frame này)
+        self.request_processing.emit(processed_frame, self.calibrated_center, save_path)
+        logger.info("GUI: Đã gửi yêu cầu xử lý cho worker.")
+            
     @Slot(dict)
     def on_processing_finished(self, result):
         """
@@ -344,40 +341,17 @@ class PracticeWindow(QMainWindow):
         self.zoom_level = value / 10.0
     
     def connect_camera(self, index):
-        """
-        Kết nối tới camera với cơ chế thử lại để tăng độ ổn định.
-        """
         self.disconnect_camera()
         self.cam = Camera(index)
         
-        if not self.cam.isOpened():
-            logger.error(f"PRACTICE: Không thể mở camera index {index} ở tầng driver.")
-            self.disconnect_camera(f"Lỗi: Không thể mở Camera {index}")
-            return
-
-        # === LOGIC MỚI: KIÊN NHẪN THỬ LẠI ===
-        is_frame_read_successfully = False
-        attempts = 0
-        max_attempts = 10 # Thử tối đa 10 lần
-        
-        while attempts < max_attempts:
-            ret, frame = self.cam.read()
-            if ret and frame is not None:
-                is_frame_read_successfully = True
-                break # Đọc thành công, thoát vòng lặp
-            
-            logger.debug(f"Đọc frame lần {attempts + 1} thất bại, thử lại sau 100ms...")
-            attempts += 1
-            time.sleep(0.1) # Chờ 100ms
-        # ===================================
-
-        if is_frame_read_successfully:
+        # Áp dụng lại logic kiểm tra kép: Phải mở được VÀ đọc được frame
+        if self.cam.isOpened() and self.cam.read()[0]:
             self.video_timer.start(30)
             logger.info(f"PRACTICE: Kết nối và xác thực thành công camera index {index}.")
         else:
-            logger.error(f"PRACTICE: Kết nối thất bại, không đọc được frame từ camera index {index} sau {max_attempts} lần thử.")
+            logger.error(f"PRACTICE: Kết nối thất bại, không đọc được frame từ camera index {index}.")
             self.disconnect_camera("Lỗi: Không thể lấy ảnh từ camera")
-            
+
     def disconnect_camera(self, message="Vui lòng kết nối camera"):
         self.video_timer.stop()
         if self.cam:
@@ -386,26 +360,16 @@ class PracticeWindow(QMainWindow):
         self.gui.clear_video_feed(message)
     
     def refresh_camera_connection(self):
-        """
-        Làm mới kết nối, chỉ kết nối với camera USB (index 0) khi có nhiều hơn 1 camera.
-        """
         logger.info("PRACTICE: Bắt đầu làm mới kết nối camera...")
         all_cameras = find_available_cameras()
         
-        # === LOGIC MỚI THEO YÊU CẦU CỦA BẠN ===
-        if len(all_cameras) > 1:
-            # Nếu có nhiều camera, kết nối với camera 0 (là camera USB)
-            target_index = 0
-            logger.info(f"Phát hiện {len(all_cameras)} camera. Kết nối với camera USB tại chỉ số {target_index}.")
+        # Logic mới: Đơn giản và hiệu quả
+        if all_cameras:
+            # Ưu tiên camera cuối cùng trong danh sách (thường là USB)
+            target_index = all_cameras[-1] 
+            logger.info(f"Tìm thấy {len(all_cameras)} camera. Ưu tiên kết nối tới index {target_index}.")
             self.connect_camera(target_index)
-            
-        elif len(all_cameras) == 1:
-            # Nếu chỉ có 1 camera, đó là camera laptop -> không kết nối
-            logger.warning("Chỉ phát hiện 1 camera (laptop). Yêu cầu kết nối camera USB.")
-            self.disconnect_camera(message="Vui lòng kết nối USB Camera và nhấn Làm mới")
-            
-        else: # len(all_cameras) == 0
-            # Nếu không có camera nào
+        else:
             logger.warning("Không tìm thấy camera nào.")
             self.disconnect_camera(message="Không tìm thấy camera")
     def start_camera(self):

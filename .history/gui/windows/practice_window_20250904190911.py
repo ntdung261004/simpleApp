@@ -5,7 +5,6 @@ from PySide6.QtCore import QTimer, Signal, QThread, Slot, QPoint
 import cv2
 import numpy as np
 import os
-import time
 from datetime import datetime
 from PySide6.QtGui import QScreen, QPixmap, QFont
 
@@ -65,7 +64,7 @@ class PracticeWindow(QMainWindow):
         # --- Khởi động ---
         self.processing_thread.start()
         self.bt_trigger.start_listening()
-        #self.refresh_camera_connection()
+        self.refresh_camera_connection()
         
         # Tải danh sách người dùng lên giao diện
         self.populate_soldier_selector()
@@ -79,18 +78,6 @@ class PracticeWindow(QMainWindow):
             logger.info(f"Đã tạo thư mục lưu ảnh training: {self.save_dir}")
         # ======================================================================
   
-    def shutdown_components(self):
-        """Hàm dọn dẹp khi người dùng rời khỏi màn hình này."""
-        logger.info("PRACTICE: Dọn dẹp tài nguyên...")
-        self.disconnect_camera()
-        
-        if self.bt_trigger:
-            self.bt_trigger.stop_listening()
-            
-        if self.processing_thread:
-            self.processing_thread.quit()
-            self.processing_thread.wait(2000) # Chờ tối đa 2 giây
-            
     def toggle_session(self):
         """Bắt đầu hoặc kết thúc một Lần bắn."""
         # TRƯỜНГ HỢP 1: BẮT ĐẦU LẦN BẮN MỚI
@@ -344,40 +331,17 @@ class PracticeWindow(QMainWindow):
         self.zoom_level = value / 10.0
     
     def connect_camera(self, index):
-        """
-        Kết nối tới camera với cơ chế thử lại để tăng độ ổn định.
-        """
         self.disconnect_camera()
         self.cam = Camera(index)
         
-        if not self.cam.isOpened():
-            logger.error(f"PRACTICE: Không thể mở camera index {index} ở tầng driver.")
-            self.disconnect_camera(f"Lỗi: Không thể mở Camera {index}")
-            return
-
-        # === LOGIC MỚI: KIÊN NHẪN THỬ LẠI ===
-        is_frame_read_successfully = False
-        attempts = 0
-        max_attempts = 10 # Thử tối đa 10 lần
-        
-        while attempts < max_attempts:
-            ret, frame = self.cam.read()
-            if ret and frame is not None:
-                is_frame_read_successfully = True
-                break # Đọc thành công, thoát vòng lặp
-            
-            logger.debug(f"Đọc frame lần {attempts + 1} thất bại, thử lại sau 100ms...")
-            attempts += 1
-            time.sleep(0.1) # Chờ 100ms
-        # ===================================
-
-        if is_frame_read_successfully:
+        # Áp dụng lại logic kiểm tra kép: Phải mở được VÀ đọc được frame
+        if self.cam.isOpened() and self.cam.read()[0]:
             self.video_timer.start(30)
             logger.info(f"PRACTICE: Kết nối và xác thực thành công camera index {index}.")
         else:
-            logger.error(f"PRACTICE: Kết nối thất bại, không đọc được frame từ camera index {index} sau {max_attempts} lần thử.")
+            logger.error(f"PRACTICE: Kết nối thất bại, không đọc được frame từ camera index {index}.")
             self.disconnect_camera("Lỗi: Không thể lấy ảnh từ camera")
-            
+
     def disconnect_camera(self, message="Vui lòng kết nối camera"):
         self.video_timer.stop()
         if self.cam:
