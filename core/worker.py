@@ -75,9 +75,13 @@ class ProcessingWorker(QObject):
         status, hit_info = check_object_center(detections, photo_frame, calibrated_center)
 
         result_data = None
+        # Biến này sẽ được dùng để lưu vào database.
+        target_detected_raw = None
         if status == "TRÚNG":
-            detected_name = hit_info.get('name')
             
+            detected_name = hit_info.get('name')
+            # Lưu lại tên gốc mà model nhận diện được
+            target_detected_raw = detected_name
             # --- THAY ĐỔI: Dùng tra cứu trực tiếp thay vì vòng lặp ---
             # Logic này nhanh và chính xác hơn.
             handler_info = self.hit_handlers.get(detected_name)
@@ -94,8 +98,26 @@ class ProcessingWorker(QObject):
             else:
                 logger.warning(f"Bắn trúng '{detected_name}' nhưng không có handler được định nghĩa.")
                 result_data = handle_miss(hit_info, photo_frame)
+                 # Nếu trúng nhưng không xử lý được, coi như trượt
+                target_detected_raw = "Trượt" 
         else:
             result_data = handle_miss(hit_info, photo_frame)
+            # Nếu trúng nhưng không xử lý được, coi như trượt
+            target_detected_raw = "Trượt" 
+
+        # --- BẮT ĐẦU THAY ĐỔI ---
+        # Nếu kết quả là bắn trúng (có điểm > 0), ghi đè ảnh đã xử lý
+        # vào file ảnh gốc đã lưu.
+        if result_data.get('score') is not None and result_data.get('score') > 0:
+            final_image_to_save = result_data.get('image')
+            if final_image_to_save is not None:
+                try:
+                    # Ghi đè ảnh đã xử lý vào đúng đường dẫn
+                    cv2.imwrite(image_path, final_image_to_save)
+                    logger.info(f"Worker: Đã ghi đè ảnh kết quả tại {image_path}")
+                except Exception as e:
+                    logger.error(f"Worker: Lỗi khi ghi đè ảnh kết quả: {e}")
+        # --- KẾT THÚC THAY ĐỔI ---
 
         # Đóng gói lại kết quả cuối cùng
         final_package = {
@@ -104,7 +126,8 @@ class ProcessingWorker(QObject):
             'score': result_data.get('score'),
             'result_frame': result_data.get('image'),
             'coords': result_data.get('coords'), # Key mới
-            'image_path': image_path             # Key mới
+            'image_path': image_path,           # Key mới
+            'target_detected_raw': target_detected_raw
         }
         
         self.finished.emit(final_package)

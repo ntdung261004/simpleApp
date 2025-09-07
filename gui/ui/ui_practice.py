@@ -96,6 +96,7 @@ class MainGui(QWidget):
             QPushButton:hover { background-color: #16a085; }
             QPushButton#danger { background-color: #e74c3c; }
             QPushButton#danger:hover { background-color: #c0392b; }
+            QPushButton#danger:disabled { background-color: #7f8c8d; }
 
             QSlider::groove:horizontal { 
                 border: 1px solid #2c3e50; 
@@ -119,8 +120,8 @@ class MainGui(QWidget):
                 font-size: 24px; 
             }
             #controlsPanel { 
-                background-color: #3a5064; 
-                border-top: 1px solid #4a6278; 
+                /*background-color: #3a5064;*/ 
+                /*border-top: 1px solid #4a6278;*/ 
                 padding: 10px; 
             }
             #zoomValueLabel { 
@@ -207,7 +208,7 @@ class MainGui(QWidget):
         self.camera_view_label.setText("Vui lòng kết nối camera")
         video_area_layout.addWidget(self.camera_view_label)
         main_layout.addWidget(video_area)
-        controls_panel = QFrame()
+        controls_panel = QWidget()
         controls_panel.setObjectName("controlsPanel")
         controls_layout = QHBoxLayout(controls_panel)
         controls_layout.setContentsMargins(15, 10, 15, 10)
@@ -253,7 +254,8 @@ class MainGui(QWidget):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(20)
-        layout.setAlignment(Qt.AlignTop)
+        # Bỏ AlignTop để layout tự co giãn
+        # layout.setAlignment(Qt.AlignTop) 
         
         session_box = QGroupBox("Quản lý Lần bắn")
         session_layout = QVBoxLayout(session_box)
@@ -267,17 +269,12 @@ class MainGui(QWidget):
 
         session_buttons_layout = QHBoxLayout()
         self.session_button = QPushButton("Bắt đầu")
-        
-        # --- BỔ SUNG: Nút quay về menu ---
         self.back_button = QPushButton("Về Menu")
-        self.back_button.setObjectName("danger") # Áp dụng style màu đỏ
-        # ---------------------------------
+        self.back_button.setObjectName("danger")
 
         session_buttons_layout.addWidget(self.session_button)
-        session_buttons_layout.addWidget(self.back_button) # Thêm nút vào layout
+        session_buttons_layout.addWidget(self.back_button)
         session_layout.addLayout(session_buttons_layout)
-        
-        layout.addWidget(session_box)
         
         result_box = QGroupBox("Kết quả mới nhất")
         result_layout = QVBoxLayout(result_box)
@@ -295,13 +292,19 @@ class MainGui(QWidget):
         result_layout.addWidget(result_image_title)
         
         self.result_image_label = VideoLabel()
-        self.result_image_label.setMinimumHeight(150) # Set chiều cao tối thiểu
+        self.result_image_label.setMinimumHeight(150)
 
-        result_layout.addWidget(self.result_image_label)
-        layout.addWidget(result_box)
+        # Thêm ảnh vào layout với stretch factor để nó chiếm nhiều không gian hơn
+        result_layout.addWidget(self.result_image_label, 1) 
+        
+        # === THAY ĐỔI CÁCH THÊM WIDGET VÀO LAYOUT CHÍNH ===
+        # Thêm session_box với stretch = 0 (chỉ chiếm không gian cần thiết)
+        layout.addWidget(session_box) 
+        # Thêm result_box với stretch = 1 (chiếm hết không gian còn lại)
+        layout.addWidget(result_box, 1) 
+        # ===============================================
 
-        return panel
-    
+        return panel   
     def _convert_cv_to_pixmap(self, cv_img) -> QPixmap:
         if cv_img is None: return QPixmap()
         rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)

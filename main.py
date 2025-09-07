@@ -74,8 +74,9 @@ class ApplicationController(QMainWindow):
         
     def show_manage_screen(self):
         """Hiển thị màn hình Quản lý và Thống kê."""
-        # Hiện tại chưa cần hành động đặc biệt gì khi mở màn hình này
-        # Sau này có thể thêm hàm load_data() ở đây
+        # Ra lệnh cho màn hình quản lý tải dữ liệu CHỈ KHI cần hiển thị
+        logging.info("Yêu cầu mở màn hình Quản lý, bắt đầu tải dữ liệu...")
+        self.manage_screen.load_soldiers() # Tải dữ liệu chiến sĩ
         self.stacked_widget.setCurrentWidget(self.manage_screen)
 
 if __name__ == '__main__':

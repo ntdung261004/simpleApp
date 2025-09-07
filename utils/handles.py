@@ -37,8 +37,14 @@ def handle_hit_bia_so_4(hit_info, original_frame, original_img, original_img_alt
         score = calculate_score_bia4(transformed_point, original_img, mask)
         # Vẽ điểm ước tính bằng màu vàng để phân biệt
         cv2.drawMarker(processed_image, transformed_point, (0, 255, 255), cv2.MARKER_CROSS, 40, 3)
-
-    return {'target': 'Bia số 4', 'score': score, 'image': processed_image, 'coords': transformed_point}
+    target_name = "Bia số 4"
+    if score == 0:
+        target_name = "Trượt"
+        
+    return {'target': target_name,
+            'score': score, 
+            'image': processed_image, 
+            'coords': transformed_point}
 
 def handle_hit_bia_so_7(hit_info, original_frame, original_img, original_img_alt, mask):
     # (Logic tương tự được áp dụng cho bia 7)
@@ -68,7 +74,14 @@ def handle_hit_bia_so_7(hit_info, original_frame, original_img, original_img_alt
         score = calculate_score_bia7(transformed_point, original_img, mask)
         cv2.drawMarker(processed_image, transformed_point, (0, 255, 255), cv2.MARKER_CROSS, 40, 3)
             
-    return {'target': 'Bia số 7', 'score': score, 'image': processed_image, 'coords': transformed_point}
+    target_name = "Bia số 7"
+    if score == 0:
+        target_name = "Trượt"
+        
+    return {'target': target_name,
+            'score': score, 
+            'image': processed_image, 
+            'coords': transformed_point}
     
 def handle_hit_bia_so_8(hit_info, original_frame, original_img, original_img_alt, mask):
     # (Logic tương tự được áp dụng cho bia 8)
@@ -98,7 +111,14 @@ def handle_hit_bia_so_8(hit_info, original_frame, original_img, original_img_alt
         score = calculate_score_bia8(transformed_point, original_img, mask)
         cv2.drawMarker(processed_image, transformed_point, (0, 255, 255), cv2.MARKER_CROSS, 40, 3)
 
-    return {'target': 'Bia số 8', 'score': score, 'image': processed_image, 'coords': transformed_point}
+    target_name = "Bia số 8"
+    if score == 0:
+        target_name = "Trượt"
+        
+    return {'target': target_name,
+            'score': score, 
+            'image': processed_image, 
+            'coords': transformed_point}
     
 def handle_miss(hit_info, original_frame):
     processed_image = original_frame.copy()

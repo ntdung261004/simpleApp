@@ -115,6 +115,47 @@ class DatabaseManager:
             logger.error(f"Lỗi khi tạo Phiên bắn: {e}")
             return None
 
+    def end_session(self, session_id: int):
+        """
+        Hàm này được gọi khi một phiên tập kết thúc.
+        Hiện tại chỉ ghi log, không thay đổi CSDL.
+        """
+        if not session_id:
+            return
+        logger.info(f"Hàm end_session được gọi cho phiên ID: {session_id}. Phiên tập đã hoàn tất.")
+
+    def get_shot_count_for_session(self, session_id: int) -> int:
+        """Đếm và trả về tổng số phát bắn trong một phiên."""
+        try:
+            sql = "SELECT COUNT(id) FROM shots WHERE session_id = ?"
+            self.cursor.execute(sql, (session_id,))
+            count = self.cursor.fetchone()[0]
+            return count
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi đếm số phát bắn cho phiên {session_id}: {e}")
+            return 0
+
+    def update_session_name(self, session_id: int, name: str):
+        """Cập nhật tên/ghi chú cho một phiên bắn."""
+        try:
+            sql = "UPDATE sessions SET exercise_name = ? WHERE id = ?"
+            self.cursor.execute(sql, (name, session_id))
+            self.conn.commit()
+            logger.info(f"Đã cập nhật tên cho phiên {session_id} thành '{name}'")
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi cập nhật tên phiên {session_id}: {e}")
+
+    def delete_session(self, session_id: int):
+        """Xóa một phiên bắn khỏi cơ sở dữ liệu."""
+        try:
+            # Bảng shots đã có ON DELETE CASCADE nên các phát bắn sẽ tự xóa theo
+            sql = "DELETE FROM sessions WHERE id = ?"
+            self.cursor.execute(sql, (session_id,))
+            self.conn.commit()
+            logger.info(f"Đã xóa thành công phiên bắn ID: {session_id}")
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi xóa phiên {session_id}: {e}")
+
     def add_shot(self, session_id: int, shot_number: int, target_detected: str, 
                  score: int, coords: tuple | None, image_path: str):
         """Lưu thông tin một phát bắn vào database."""
@@ -134,6 +175,19 @@ class DatabaseManager:
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi lưu phát bắn: {e}")
 
+    def get_session_by_id(self, session_id: int) -> dict | None:
+        """Lấy thông tin chi tiết của một phiên bắn cụ thể bằng ID."""
+        try:
+            sql = "SELECT * FROM sessions WHERE id = ?"
+            self.cursor.execute(sql, (session_id,))
+            session_data = self.cursor.fetchone()
+            if session_data:
+                # Chuyển đổi tuple thành dictionary để dễ sử dụng
+                return dict(zip([col[0] for col in self.cursor.description], session_data))
+            return None
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi lấy thông tin phiên bắn ID {session_id}: {e}")
+            return None
     # ======================================================================
     # CÁC HÀM TRUY XUẤT DỮ LIỆU ĐỂ THỐNG KÊ
     # ======================================================================
@@ -158,6 +212,79 @@ class DatabaseManager:
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi lấy chi tiết các phát bắn: {e}")
             return []
+
+# Thêm 4 hàm này vào bên trong class DatabaseManager của file core/database.py
+
+    def update_soldier(self, soldier_id: int, name: str, rank: str, position: str, unit: str):
+        """Cập nhật thông tin cho một chiến sĩ."""
+        try:
+            sql = """
+                UPDATE soldiers 
+                SET name = ?, rank = ?, position = ?, unit = ? 
+                WHERE id = ?
+            """
+            self.cursor.execute(sql, (name, rank, position, unit, soldier_id))
+            self.conn.commit()
+            logger.info(f"Đã cập nhật thông tin cho chiến sĩ ID: {soldier_id}")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi cập nhật chiến sĩ: {e}")
+            return False
+
+    def delete_soldier(self, soldier_id: int):
+        """Xóa một chiến sĩ và tất cả dữ liệu liên quan (phiên, phát bắn)."""
+        try:
+            # PRAGMA foreign_keys = ON; đã được bật, CSDL sẽ tự xóa các phiên và phát bắn liên quan
+            self.cursor.execute("DELETE FROM soldiers WHERE id = ?", (soldier_id,))
+            self.conn.commit()
+            logger.info(f"Đã xóa chiến sĩ ID: {soldier_id} và tất cả dữ liệu liên quan.")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi xóa chiến sĩ: {e}")
+            return False
+
+    def update_session_name(self, session_id: int, new_name: str):
+        """Cập nhật (đổi tên) cho một phiên tập."""
+        try:
+            sql = "UPDATE sessions SET exercise_name = ? WHERE id = ?"
+            self.cursor.execute(sql, (new_name, session_id))
+            self.conn.commit()
+            logger.info(f"Đã đổi tên phiên tập ID: {session_id} thành '{new_name}'")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi đổi tên phiên tập: {e}")
+            return False
+
+    def delete_session(self, session_id: int):
+        """Xóa một phiên tập và các phát bắn liên quan."""
+        try:
+            # CSDL sẽ tự xóa các phát bắn liên quan do có foreign key
+            self.cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            self.conn.commit()
+            logger.info(f"Đã xóa phiên tập ID: {session_id} và các phát bắn liên quan.")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi xóa phiên tập: {e}")
+            return False
+
+    def session_name_exists(self, name: str, exclude_session_id: int = None) -> bool:
+        """
+        Kiểm tra xem tên phiên tập đã tồn tại hay chưa.
+        Có thể loại trừ một ID phiên cụ thể (hữu ích khi đổi tên).
+        """
+        try:
+            if exclude_session_id:
+                sql = "SELECT 1 FROM sessions WHERE exercise_name = ? AND id != ?"
+                params = (name, exclude_session_id)
+            else:
+                sql = "SELECT 1 FROM sessions WHERE exercise_name = ?"
+                params = (name,)
+            
+            self.cursor.execute(sql, params)
+            return self.cursor.fetchone() is not None
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi kiểm tra tên phiên: {e}")
+            return True # Mặc định là có tồn tại để tránh lỗi
 
     def close(self):
         """Đóng kết nối database một cách an toàn."""

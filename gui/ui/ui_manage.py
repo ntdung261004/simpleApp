@@ -1,8 +1,8 @@
 # gui/ui/ui_manage.py
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QListWidget, QGroupBox, QFormLayout, QTableWidget, QTableWidgetItem,
-    QFrame, QSizePolicy
+    QGroupBox, QFormLayout, QTableWidget, QTableWidgetItem,
+    QFrame, QSizePolicy, QAbstractItemView, QHeaderView , QListWidget, QStackedWidget # Thêm import cần thiết
 )
 from PySide6.QtGui import QFont, QPixmap, QColor
 from PySide6.QtCore import Qt
@@ -148,8 +148,27 @@ class ManageGui(QWidget):
 
         soldier_box = QGroupBox("Danh sách Chiến sĩ")
         soldier_layout = QVBoxLayout(soldier_box)
-        self.soldier_list = QListWidget()
-        soldier_layout.addWidget(self.soldier_list)
+
+        # Tạo bảng
+        self.soldier_table = QTableWidget()
+        self.soldier_table.setColumnCount(4)
+        self.soldier_table.setHorizontalHeaderLabels(["Họ và Tên", "CB", "CV", "ĐV"])
+        self.soldier_table.verticalHeader().setVisible(False)
+        self.soldier_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.soldier_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.soldier_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        
+        # === THAY ĐỔI CÁCH CO GIÃN CỘT TẠI ĐÂY ===
+        header = self.soldier_table.horizontalHeader()
+        # Cột 0 (Họ và Tên) sẽ co giãn lấp đầy không gian
+        header.setSectionResizeMode(0, QHeaderView.Stretch) 
+        # Các cột còn lại sẽ tự điều chỉnh độ rộng theo nội dung
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        # ==========================================
+
+        soldier_layout.addWidget(self.soldier_table)
         layout.addWidget(soldier_box, 1)
 
         buttons_layout = QHBoxLayout()
@@ -165,75 +184,236 @@ class ManageGui(QWidget):
     def _create_center_column(self) -> QWidget:
         panel = self._create_styled_panel()
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
+        layout.setContentsMargins(0,0,0,0) # QStackedWidget sẽ quản lý margin
 
-        # --- Thông tin tổng thể ---
-        overall_box = QGroupBox("Phân tích Phiên bắn được chọn")
-        overall_layout = QFormLayout(overall_box)
-        self.total_label = QLabel("N/A")
-        self.avg_label = QLabel("N/A")
-        self.time_label = QLabel("N/A")
-        overall_layout.addRow("Tổng phát bắn:", self.total_label)
-        overall_layout.addRow("Điểm trung bình:", self.avg_label)
-        overall_layout.addRow("Thời gian:", self.time_label)
-        layout.addWidget(overall_box, 1)  # chiếm nhiều không gian hơn
+        # === THAY ĐỔI: SỬ DỤNG QStackedWidget ===
+        self.center_stack = QStackedWidget()
+        layout.addWidget(self.center_stack)
 
-        # --- Chi tiết từng phát ---
+        # --- "Trang" 1: Giao diện hiển thị dữ liệu ---
+        data_widget = QWidget()
+        data_layout = QVBoxLayout(data_widget)
+        data_layout.setContentsMargins(15, 15, 15, 15)
+        data_layout.setSpacing(15)
+
+        # --- BẮT ĐẦU THAY ĐỔI ---
+        analysis_box = QGroupBox("Phân tích Phiên bắn được chọn")
+        analysis_layout = QVBoxLayout(analysis_box)
+
+        # 1. Dòng tóm tắt tổng quan, căn giữa
+        self.analysis_summary_label = QLabel("Tổng phát bắn: --  |  Tỷ lệ trúng: --  |  Điểm trung bình: --")
+        self.analysis_summary_label.setFont(QFont("Segoe UI", 10))
+        self.analysis_summary_label.setAlignment(Qt.AlignCenter)
+        analysis_layout.addWidget(self.analysis_summary_label)
+
+        # 2. Bảng thống kê cố định 3 dòng theo từng loại bia
+        self.analysis_target_table = QTableWidget(3, 4) # Luôn có 3 dòng, 4 cột
+        self.analysis_target_table.setHorizontalHeaderLabels(["Loại bia", "Số phát trúng", "Tổng điểm", "Độ chụm"])
+        self.analysis_target_table.verticalHeader().setVisible(False)
+        self.analysis_target_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.analysis_target_table.setFocusPolicy(Qt.NoFocus)
+        self.analysis_target_table.setSelectionMode(QAbstractItemView.NoSelection)
+
+        # Tỉ lệ 4 cột bằng nhau
+        header = self.analysis_target_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+
+        # Điền tên bia và tạo item trống, căn giữa sẵn
+        target_names = ["Bia số 4", "Bia số 7", "Bia số 8"]
+        # Lưu trữ các widget động để cập nhật từ file logic
+        self.analysis_widgets = {}
+        self.analysis_view_buttons = {}
+        for row, name in enumerate(target_names):
+            # Cột 0: Tên bia
+            name_item = QTableWidgetItem(name)
+            name_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
+            name_item.setTextAlignment(Qt.AlignCenter)
+            self.analysis_target_table.setItem(row, 0, name_item)
+            
+            # Cột 1 và 2: Số lần trúng và Tổng điểm
+            for col in range(1, 3): 
+                item = QTableWidgetItem("--")
+                item.setTextAlignment(Qt.AlignCenter)
+                self.analysis_target_table.setItem(row, col, item)
+
+            # Cột 3: Nút "Xem" độ chụm
+            view_button = QPushButton("Xem")
+            view_button.setStyleSheet("padding: 4px 8px; font-size: 9px;")
+            # Lưu lại nút bấm và ánh xạ với tên bia gốc để dùng sau
+            target_key = ['bia_so_4', 'bia_so_7_8', 'bia_so_8'][row]
+            self.analysis_view_buttons[target_key] = view_button
+            
+            # Tạo một widget chứa nút để căn giữa trong ô
+            cell_widget = QWidget()
+            cell_layout = QHBoxLayout(cell_widget)
+            cell_layout.setContentsMargins(0,0,0,0)
+            cell_layout.setAlignment(Qt.AlignCenter)
+            cell_layout.addWidget(view_button)
+            self.analysis_target_table.setCellWidget(row, 3, cell_widget)
+
+        # Điều chỉnh chiều cao của bảng cho gọn gàng
+        self.analysis_target_table.setFixedHeight(
+            header.height() + self.analysis_target_table.rowHeight(0) * 3 + 4
+        )
+        
+        analysis_layout.addWidget(self.analysis_target_table)
+        
+        data_layout.addWidget(analysis_box, 1) # Giữ nguyên tỉ lệ 1
+        # --- KẾT THÚC THAY ĐỔI ---
+
         detail_box = QGroupBox("Thông tin chi tiết từng phát bắn")
         detail_layout = QVBoxLayout(detail_box)
 
-        # Bảng chi tiết có giới hạn chiều cao (5–7 dòng)
+        # === THAY ĐỔI CÁCH TẠO VÀ CẤU HÌNH BẢNG TẠI ĐÂY ===
         self.shot_table = QTableWidget(0, 4)
-        self.shot_table.setHorizontalHeaderLabels(["Lần", "Thời gian", "Mục tiêu", "Điểm"])
-        self.shot_table.horizontalHeader().setStretchLastSection(True)
+        # 1. Đổi tên cột "Lần" thành "Phát"
+        self.shot_table.setHorizontalHeaderLabels(["Phát", "Thời gian", "Mục tiêu", "Điểm"])
+        # 2. Ẩn cột số thứ tự hàng mặc định
+        self.shot_table.verticalHeader().setVisible(False)
+        # 4. Ngăn sửa và cài đặt chế độ chọn hàng
+        self.shot_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.shot_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.shot_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        # Đặt chiều cao tối đa cho bảng (mỗi dòng ~30px, 7 dòng ~210px)
         self.shot_table.setMaximumHeight(210)
-        self.shot_table.setMinimumHeight(150)  # ít nhất 5 dòng
+        self.shot_table.setMinimumHeight(150)
+
+        # 3. Tinh chỉnh bố cục cột cho hài hòa
+        header = self.shot_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents) # Cột "Phát" vừa đủ
+        header.setSectionResizeMode(1, QHeaderView.Stretch)          # Cột "Thời gian" co giãn
+        header.setSectionResizeMode(2, QHeaderView.Stretch)          # Cột "Mục tiêu" co giãn
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents) # Cột "Điểm" vừa đủ
+        # =======================================================
 
         detail_layout.addWidget(self.shot_table, 1)
-
-        # --- Ảnh kết quả ---
+        
         self.result_image = QLabel("Ảnh kết quả")
         self.result_image.setObjectName("resultImage")
         self.result_image.setAlignment(Qt.AlignCenter)
         self.result_image.setMinimumHeight(250)
         self.result_image.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.result_image.setScaledContents(False)  # Giữ tỉ lệ ảnh
+        self.result_image.setScaledContents(False)
         detail_layout.addWidget(self.result_image, 3)
-
-        # --- Điều hướng ---
         nav_layout = QHBoxLayout()
         self.prev_shot_button = QPushButton("◀ Trước")
-
         self.shot_index_label = QLabel("Phát 0/0")
         self.shot_index_label.setAlignment(Qt.AlignCenter)
         self.shot_index_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-
         self.next_shot_button = QPushButton("Sau ▶")
-
         nav_layout.addWidget(self.prev_shot_button)
         nav_layout.addWidget(self.shot_index_label, 1)
         nav_layout.addWidget(self.next_shot_button)
-
         detail_layout.addLayout(nav_layout)
+        data_layout.addWidget(detail_box, 4)
 
-        layout.addWidget(detail_box, 4)  # detail chiếm nhiều hơn để ảnh rộng
+        # --- "Trang" 2: Giao diện hiển thị thông báo ---
+        message_widget = QWidget()
+        message_layout = QVBoxLayout(message_widget)
+        self.center_message_label = QLabel("...")
+        self.center_message_label.setAlignment(Qt.AlignCenter)
+        self.center_message_label.setStyleSheet("font-size: 16px; color: #95a5a6;")
+        message_layout.addWidget(self.center_message_label)
+        
+        # Thêm các trang vào Stack
+        self.center_stack.addWidget(data_widget) # Index 0
+        self.center_stack.addWidget(message_widget) # Index 1
 
         return panel
 
     def _create_right_column(self) -> QWidget:
         panel = self._create_styled_panel()
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
+        layout.setContentsMargins(0,0,0,0)
+
+        # === THAY ĐỔI: SỬ DỤNG QStackedWidget ===
+        self.right_stack = QStackedWidget()
+        layout.addWidget(self.right_stack)
+        
+        # --- "Trang" 1: Giao diện hiển thị dữ liệu ---
+        data_widget = QWidget()
+        data_layout = QVBoxLayout(data_widget)
+        data_layout.setContentsMargins(15, 15, 15, 15)
+        data_layout.setSpacing(15)
 
         history_box = QGroupBox("Lịch sử bắn của Chiến sĩ được chọn")
         history_layout = QVBoxLayout(history_box)
         self.history_list = QListWidget()
         history_layout.addWidget(self.history_list)
-        layout.addWidget(history_box)
+        data_layout.addWidget(history_box)
+
+        # --- "Trang" 2: Giao diện hiển thị thông báo ---
+        message_widget = QWidget()
+        message_layout = QVBoxLayout(message_widget)
+        self.right_message_label = QLabel("...")
+        self.right_message_label.setAlignment(Qt.AlignCenter)
+        self.right_message_label.setStyleSheet("font-size: 16px; color: #95a5a6;")
+        message_layout.addWidget(self.right_message_label)
+
+        # Thêm các trang vào Stack
+        self.right_stack.addWidget(data_widget) # Index 0
+        self.right_stack.addWidget(message_widget) # Index 1
 
         return panel
+    
+    def _create_overview_panel(self) -> QGroupBox:
+        """Tạo và trả về GBox chứa bảng tổng quan phiên tập."""
+        overview_group = QGroupBox("Tổng quan Phiên tập")
+        overview_group.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        
+        layout = QVBoxLayout(overview_group)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # Tạo bảng
+        self.overview_table = QTableWidget(4, 2)
+        layout.addWidget(self.overview_table)
+        
+        # --- Thiết lập cho bảng ---
+        self.overview_table.setVerticalHeaderVisible(False) # Ẩn header dọc
+        self.overview_table.setHorizontalHeaderLabels(["Thông số", "Giá trị"])
+        self.overview_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.overview_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.overview_table.setFocusPolicy(Qt.NoFocus) # Bỏ focus
+        self.overview_table.setSelectionMode(QAbstractItemView.NoSelection) # Cấm chọn
+
+        # --- Thêm các dòng dữ liệu tĩnh (cột 1) ---
+        stat_titles = ["Tổng số phát", "Điểm trung bình", "Điểm cao nhất", "Độ chụm"]
+        for row, title in enumerate(stat_titles):
+            item = QTableWidgetItem(title)
+            item.setFont(QFont("Segoe UI", 10, QFont.Bold))
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable) # Cấm chỉnh sửa
+            self.overview_table.setItem(row, 0, item)
+
+        # --- Tạo các widget cho dữ liệu động (cột 2) ---
+        # Dòng "Tổng số phát"
+        self.overview_total_shots_item = QTableWidgetItem("--")
+        self.overview_table.setItem(0, 1, self.overview_total_shots_item)
+
+        # Dòng "Điểm trung bình"
+        self.overview_avg_score_item = QTableWidgetItem("--")
+        self.overview_table.setItem(1, 1, self.overview_avg_score_item)
+
+        # Dòng "Điểm cao nhất"
+        self.overview_max_score_item = QTableWidgetItem("--")
+        self.overview_table.setItem(2, 1, self.overview_max_score_item)
+
+        # Dòng "Độ chụm" - Kết hợp Label và Button
+        grouping_cell_widget = QWidget()
+        grouping_layout = QHBoxLayout(grouping_cell_widget)
+        grouping_layout.setContentsMargins(5, 0, 0, 0)
+        
+        self.overview_grouping_label = QLabel("--") # Label để cập nhật giá trị
+        self.overview_view_grouping_button = QPushButton("Xem")
+        self.overview_view_grouping_button.setFixedSize(50, 28)
+        
+        grouping_layout.addWidget(self.overview_grouping_label)
+        grouping_layout.addStretch()
+        grouping_layout.addWidget(self.overview_view_grouping_button)
+        
+        self.overview_table.setCellWidget(3, 1, grouping_cell_widget)
+        
+        # Căn giữa cho các item ở cột giá trị
+        for row in range(3):
+             if self.overview_table.item(row, 1):
+                self.overview_table.item(row, 1).setTextAlignment(Qt.AlignCenter)
+
+        return overview_group

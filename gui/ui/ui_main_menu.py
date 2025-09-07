@@ -32,7 +32,7 @@ class Ui_MainMenuWindow(object):
         font.setPointSize(28)
         font.setBold(True)
         self.title_label.setFont(font)
-        self.title_label.setText("PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM\nSÚNG TIỂU LIÊN STV")
+        self.title_label.setText("PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM\nSÚNG TIỂU LIÊN")
         self.title_label.setStyleSheet("color: #ecf0f1;")
         self.verticalLayout.addWidget(self.title_label)
 
@@ -70,12 +70,6 @@ class Ui_MainMenuWindow(object):
         self.stats_button.setMinimumSize(QSize(300, 75))
         self.stats_button.setStyleSheet(button_style)
         self.verticalLayout.addWidget(self.stats_button, 0, Qt.AlignHCenter)
-
-        # Guide Button
-        self.guide_button = QPushButton("TRỢ GIÚP - HƯỚNG DẪN", self.centralwidget)
-        self.guide_button.setMinimumSize(QSize(300, 75))
-        self.guide_button.setStyleSheet(button_style)
-        self.verticalLayout.addWidget(self.guide_button, 0, Qt.AlignHCenter)
 
         # --- XÓA DÒNG SPACER Ở ĐÂY ---
         # spacerItem_bottom = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
