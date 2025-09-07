@@ -83,6 +83,11 @@ class MainGui(QWidget):
                 font-size: 16px; 
                 font-weight: bold; 
                 color: #ecf0f1; 
+                /* --- THAY ĐỔI: Thêm padding cho label tiêu đề --- */
+                padding: 8px 15px; /* Padding trên/dưới 8px, trái/phải 15px */
+                background-color: #415a72; /* Màu nền cho tiêu đề */
+                border-radius: 6px; /* Bo tròn góc */
+                /* --- KẾT THÚC THAY ĐỔI --- */
             }
             QPushButton {
                 background-color: #1abc9c; 
@@ -191,60 +196,77 @@ class MainGui(QWidget):
         return panel
 
     # --- Các hàm tạo widget còn lại giữ nguyên cấu trúc, chỉ thay đổi style ---
+# Thay thế TOÀN BỘ hàm này trong file ui_practice.py
+
+# Thay thế TOÀN BỘ hàm này trong file ui_practice.py
+
     def _create_camera_column(self) -> QWidget:
         panel = self._create_styled_panel()
         main_layout = QVBoxLayout(panel)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        video_area = QWidget()
-        video_area_layout = QVBoxLayout(video_area)
-        video_area_layout.setContentsMargins(20, 20, 20, 15)
-        video_area_layout.setSpacing(15)
-        title = QLabel("Đường ngắm")
-        title.setProperty("class", "panel-title")
-        video_area_layout.addWidget(title)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(15) # Tăng khoảng cách giữa các phần tử dọc
 
+        # 1. Phần tiêu đề (đã được tinh chỉnh)
+        title_widget = QWidget() # Dùng QWidget để gói QLabel và kiểm soát layout
+        title_layout = QHBoxLayout(title_widget)
+        title_layout.setContentsMargins(0, 0, 0, 0) # Không padding cho layout này
+        title_layout.setSpacing(0)
+
+        title = QLabel("Đường ngắm trực tiếp")
+        title.setProperty("class", "panel-title")
+        title.setAlignment(Qt.AlignCenter) # Căn giữa tiêu đề
+        
+        # Để tiêu đề không quá dài, chỉ chiếm đủ không gian cần thiết
+        title_layout.addStretch(1) # Đẩy tiêu đề vào giữa
+        title_layout.addWidget(title)
+        title_layout.addStretch(1) # Đẩy tiêu đề vào giữa
+        
+        main_layout.addWidget(title_widget) # Thêm widget chứa tiêu đề vào layout chính
+        
+        # 2. Khung hiển thị camera (giữ nguyên)
         self.camera_view_label = VideoLabel()
         self.camera_view_label.setText("Vui lòng kết nối camera")
-        video_area_layout.addWidget(self.camera_view_label)
-        main_layout.addWidget(video_area)
+        main_layout.addWidget(self.camera_view_label, 1)
+
+        # 3. Khung điều khiển ở dưới (đã được tinh chỉnh padding)
         controls_panel = QWidget()
-        controls_panel.setObjectName("controlsPanel")
         controls_layout = QHBoxLayout(controls_panel)
-        controls_layout.setContentsMargins(15, 10, 15, 10)
+        # --- THAY ĐỔI: Tăng padding trái/phải cho controls_layout ---
+        controls_layout.setContentsMargins(10, 5, 10, 0) # Padding 10px ở trái/phải
+        # --- KẾT THÚC THAY ĐỔI ---
         controls_layout.setSpacing(10)
+
         self.refresh_button = QPushButton("Làm mới")
         self.refresh_button.setObjectName("refreshButton")
         icon_data = QByteArray.fromBase64(REFRESH_ICON_BASE64)
         pixmap = QPixmap()
         pixmap.loadFromData(icon_data)
-        icon = QIcon(pixmap)
-        self.refresh_button.setIcon(icon)
-        
+        self.refresh_button.setIcon(QIcon(pixmap))
         controls_layout.addWidget(self.refresh_button)
-        separator = QFrame()
-        separator.setFrameShape(QFrame.VLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        controls_layout.addWidget(separator)
+        
+        controls_layout.addStretch(1)
+
         zoom_text_label = QLabel("Khoảng cách:")
         self.zoom_slider = QSlider(Qt.Horizontal)
         self.zoom_slider.setMinimum(10)
         self.zoom_slider.setMaximum(50)
         self.zoom_slider.setValue(10)
-        
         self.zoom_value_label = QLabel("1.0x")
         self.zoom_value_label.setObjectName("zoomValueLabel")
-        controls_layout.addWidget(zoom_text_label)
-        controls_layout.addWidget(self.zoom_slider)
-        controls_layout.addWidget(self.zoom_value_label)
-        controls_layout.addStretch()
-        self.calibrate_button = QPushButton("Hiệu chỉnh tâm")
         
-        controls_layout.addWidget(self.calibrate_button)
-        main_layout.addWidget(controls_panel)
-        self.zoom_slider.valueChanged.connect(self._update_zoom_value_label)
-        return panel
+        controls_layout.addWidget(zoom_text_label)
+        controls_layout.addWidget(self.zoom_slider, 2)
+        controls_layout.addWidget(self.zoom_value_label)
+        
+        controls_layout.addStretch(1)
 
+        self.calibrate_button = QPushButton("Hiệu chỉnh tâm")
+        controls_layout.addWidget(self.calibrate_button)
+        
+        main_layout.addWidget(controls_panel)
+
+        self.zoom_slider.valueChanged.connect(self._update_zoom_value_label)
+        return panel  
     def _update_zoom_value_label(self, value):
         zoom_factor = value / 10.0
         self.zoom_value_label.setText(f"{zoom_factor:.1f}x")

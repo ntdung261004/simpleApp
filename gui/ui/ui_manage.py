@@ -184,7 +184,9 @@ class ManageGui(QWidget):
     def _create_center_column(self) -> QWidget:
         panel = self._create_styled_panel()
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0,0,0,0) # QStackedWidget sẽ quản lý margin
+        layout.setContentsMargins(15, 15, 15, 15)
+        
+        #layout.setContentsMargins(0,0,0,0) # QStackedWidget sẽ quản lý margin
 
         # === THAY ĐỔI: SỬ DỤNG QStackedWidget ===
         self.center_stack = QStackedWidget()
@@ -323,7 +325,9 @@ class ManageGui(QWidget):
     def _create_right_column(self) -> QWidget:
         panel = self._create_styled_panel()
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0,0,0,0)
+        layout.setContentsMargins(15, 15, 15, 15)
+        
+        #layout.setContentsMargins(0,0,0,0)
 
         # === THAY ĐỔI: SỬ DỤNG QStackedWidget ===
         self.right_stack = QStackedWidget()

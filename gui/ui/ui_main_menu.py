@@ -35,10 +35,11 @@ class Ui_MainMenuWindow(object):
         self.title_label.setText("PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM\nSÚNG TIỂU LIÊN")
         self.title_label.setStyleSheet("color: #ecf0f1;")
         self.verticalLayout.addWidget(self.title_label)
-
-        # Spacer cố định
-        spacerItem = QSpacerItem(20, 80, QSizePolicy.Minimum, QSizePolicy.Fixed)
-        self.verticalLayout.addItem(spacerItem)
+        
+        # --- BẮT ĐẦU THAY ĐỔI ---
+        # Thêm khoảng trống co giãn ở trên với tỉ lệ 1
+        self.verticalLayout.addStretch(1)
+        # --- KẾT THÚC THAY ĐỔI ---
 
         # Button style
         button_style = """
@@ -71,11 +72,6 @@ class Ui_MainMenuWindow(object):
         self.stats_button.setStyleSheet(button_style)
         self.verticalLayout.addWidget(self.stats_button, 0, Qt.AlignHCenter)
 
-        # --- XÓA DÒNG SPACER Ở ĐÂY ---
-        # spacerItem_bottom = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        # self.verticalLayout.addItem(spacerItem_bottom)
-        # --------------------------------
-
         # Exit Button
         exit_button_style = """
             QPushButton {
@@ -96,8 +92,10 @@ class Ui_MainMenuWindow(object):
         self.exit_button.setStyleSheet(exit_button_style)
         self.verticalLayout.addWidget(self.exit_button, 0, Qt.AlignHCenter)
 
-        # Thêm spacer co giãn ở cuối để đẩy tất cả các nút lên trên
-        final_spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        self.verticalLayout.addItem(final_spacer)
+        # --- BẮT ĐẦU THAY ĐỔI ---
+        # Thêm khoảng trống co giãn ở dưới với tỉ lệ 2
+        # (Lớn hơn ở trên, sẽ đẩy các nút lên cao hơn)
+        self.verticalLayout.addStretch(2)
+        # --- KẾT THÚC THAY ĐỔI ---
 
         MainMenuWindow.setCentralWidget(self.centralwidget)

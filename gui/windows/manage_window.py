@@ -503,6 +503,18 @@ class ManageWindow(QMainWindow):
                 self.ui.soldier_table.setItem(0, 0, notice_item)
                 self.ui.soldier_table.setSpan(0, 0, 1, self.ui.soldier_table.columnCount())
                 return
+            
+            # --- BẮT ĐẦU THAY ĐỔI: SẮP XẾP DANH SÁCH THEO TÊN ---
+            def get_first_name(soldier_dict):
+                """Hàm phụ trợ để lấy ra TÊN từ họ tên đầy đủ."""
+                full_name = soldier_dict.get('name', '').strip()
+                if not full_name:
+                    return ''
+                return full_name.split(' ')[-1]
+
+            # Sắp xếp danh sách soldiers dựa trên tên
+            soldiers.sort(key=get_first_name)
+            # --- KẾT THÚC THAY ĐỔI ---
 
             self.ui.soldier_table.setRowCount(len(soldiers))
             for row, soldier_data in enumerate(soldiers):
@@ -644,36 +656,28 @@ class ManageWindow(QMainWindow):
         menu.exec(self.ui.history_list.mapToGlobal(pos))
 
     def edit_session_name(self, session_id, item):
-        """Mở dialog để đổi tên phiên tập, có vòng lặp kiểm tra tên trùng."""
+        """Mở dialog để đổi tên phiên tập, có vòng lặp kiểm tra tên trùng theo từng chiến sĩ."""
         current_name = item.text().split('\n')[0]
         
-        while True: # Bắt đầu vòng lặp
+        while True:
             new_name, ok = QInputDialog.getText(
-                self, 
-                "Đổi tên Phiên tập", 
-                "Nhập tên mới:",
-                QLineEdit.Normal,
-                current_name
+                self, "Đổi tên Phiên tập", "Nhập tên mới:",
+                QLineEdit.Normal, current_name
             )
             
-            # Trường hợp 1: Người dùng nhấn "Hủy"
-            if not ok:
-                break # Thoát khỏi vòng lặp
-
-            stripped_name = new_name.strip()
+            if not ok: break
             
-            # Trường hợp 2: Người dùng không nhập gì và nhấn OK (coi như không đổi)
-            if not stripped_name:
-                 break # Thoát khỏi vòng lặp
+            stripped_name = new_name.strip()
+            if not stripped_name: break
 
-            # Trường hợp 3: Tên bị trùng
-            if self.db.session_name_exists(stripped_name, exclude_session_id=session_id):
-                QMessageBox.warning(self, "Tên bị trùng", 
-                                    f"Tên phiên '{stripped_name}' đã tồn tại. Vui lòng chọn một tên khác.")
-                current_name = stripped_name # Gợi ý lại tên vừa nhập sai
-                continue # Vòng lặp tiếp tục, hiển thị lại dialog
+            # Kiểm tra tên trùng VỚI self.current_soldier_id
+            if self.db.session_name_exists(stripped_name, soldier_id=self.current_soldier_id, exclude_session_id=session_id):
+                QMessageBox.warning(self, "Tên bị trùng",
+                                    f"Chiến sĩ này đã có phiên tập tên '{stripped_name}'.\nVui lòng chọn một tên khác.")
+                current_name = stripped_name
+                continue
 
-            # Trường hợp 4: Tên hợp lệ
+            # Tên hợp lệ, tiến hành cập nhật
             if self.db.update_session_name(session_id, stripped_name):
                 QMessageBox.information(self, "Thành công", "Đã đổi tên phiên tập.")
                 self.load_shooting_history(self.current_soldier_id)
@@ -685,8 +689,8 @@ class ManageWindow(QMainWindow):
             else:
                 QMessageBox.critical(self, "Lỗi", "Không thể đổi tên phiên tập.")
             
-            break # Thoát khỏi vòng lặp sau khi xử lý thành công
-        
+            break
+         
     def delete_session(self, session_id, session_name):
         """Xác nhận và xóa một phiên tập."""
         reply = QMessageBox.warning(

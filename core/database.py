@@ -267,24 +267,25 @@ class DatabaseManager:
             logger.error(f"Lỗi khi xóa phiên tập: {e}")
             return False
 
-    def session_name_exists(self, name: str, exclude_session_id: int = None) -> bool:
+    def session_name_exists(self, name: str, soldier_id: int, exclude_session_id: int = None) -> bool:
         """
-        Kiểm tra xem tên phiên tập đã tồn tại hay chưa.
-        Có thể loại trừ một ID phiên cụ thể (hữu ích khi đổi tên).
+        Kiểm tra xem tên phiên tập đã tồn tại cho một chiến sĩ cụ thể hay chưa.
         """
         try:
+            # Nếu đang sửa tên, loại trừ chính phiên đó ra khỏi kiểm tra
             if exclude_session_id:
-                sql = "SELECT 1 FROM sessions WHERE exercise_name = ? AND id != ?"
-                params = (name, exclude_session_id)
+                sql = "SELECT 1 FROM sessions WHERE exercise_name = ? AND soldier_id = ? AND id != ?"
+                params = (name, soldier_id, exclude_session_id)
+            # Nếu tạo mới, kiểm tra tất cả các phiên của chiến sĩ đó
             else:
-                sql = "SELECT 1 FROM sessions WHERE exercise_name = ?"
-                params = (name,)
+                sql = "SELECT 1 FROM sessions WHERE exercise_name = ? AND soldier_id = ?"
+                params = (name, soldier_id)
             
             self.cursor.execute(sql, params)
             return self.cursor.fetchone() is not None
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi kiểm tra tên phiên: {e}")
-            return True # Mặc định là có tồn tại để tránh lỗi
+            return True # Mặc định trả về True để tránh ghi đè dữ liệu
 
     def close(self):
         """Đóng kết nối database một cách an toàn."""

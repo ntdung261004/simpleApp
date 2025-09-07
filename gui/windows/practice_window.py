@@ -62,11 +62,13 @@ class PracticeWindow(QMainWindow):
         self.gui.refresh_button.clicked.connect(self.refresh_camera_connection)
         self.gui.camera_view_label.clicked.connect(self.set_new_center)
         self.gui.session_button.clicked.connect(self.toggle_session)
+        self.gui.soldier_selector.currentIndexChanged.connect(self.reset_ui_state)
         
         # --- Khởi động ---
         self.processing_thread.start()
         self.bt_trigger.start_global_listener() 
         self.populate_soldier_selector()
+        self.reset_ui_state()
         
         self.save_dir = "captured_images"
         if not os.path.exists(self.save_dir):
@@ -86,65 +88,62 @@ class PracticeWindow(QMainWindow):
        #     self.processing_thread.wait(2000) # Chờ tối đa 2 giây
         self.reset_ui_state()
 
+# Thay thế TOÀN BỘ hàm này trong file practice_window.py
+
     def toggle_session(self):
-        """Bắt đầu hoặc kết thúc một phiên tập với logic xử lý chuyên nghiệp."""
+        """Bắt đầu hoặc kết thúc một phiên tập."""
         if self.is_session_active:
             # --- XỬ LÝ KẾT THÚC PHIÊN ---
             shot_count = self.db_manager.get_shot_count_for_session(self.active_session_id)
 
             if shot_count == 0:
-                # Trường hợp 1: Chưa có phát bắn nào
+                # ... (Phần xử lý phiên trống không thay đổi)
                 msg_box = QMessageBox(self)
                 msg_box.setWindowTitle("Xác nhận Kết thúc")
                 msg_box.setText("Bạn chưa thực hiện phát bắn nào.")
                 msg_box.setInformativeText("Bạn có muốn kết thúc và xóa luôn phiên tập này không?")
                 msg_box.setIcon(QMessageBox.Question)
-                
                 delete_button = msg_box.addButton("Kết thúc và Xóa", QMessageBox.DestructiveRole)
                 cancel_button = msg_box.addButton("Hủy", QMessageBox.RejectRole)
-                
                 msg_box.exec()
-
                 if msg_box.clickedButton() == delete_button:
                     self.db_manager.delete_session(self.active_session_id)
                     logger.info(f"Đã xóa phiên trống ID: {self.active_session_id}")
-                    self.finalize_session() # Vẫn gọi để reset UI
+                    self.finalize_session()
                 else:
-                    return # Người dùng nhấn Hủy
+                    return
 
             else:
-                # --- BẮT ĐẦU THAY ĐỔI LOGIC KIỂM TRA TÊN TRÙNG ---
+                # Lấy ID của chiến sĩ đang tập luyện
+                current_soldier = self.gui.soldier_selector.currentData()
+                soldier_id = current_soldier['id']
+
                 while True:
                     default_name = f"Phiên tập #{self.active_session_id}"
                     session_name, ok = QInputDialog.getText(
-                        self, 
-                        "Đặt tên Phiên tập", 
-                        "Nhập tên để lưu lại phiên tập này:",
-                        QLineEdit.Normal,
-                        default_name
+                        self, "Đặt tên Phiên tập", "Nhập tên để lưu lại phiên tập này:",
+                        QLineEdit.Normal, default_name
                     )
                     
-                    if not ok: # Người dùng nhấn Cancel
-                        return
+                    if not ok: return
 
                     final_name = session_name.strip() if session_name.strip() else default_name
 
-                    if not self.db_manager.session_name_exists(final_name):
+                    # Kiểm tra tên trùng VỚI soldier_id
+                    if not self.db_manager.session_name_exists(final_name, soldier_id=soldier_id):
                         self.db_manager.update_session_name(self.active_session_id, final_name)
                         self.finalize_session()
-                        break # Thoát khỏi vòng lặp khi tên hợp lệ
+                        break
                     else:
                         QMessageBox.warning(self, "Tên bị trùng", 
-                                            f"Tên phiên '{final_name}' đã tồn tại. Vui lòng chọn một tên khác.")
-                # --- KẾT THÚC THAY ĐỔI ---
+                                            f"Chiến sĩ này đã có phiên tập tên '{final_name}'.\nVui lòng chọn một tên khác.")
 
         else:
-            # === THÊM BƯỚC KIỂM TRA CAMERA TẠI ĐÂY ===
+            # --- LOGIC BẮT ĐẦU PHIÊN (KHÔNG THAY ĐỔI) ---
+            # ... (Toàn bộ phần else giữ nguyên như cũ)
             if not self.is_camera_connected:
-                QMessageBox.warning(self, "Chưa kết nối Camera",
-                                    "Vui lòng kết nối camera USB và chờ tín hiệu hiển thị trước khi bắt đầu.")
-                return # Dừng lại nếu chưa có camera
-            # =========================================
+                QMessageBox.warning(self, "Chưa kết nối Camera", "Vui lòng kết nối camera USB và chờ tín hiệu hiển thị trước khi bắt đầu.")
+                return
             selected_soldier = self.gui.soldier_selector.currentData()
             if not selected_soldier:
                 QMessageBox.warning(self, "Chưa chọn Chiến sĩ", "Vui lòng chọn một chiến sĩ trước khi bắt đầu.")
@@ -163,7 +162,6 @@ class PracticeWindow(QMainWindow):
             except Exception as e:
                 logger.error(f"Không thể tạo phiên tập mới: {e}")
                 QMessageBox.critical(self, "Lỗi Database", "Không thể tạo phiên tập mới trong cơ sở dữ liệu.")
-
     def finalize_session(self):
         """Hàm riêng để dọn dẹp và reset giao diện sau khi kết thúc phiên."""
         self.db_manager.end_session(self.active_session_id)
@@ -203,7 +201,7 @@ class PracticeWindow(QMainWindow):
             logger.warning(f"Không thể đọc frame, lần thất bại thứ: {self.frame_read_failures}")
             if self.frame_read_failures > self.FRAME_FAILURE_THRESHOLD:
                 logger.error("Mất kết nối với camera (đọc frame thất bại nhiều lần).")
-                self.disconnect_camera("Mất kết nối với camera...")
+                self.disconnect_camera("Mất kết nối với camera...\nVui lòng kiểm tra kết nối và nhấn 'Làm mới'.")
             return # Thoát khỏi hàm để không xử lý frame rỗng
 
         # Nếu đọc thành công, reset bộ đếm lỗi
@@ -486,6 +484,8 @@ class PracticeWindow(QMainWindow):
         Khởi động camera khi màn hình này được hiển thị.
         """
         logger.info("Màn hình luyện tập đã hiển thị, bắt đầu khởi động camera...")
+        # Tải lại danh sách chiến sĩ mỗi khi vào màn hình
+        self.populate_soldier_selector()
         # Khởi động lại trình lắng nghe nút bắn
         # Tạo mới, kết nối tín hiệu và khởi động trình lắng nghe
         if self.bt_trigger:
