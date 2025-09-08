@@ -3,10 +3,12 @@ from PySide6.QtWidgets import QMainWindow, QMessageBox, QApplication, QInputDial
 from PySide6.QtCore import QTimer, Signal, QThread, Slot, QPoint
 import cv2
 import numpy as np
+import json
 import os
 import time
 from datetime import datetime
 from PySide6.QtGui import QScreen, QPixmap, QFont
+from PySide6.QtMultimedia import QMediaDevices
 
 from ..ui.ui_practice import MainGui
 from utils.audio import AudioManager
@@ -69,6 +71,8 @@ class PracticeWindow(QMainWindow):
         #self.bt_trigger.start_global_listener() 
         self.populate_soldier_selector()
         self.reset_ui_state()
+        
+        self.load_config()
         
         self.save_dir = "captured_images"
         if not os.path.exists(self.save_dir):
@@ -452,7 +456,7 @@ class PracticeWindow(QMainWindow):
         # === LOGIC MỚI THEO YÊU CẦU CỦA BẠN ===
         if len(all_cameras) > 1:
             # Nếu có nhiều camera, kết nối với camera 0 (là camera USB)
-            target_index = 0
+            target_index = self.configured_camera_index
             logger.info(f"Phát hiện {len(all_cameras)} camera. Kết nối với camera USB tại chỉ số {target_index}.")
             self.connect_camera(target_index)
             
@@ -499,3 +503,18 @@ class PracticeWindow(QMainWindow):
         self.gui.style().polish(self.gui.session_button)
         self.gui.back_button.setEnabled(True)
         self.gui.soldier_selector.setEnabled(True)
+        
+    def load_config(self):
+        """Đọc chỉ số camera từ file config.json."""
+        try:
+            with open("config.json", "r") as f:
+                config = json.load(f)
+                self.configured_camera_index = int(config.get("camera_index", 0))
+                logger.info(f"Đã đọc cấu hình: sử dụng camera index = {self.configured_camera_index}")
+        except (FileNotFoundError, json.JSONDecodeError):
+            logger.warning("Không tìm thấy file config.json hoặc file bị lỗi. Tạo file mặc định.")
+            self.configured_camera_index = 0
+            # Tự động tạo file config mặc định nếu chưa có
+            with open("config.json", "w") as f:
+                json.dump({"camera_index": 0}, f, indent=4)
+        
