@@ -2,11 +2,9 @@
 import logging
 import os
 import pygame
+from utils.resource_path import resource_path
 
 logger = logging.getLogger(__name__)
-
-# Tự động xác định thư mục gốc của dự án
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class AudioManager:
     """
@@ -27,7 +25,7 @@ class AudioManager:
         if self.sounds is None: return
         logger.info("Đang tải các file âm thanh...")
         
-        sounds_dir = os.path.join(os.path.dirname(BASE_DIR), 'sounds')
+        sounds_dir = resource_path(os.path.join("assets", "sounds"))
 
         # Danh sách các âm thanh cần tải
         sound_names = ['shot', 'miss']

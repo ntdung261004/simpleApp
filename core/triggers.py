@@ -11,7 +11,7 @@ class BluetoothTrigger(QObject):
 
     def __init__(self):
         super().__init__()
-        self.trigger_key = keyboard.Key.media_volume_down
+        self.trigger_key = keyboard.Key.media_volume_up
         self.listener = None
         self._is_key_pressed = False
         self.is_active = False # Cờ trạng thái để bật/tắt chức năng

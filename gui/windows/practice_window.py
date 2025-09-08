@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class PracticeWindow(QMainWindow):
     request_processing = Signal(np.ndarray, object, str)
 
-    def __init__(self):
+    def __init__(self, worker: ProcessingWorker, trigger: BluetoothTrigger):
         super().__init__()
         self.setWindowTitle("Phần Mềm Kiểm Tra Đường Ngắm Súng Tiểu Liên STV")
         screen = QScreen.availableGeometry(QApplication.primaryScreen())
@@ -45,18 +45,18 @@ class PracticeWindow(QMainWindow):
         # --- Các Module phụ trợ ---
         self.audio_manager = AudioManager()
         self.video_timer = QTimer(self)
-        self.bt_trigger = BluetoothTrigger()
         self.db_manager = DatabaseManager()
-        self.processing_thread = QThread()
-        self.worker = ProcessingWorker()
-        self.worker.moveToThread(self.processing_thread)
+        # --- NHẬN CÁC THÀNH PHẦN TỪ BÊN NGOÀI ---
+        self.worker = worker
+        self.bt_trigger = trigger
 
         # --- Kết nối Tín hiệu (Signals) & Tác vụ (Slots) ---
-        self.request_processing.connect(self.worker.process_image)
-        self.worker.finished.connect(self.on_processing_finished)
-        self.processing_thread.finished.connect(self.worker.deleteLater)
+        # Các kết nối này giờ sẽ được thực hiện ở main.py
+        # self.request_processing.connect(self.worker.process_image)
+        # self.worker.finished.connect(self.on_processing_finished)
+        # self.bt_trigger.triggered.connect(self.capture_photo)
+        
         self.video_timer.timeout.connect(self.update_frame)
-        self.bt_trigger.triggered.connect(self.capture_photo)
         self.gui.calibrate_button.clicked.connect(self.toggle_calibration_mode)
         self.gui.zoom_slider.valueChanged.connect(self.on_zoom_changed)
         self.gui.refresh_button.clicked.connect(self.refresh_camera_connection)
@@ -65,8 +65,8 @@ class PracticeWindow(QMainWindow):
         self.gui.soldier_selector.currentIndexChanged.connect(self.reset_ui_state)
         
         # --- Khởi động ---
-        self.processing_thread.start()
-        self.bt_trigger.start_global_listener() 
+        #self.processing_thread.start()
+        #self.bt_trigger.start_global_listener() 
         self.populate_soldier_selector()
         self.reset_ui_state()
         
@@ -77,15 +77,12 @@ class PracticeWindow(QMainWindow):
   
     def shutdown_components(self):
         """Hàm dọn dẹp khi người dùng rời khỏi màn hình này."""
-        logger.info("PRACTICE: Dọn dẹp tài nguyên...")
+        logger.info("PRACTICE: Dọn dẹp tài nguyên cục bộ...")
         self.disconnect_camera()
         
         if self.bt_trigger:
             self.bt_trigger.deactivate()
             
-       # if self.processing_thread:
-       #     self.processing_thread.quit()
-       #     self.processing_thread.wait(2000) # Chờ tối đa 2 giây
         self.reset_ui_state()
 
 # Thay thế TOÀN BỘ hàm này trong file practice_window.py
@@ -325,17 +322,6 @@ class PracticeWindow(QMainWindow):
             score=score,
             result_frame=final_image_to_display # Hiển thị ảnh cuối cùng
         )
-    def closeEvent(self, event):
-        """Dọn dẹp tài nguyên trước khi đóng ứng dụng."""
-        self.video_timer.stop()
-        self.bt_trigger.stop_global_listener()
-        self.disconnect_camera()
-        
-        self.db_manager.close()
-        # Yêu cầu luồng nền dừng lại và chờ nó kết thúc
-        self.processing_thread.quit()
-        self.processing_thread.wait(3000)
-        super().closeEvent(event)
 
     # --- Các hàm còn lại không thay đổi đáng kể ---
     def crop_and_resize_frame(self, frame):
@@ -479,19 +465,15 @@ class PracticeWindow(QMainWindow):
             # Nếu không có camera nào
             logger.warning("Không tìm thấy camera nào.")
             self.disconnect_camera(message="Không tìm thấy camera")
+            
     def start_camera(self):
-        """
-        Khởi động camera khi màn hình này được hiển thị.
-        """
-        logger.info("Màn hình luyện tập đã hiển thị, bắt đầu khởi động camera...")
-        # Tải lại danh sách chiến sĩ mỗi khi vào màn hình
-        self.populate_soldier_selector()
-        # Khởi động lại trình lắng nghe nút bắn
-        # Tạo mới, kết nối tín hiệu và khởi động trình lắng nghe
+        """Kích hoạt các chức năng khi màn hình này được hiển thị."""
+        logger.info("Màn hình luyện tập: Kích hoạt camera và trigger...")
+        self.populate_soldier_selector() # Cập nhật danh sách chiến sĩ
+        
         if self.bt_trigger:
             self.bt_trigger.activate()
-  
-        # Chỉ làm mới kết nối nếu camera chưa được kết nối
+
         if self.cam is None or not self.cam.isOpened():
             self.refresh_camera_connection()
             

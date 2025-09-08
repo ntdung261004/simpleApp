@@ -2,14 +2,14 @@
 import sqlite3
 import logging
 from datetime import datetime
-
+from utils.resource_path import resource_path
 # Cấu hình logger để theo dõi hoạt động của database
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
-    def __init__(self, db_path="shooting_range.db"):
+    def __init__(self, db_name="shooting_range.db"):
         """Khởi tạo và kết nối tới database SQLite."""
-        self.db_path = db_path
+        self.db_path = resource_path(db_name)
         self.conn = None
         try:
             # Kết nối tới database, check_same_thread=False cần cho đa luồng

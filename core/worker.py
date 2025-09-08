@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 from module.detection_module import ObjectDetector
 from utils.processing import check_object_center
 from utils.handles import handle_hit_bia_so_4, handle_hit_bia_so_7, handle_hit_bia_so_8, handle_miss
-
+from utils.resource_path import resource_path
 logger = logging.getLogger(__name__)
 
 class ProcessingWorker(QObject):
@@ -17,7 +17,8 @@ class ProcessingWorker(QObject):
 
     def __init__(self):
         super().__init__()
-        self.detector = ObjectDetector(model_path="my_modelv8s.pt")
+        model_path = resource_path("assets/models/my_modelv8s.pt")
+        self.detector = ObjectDetector(model_path=model_path)
         self.assets = self._load_assets()
         
         # --- THAY ĐỔI: Ánh xạ chính xác 3 object class của bạn ---
@@ -46,28 +47,29 @@ class ProcessingWorker(QObject):
         logger.info("Worker: Đã khởi tạo, tải xong mô hình và tài sản.")
 
     def _load_assets(self):
-        base_dir = "images"
+        # ▼▼▼ THAY ĐỔI TOÀN BỘ HÀM NÀY ▼▼▼
         assets = {}
         target_names = ['bia_so_4', 'bia_so_7', 'bia_so_8']
         
         for name in target_names:
-            img_path = os.path.join(base_dir, "original", f"{name}.png")
-            img_alt_path = os.path.join(base_dir, "original", f"{name}_1.png")
-            mask_path = os.path.join(base_dir, "mask", f"mask_{name}.png")
+            # Sử dụng resource_path để lấy đường dẫn chính xác
+            img_path = resource_path(os.path.join("assets", "images", "original", f"{name}.png"))
+            img_alt_path = resource_path(os.path.join("assets", "images", "original", f"{name}_1.png"))
+            mask_path = resource_path(os.path.join("assets", "images", "mask", f"mask_{name}.png"))
             
             img = cv2.imread(img_path)
             mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
 
             if img is not None and mask is not None:
-                # THAY ĐỔI: Sử dụng key đã được chuẩn hóa
                 assets[name] = {
                     'original_img': img,
-                    'original_img_alt': cv2.imread(img_alt_path),
+                    'original_img_alt': cv2.imread(img_alt_path), # alt có thể không tồn tại, imread sẽ trả về None
                     'mask': mask
                 }
             else:
-                logger.error(f"LỖI: Không tìm thấy file tài sản cho '{name}'")
+                logger.error(f"LỖI: Không tìm thấy file tài sản cho '{name}' tại đường dẫn dự kiến.")
         return assets
+        # ▲▲▲ KẾT THÚC THAY ĐỔI ▲▲▲
 
     @Slot(np.ndarray, object, str)
     def process_image(self, photo_frame, calibrated_center, image_path):
