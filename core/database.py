@@ -1,28 +1,65 @@
-# core/database.py
 import sqlite3
 import logging
 from datetime import datetime
-from utils.resource_path import resource_path
+import os
+import shutil
+import sys
+from config import APP_DATA_DIR
+
 # Cấu hình logger để theo dõi hoạt động của database
 logger = logging.getLogger(__name__)
+
+def get_app_data_path(file_name):
+    """
+    Lấy đường dẫn tuyệt đối tới file trong APP_DATA_DIR.
+    Nếu file chưa tồn tại, sao chép từ file gốc đi kèm ứng dụng.
+    """
+    # Đây là đường dẫn cuối cùng mà ứng dụng sẽ làm việc
+    dest_path = os.path.join(APP_DATA_DIR, file_name)
+
+    # Đảm bảo thư mục tồn tại
+    os.makedirs(APP_DATA_DIR, exist_ok=True)
+
+    # Chỉ thực hiện sao chép trong lần chạy đầu tiên
+    if not os.path.exists(dest_path):
+        logger.info(f"Lần chạy đầu tiên: Sao chép database vào {dest_path}")
+
+        # Tìm file database gốc được đóng gói cùng ứng dụng
+        if getattr(sys, 'frozen', False):
+            # Khi app đã được build (.exe, .app)
+            source_path = os.path.join(sys._MEIPASS, file_name)
+        else:
+            # Khi chạy từ mã nguồn
+            source_path = os.path.join(os.path.abspath("."), file_name)
+
+        if os.path.exists(source_path):
+            shutil.copyfile(source_path, dest_path)
+        else:
+            logger.warning(f"Không tìm thấy file database gốc tại: {source_path}")
+            # Ứng dụng có thể tự tạo database trống
+            return dest_path
+
+    return dest_path
+
 
 class DatabaseManager:
     def __init__(self, db_name="shooting_range.db"):
         """Khởi tạo và kết nối tới database SQLite."""
-        self.db_path = resource_path(db_name)
+        # SỬA ĐỔI QUAN TRỌNG: Gọi hàm mới để lấy đường dẫn database
+        self.db_path = get_app_data_path(db_name)
         self.conn = None
         try:
             # Kết nối tới database, check_same_thread=False cần cho đa luồng
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self.cursor = self.conn.cursor()
-            logger.info(f"Đã kết nối thành công tới database: {self.db_path}")
+            logger.info(f"Đã kết nối thành công tới database tại AppData: {self.db_path}")
             # Bật hỗ trợ khóa ngoại
             self.cursor.execute("PRAGMA foreign_keys = ON;")
             # Gọi hàm tạo bảng
             self._create_tables()
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi kết nối hoặc tạo database: {e}")
-
+            
     def _create_tables(self):
         """Tạo tất cả các bảng theo cấu trúc mới nếu chúng chưa tồn tại."""
         try:

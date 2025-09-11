@@ -4,8 +4,11 @@ from PySide6.QtCore import QTimer, Signal, QThread, Slot, QPoint
 import cv2
 import numpy as np
 import json
+import shutil
+import sys
 import os
 import time
+from config import APP_DATA_DIR
 from datetime import datetime
 from PySide6.QtGui import QScreen, QPixmap, QFont
 from PySide6.QtMultimedia import QMediaDevices
@@ -74,10 +77,12 @@ class PracticeWindow(QMainWindow):
         
         self.load_config()
         
-        self.save_dir = "captured_images"
-        if not os.path.exists(self.save_dir):
-            os.makedirs(self.save_dir)
-            logger.info(f"Đã tạo thư mục lưu ảnh training: {self.save_dir}")
+        # Xác định đường dẫn lưu ảnh chụp trong thư mục AppData
+        self.save_dir = os.path.join(APP_DATA_DIR, "captured_images")
+        
+        # Đảm bảo thư mục này tồn tại
+        os.makedirs(self.save_dir, exist_ok=True)
+        logger.info(f"Thư mục lưu ảnh được thiết lập tại: {self.save_dir}")
   
     def shutdown_components(self):
         """Hàm dọn dẹp khi người dùng rời khỏi màn hình này."""
@@ -504,17 +509,46 @@ class PracticeWindow(QMainWindow):
         self.gui.back_button.setEnabled(True)
         self.gui.soldier_selector.setEnabled(True)
         
+# Dán hàm này vào bên trong lớp PracticeWindow
+# để thay thế hoàn toàn cho hàm load_config cũ
+
     def load_config(self):
-        """Đọc chỉ số camera từ file config.json."""
+        """
+        Đọc file config từ AppData.
+        Nếu file chưa tồn tại, sao chép file config gốc vào AppData.
+        """
         try:
-            with open("config.json", "r") as f:
+            config_filename = "config.json"
+            # Xác định các đường dẫn cần thiết
+            os.makedirs(APP_DATA_DIR, exist_ok=True)
+            dest_path = os.path.join(APP_DATA_DIR, config_filename)
+
+            # Nếu file config chưa có trong AppData (lần chạy đầu)
+            if not os.path.exists(dest_path):
+                logger.info(f"Không tìm thấy config.json trong AppData. Sao chép file mặc định.")
+
+                # Tìm file config gốc được đóng gói cùng .exe
+                if getattr(sys, 'frozen', False):
+                    source_path = os.path.join(sys._MEIPASS, config_filename)
+                else:
+                    source_path = os.path.join(os.path.abspath("."), config_filename)
+
+                # Sao chép file gốc vào AppData
+                if os.path.exists(source_path):
+                    shutil.copyfile(source_path, dest_path)
+                else:
+                    # Nếu không tìm thấy file gốc, tạo một file hoàn toàn mới
+                    logger.warning(f"Không tìm thấy file config gốc, tạo file mới tại {dest_path}")
+                    with open(dest_path, "w") as f:
+                        json.dump({"camera_index": 0}, f, indent=4)
+
+            # Bây giờ, đọc file config từ AppData
+            with open(dest_path, "r") as f:
                 config = json.load(f)
                 self.configured_camera_index = int(config.get("camera_index", 0))
-                logger.info(f"Đã đọc cấu hình: sử dụng camera index = {self.configured_camera_index}")
-        except (FileNotFoundError, json.JSONDecodeError):
-            logger.warning("Không tìm thấy file config.json hoặc file bị lỗi. Tạo file mặc định.")
-            self.configured_camera_index = 0
-            # Tự động tạo file config mặc định nếu chưa có
-            with open("config.json", "w") as f:
-                json.dump({"camera_index": 0}, f, indent=4)
+                logger.info(f"Đã đọc cấu hình từ AppData: sử dụng camera index = {self.configured_camera_index}")
+
+        except Exception as e:
+            logger.error(f"Lỗi nghiêm trọng khi đọc hoặc tạo file config: {e}")
+            self.configured_camera_index = 0 # Dùng giá trị mặc định nếu có lỗi
         

@@ -15,6 +15,7 @@ from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import Qt
 from gui.ui.ui_manage import ManageGui 
 from core.database import DatabaseManager
+from utils.resource_path import resource_path
 
 # Lớp AddSoldierDialog giữ nguyên
 class AddSoldierDialog(QDialog):
@@ -201,7 +202,7 @@ class ManageWindow(QMainWindow):
             return
 
         # Đường dẫn tới thư mục chứa ảnh bia gốc
-        asset_path = 'images/original'
+        asset_path = resource_path("assets/images/original")
         # Ánh xạ key dữ liệu sang tên file ảnh
         target_image_map = {
             'bia_so_4': 'bia_so_4.png',
@@ -325,10 +326,11 @@ class ManageWindow(QMainWindow):
         hit_shots = [s for s in self.current_shots if s.get('score') is not None and s['score'] > 0]
         total_hits = len(hit_shots)
         valid_scores = [s['score'] for s in hit_shots]
-
+        total_score = sum(valid_scores) # <<< TÍNH TỔNG ĐIỂM
         # --- B. Tính toán và cập nhật DÒNG TÓM TẮT ---
         hit_rate = (total_hits / total_shots * 100) if total_shots > 0 else 0
-        avg_score = np.mean(valid_scores) if valid_scores else 0
+        # SỬA LẠI CÁCH TÍNH ĐIỂM TRUNG BÌNH THEO LOGIC MỚI
+        avg_score = (total_score / total_shots) if total_shots > 0 else 0
         summary_text = (
             f"Tổng phát bắn: {total_shots}  |  "
             f"Tỷ lệ trúng: {hit_rate:.1f}%  |  "

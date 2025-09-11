@@ -1,8 +1,8 @@
 # Thay thế TOÀN BỘ file main.py
-
+import os
 import sys
 import logging
-from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QInputDialog, QLineEdit, QMessageBox
 from PySide6.QtCore import QThread
 
 # Import các lớp cửa sổ và các thành phần chạy ngầm
@@ -11,10 +11,55 @@ from gui.windows.practice_window import PracticeWindow
 from gui.windows.manage_window import ManageWindow
 from core.worker import ProcessingWorker
 from core.triggers import BluetoothTrigger
+from config import APP_DATA_DIR
+from utils.license_manager import verify_key
 
 # Cấu hình logging cơ bản
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] (%(name)s) - %(message)s')
 
+# Thiết lập logging cơ bản
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] (%(name)s) - %(message)s')
+
+# Tạo và cấu hình FileHandler để ghi log vào file trong AppData
+log_file_path = os.path.join(APP_DATA_DIR, "app_log.txt")
+file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] (%(name)s) - %(message)s'))
+logging.getLogger().addHandler(file_handler)
+
+logging.info("--- Application Started ---")
+
+def check_or_request_license() -> bool:
+    """
+    Kiểm tra license. Trả về True nếu hợp lệ, False nếu không.
+    Hàm này KHÔNG tự tạo QApplication nữa.
+    """
+    license_file_path = os.path.join(APP_DATA_DIR, 'license.key')
+
+    if os.path.exists(license_file_path):
+        with open(license_file_path, 'r', encoding='utf-8') as f:
+            key = f.read().strip()
+        if verify_key(key):
+            logging.info("License hợp lệ được tìm thấy.")
+            return True
+        else:
+            logging.warning("File license không hợp lệ, đang xóa.")
+            os.remove(license_file_path)
+
+    # Nếu không có file hoặc key sai, yêu cầu nhập key mới
+    while True:
+        key, ok = QInputDialog.getText(None, "Yêu cầu Kích hoạt", "Vui lòng nhập License Key:")
+        if not ok:
+            return False # Người dùng nhấn Cancel
+
+        if verify_key(key):
+            with open(license_file_path, 'w', encoding='utf-8') as f:
+                f.write(key)
+            QMessageBox.information(None, "Thành công", "Kích hoạt thành công! Ứng dụng sẽ khởi động.")
+            return True # Kích hoạt thành công
+        else:
+            QMessageBox.warning(None, "Lỗi", "License Key không hợp lệ cho máy tính này. Vui lòng thử lại.")
+            # Vòng lặp sẽ tiếp tục để người dùng nhập lại
 class ApplicationController(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -92,11 +137,16 @@ class ApplicationController(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.manage_screen)
 
 if __name__ == '__main__':
+    # Bước 1: Tạo QApplication MỘT LẦN DUY NHẤT
     app = QApplication(sys.argv)
-    controller = ApplicationController()
-    
-    # Kết nối tín hiệu aboutToQuit với hàm dọn dẹp
-    app.aboutToQuit.connect(controller.cleanup_before_exit)
 
-    controller.showFullScreen()
-    sys.exit(app.exec())
+    # Bước 2: Gọi hàm kiểm tra license. Hàm này sẽ sử dụng QApplication đã tồn tại
+    if check_or_request_license():
+        # Bước 3: Nếu license hợp lệ, tạo và chạy ứng dụng chính
+        controller = ApplicationController()
+        app.aboutToQuit.connect(controller.cleanup_before_exit)
+        controller.showFullScreen()
+        sys.exit(app.exec())
+    else:
+        # Nếu người dùng nhấn Cancel ở hộp thoại license, ứng dụng sẽ thoát êm đẹp
+        sys.exit()
