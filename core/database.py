@@ -63,14 +63,12 @@ class DatabaseManager:
     def _create_tables(self):
         """Tạo tất cả các bảng theo cấu trúc mới nếu chúng chưa tồn tại."""
         try:
-            # Bảng 1: SOLDIERS (CHIẾN SĨ)
+            # Bảng 1: SOLDIERS (CHIẾN SĨ) - ĐÃ CẬP NHẬT
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS soldiers (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
-                    rank TEXT,
-                    position TEXT,
-                    unit TEXT,
+                    class_name TEXT,
                     created_at TEXT NOT NULL
                 );
             """)
@@ -110,16 +108,16 @@ class DatabaseManager:
     # ======================================================================
     # CÁC HÀM QUẢN LÝ CHIẾN SĨ (SOLDIERS)
     # ======================================================================
-    def add_soldier(self, name: str, rank: str, position: str, unit: str) -> int | None:
+    def add_soldier(self, name: str, class_name: str) -> int | None:
         """Thêm một chiến sĩ mới và trả về ID của người đó."""
         try:
-            sql = "INSERT INTO soldiers (name, rank, position, unit, created_at) VALUES (?, ?, ?, ?, ?)"
+            sql = "INSERT INTO soldiers (name, class_name, created_at) VALUES (?, ?, ?)"
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.cursor.execute(sql, (name, rank, position, unit, timestamp))
+            self.cursor.execute(sql, (name, class_name, timestamp))
             self.conn.commit()
             new_id = self.cursor.lastrowid
             logger.info(f"Đã thêm chiến sĩ mới: {name} (ID: {new_id})")
-            return new_id # Trả về ID sẽ hữu ích hơn là trả về True/False
+            return new_id
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi thêm chiến sĩ: {e}")
             return None
@@ -127,7 +125,7 @@ class DatabaseManager:
     def get_all_soldiers(self) -> list:
         """Lấy danh sách tất cả chiến sĩ."""
         try:
-            self.cursor.execute("SELECT id, name, rank, position, unit FROM soldiers ORDER BY name ASC")
+            self.cursor.execute("SELECT id, name, class_name FROM soldiers ORDER BY class_name ASC, name ASC")
             # Trả về list các dictionary để dễ sử dụng
             soldiers = [dict(zip([col[0] for col in self.cursor.description], row)) for row in self.cursor.fetchall()]
             return soldiers
@@ -252,15 +250,15 @@ class DatabaseManager:
 
 # Thêm 4 hàm này vào bên trong class DatabaseManager của file core/database.py
 
-    def update_soldier(self, soldier_id: int, name: str, rank: str, position: str, unit: str):
+    def update_soldier(self, soldier_id: int, name: str, class_name: str):
         """Cập nhật thông tin cho một chiến sĩ."""
         try:
             sql = """
                 UPDATE soldiers 
-                SET name = ?, rank = ?, position = ?, unit = ? 
+                SET name = ?, class_name = ?
                 WHERE id = ?
             """
-            self.cursor.execute(sql, (name, rank, position, unit, soldier_id))
+            self.cursor.execute(sql, (name, class_name, soldier_id))
             self.conn.commit()
             logger.info(f"Đã cập nhật thông tin cho chiến sĩ ID: {soldier_id}")
             return True

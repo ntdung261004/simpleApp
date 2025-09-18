@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
 class VideoLabel(QLabel):
-    """Label hiển thị ảnh, luôn giữ tỉ lệ và fit trong khung."""
+    """Label hiển thị ảnh, tự động co giãn ảnh cho vừa với kích thước của chính nó."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pixmap = QPixmap()
@@ -31,8 +31,10 @@ class VideoLabel(QLabel):
         super().resizeEvent(event)
 
     def _scaled_pixmap(self):
-        return self._pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-
+        return self._pixmap.scaled(
+            self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+    
 class ManageGui(QWidget):
     def __init__(self):
         super().__init__()
@@ -103,6 +105,12 @@ class ManageGui(QWidget):
                 color: #95a5a6;
                 font-size: 18px;
             }
+            QHeaderView::section {
+                background-color: #415a72; /* Giống màu tiêu đề GroupBox */
+                color: #ecf0f1;
+                padding: 4px;
+                border: 1px solid #4a6278;
+            }
         """)
 
         # ===== Root layout =====
@@ -151,22 +159,17 @@ class ManageGui(QWidget):
 
         # Tạo bảng
         self.soldier_table = QTableWidget()
-        self.soldier_table.setColumnCount(4)
-        self.soldier_table.setHorizontalHeaderLabels(["Họ và Tên", "CB", "CV", "ĐV"])
+        self.soldier_table.setColumnCount(2)
+        self.soldier_table.setHorizontalHeaderLabels(["Họ và Tên", "Lớp"])
         self.soldier_table.verticalHeader().setVisible(False)
         self.soldier_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.soldier_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.soldier_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         
-        # === THAY ĐỔI CÁCH CO GIÃN CỘT TẠI ĐÂY ===
+        # === THAY ĐỔI 3: CẬP NHẬT CO GIÃN CỘT ===
         header = self.soldier_table.horizontalHeader()
-        # Cột 0 (Họ và Tên) sẽ co giãn lấp đầy không gian
         header.setSectionResizeMode(0, QHeaderView.Stretch) 
-        # Các cột còn lại sẽ tự điều chỉnh độ rộng theo nội dung
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        # ==========================================
 
         soldier_layout.addWidget(self.soldier_table)
         layout.addWidget(soldier_box, 1)
@@ -253,10 +256,6 @@ class ManageGui(QWidget):
             cell_layout.addWidget(view_button)
             self.analysis_target_table.setCellWidget(row, 3, cell_widget)
 
-        # Điều chỉnh chiều cao của bảng cho gọn gàng
-        self.analysis_target_table.setFixedHeight(
-            header.height() + self.analysis_target_table.rowHeight(0) * 3 + 4
-        )
         
         analysis_layout.addWidget(self.analysis_target_table)
         
@@ -275,9 +274,7 @@ class ManageGui(QWidget):
         # 4. Ngăn sửa và cài đặt chế độ chọn hàng
         self.shot_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.shot_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.shot_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.shot_table.setMaximumHeight(210)
-        self.shot_table.setMinimumHeight(150)
+
 
         # 3. Tinh chỉnh bố cục cột cho hài hòa
         header = self.shot_table.horizontalHeader()
@@ -289,13 +286,24 @@ class ManageGui(QWidget):
 
         detail_layout.addWidget(self.shot_table, 1)
         
-        self.result_image = QLabel("Ảnh kết quả")
+        # 1. Tạo một QWidget để làm khung chứa bên ngoài
+        image_container = QWidget()
+        
+        # 2. Đặt chiều cao CỐ ĐỊNH cho khung chứa này. 
+        #    Bạn có thể thay đổi số 400 thành giá trị mong muốn.
+        image_container.setFixedHeight(400)
+        
+        # 3. Tạo layout cho khung chứa và đặt label ảnh vào bên trong
+        image_container_layout = QVBoxLayout(image_container)
+        image_container_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.result_image = VideoLabel() 
         self.result_image.setObjectName("resultImage")
-        self.result_image.setAlignment(Qt.AlignCenter)
-        self.result_image.setMinimumHeight(250)
-        self.result_image.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.result_image.setScaledContents(False)
-        detail_layout.addWidget(self.result_image, 3)
+        image_container_layout.addWidget(self.result_image)
+
+        # 4. Thêm KHUNG CHỨA vào layout chính với stretch = 0 (không co giãn)
+        #    Thay thế cho dòng `detail_layout.addWidget(self.result_image, 3)` cũ.
+        detail_layout.addWidget(image_container, 0)
         nav_layout = QHBoxLayout()
         self.prev_shot_button = QPushButton("◀ Trước")
         self.shot_index_label = QLabel("Phát 0/0")

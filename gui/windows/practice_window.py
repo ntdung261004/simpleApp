@@ -189,10 +189,21 @@ class PracticeWindow(QMainWindow):
         soldiers = self.db_manager.get_all_soldiers()
         if soldiers:
             for soldier in soldiers:
-                # Hiển thị tên, lưu trữ toàn bộ thông tin soldier vào data
-                self.gui.soldier_selector.addItem(soldier['name'], userData=soldier)
+                # === BẮT ĐẦU THAY ĐỔI ===
+                name = soldier.get('name', 'Không tên')
+                class_name = soldier.get('class_name')
+
+                # Tạo chuỗi hiển thị kết hợp cả tên và lớp
+                if class_name:
+                    display_text = f"{name}  -  {class_name}"
+                else:
+                    display_text = name
+                
+                # Hiển thị chuỗi mới, nhưng vẫn lưu toàn bộ dữ liệu soldier
+                self.gui.soldier_selector.addItem(display_text, userData=soldier)
+                # === KẾT THÚC THAY ĐỔI ===
         else:
-            self.gui.soldier_selector.addItem("Chưa có người bắn")
+            self.gui.soldier_selector.addItem("Chưa có người học")
 
     def update_frame(self):
         if not (self.cam and self.cam.isOpened()):
