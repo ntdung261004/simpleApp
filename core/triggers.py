@@ -40,7 +40,7 @@ class BluetoothTrigger(QObject):
     def start_global_listener(self):
         """Khởi động luồng lắng nghe một lần duy nhất."""
         if self.listener is None:
-            self.listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
+            self.listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release, suppress=True)
             self.listener.start()
             logger.info(f"Luồng lắng nghe phím bấm toàn cục đã bắt đầu.")
 

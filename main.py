@@ -2,6 +2,7 @@
 import os
 import sys
 import logging
+import json # <<< THÊM MỚI: Import module json
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QInputDialog, QLineEdit, QMessageBox
 from PySide6.QtCore import QThread
 
@@ -14,21 +15,17 @@ from core.triggers import BluetoothTrigger
 from config import APP_DATA_DIR
 from utils.license_manager import verify_key
 
-# Cấu hình logging cơ bản
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] (%(name)s) - %(message)s')
-
-# Thiết lập logging cơ bản
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] (%(name)s) - %(message)s')
-
-# Tạo và cấu hình FileHandler để ghi log vào file trong AppData
+# Cấu hình logging cơ bản (giữ nguyên)
+# ... (Phần logging của bạn giữ nguyên, không cần thay đổi)
 log_file_path = os.path.join(APP_DATA_DIR, "app_log.txt")
 file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
 file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] (%(name)s) - %(message)s'))
 logging.getLogger().addHandler(file_handler)
-
 logging.info("--- Application Started ---")
 
+
+# Hàm check_or_request_license giữ nguyên
 def check_or_request_license() -> bool:
     """
     Kiểm tra license. Trả về True nếu hợp lệ, False nếu không.
@@ -59,42 +56,84 @@ def check_or_request_license() -> bool:
             return True # Kích hoạt thành công
         else:
             QMessageBox.warning(None, "Lỗi", "License Key không hợp lệ cho máy tính này. Vui lòng thử lại.")
-            # Vòng lặp sẽ tiếp tục để người dùng nhập lại
+
 class ApplicationController(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Phần Mềm Kiểm Tra Đường Ngắm Súng Tiểu Liên STV")
 
-        # --- 1. Tạo các thành phần chạy ngầm TRƯỚC TIÊN ---
+        # --- BẮT ĐẦU THAY ĐỔI ---
+
+        # 1. Tải cấu hình từ file config.json
+        self.config = self._load_config()
+        logging.info(f"Configuration loaded: {self.config}")
+        
+        # 2. Tạo các thành phần chạy ngầm và truyền config vào
         self.processing_thread = QThread()
-        self.processing_worker = ProcessingWorker()
+        self.processing_worker = ProcessingWorker(self.config) # << Truyền config
         self.bt_trigger = BluetoothTrigger()
         
         self.processing_thread.setObjectName("ProcessingThread")
         self.processing_worker.moveToThread(self.processing_thread)
         
-        # --- 2. Tạo các cửa sổ giao diện ---
+        # 3. Tạo các cửa sổ giao diện và truyền config vào
         self.main_menu = MainMenuWindow()
         self.practice_screen = PracticeWindow(
             worker=self.processing_worker, 
             trigger=self.bt_trigger
         )
-        self.manage_screen = ManageWindow()
+        self.manage_screen = ManageWindow(self.config) # << Truyền config
 
-        # --- 3. Quản lý các màn hình bằng QStackedWidget ---
+        # --- KẾT THÚC THAY ĐỔI ---
+
+        # 4. Quản lý các màn hình bằng QStackedWidget
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
         self.stacked_widget.addWidget(self.main_menu)
         self.stacked_widget.addWidget(self.practice_screen)
         self.stacked_widget.addWidget(self.manage_screen)
 
-        # --- 4. Kết nối các tín hiệu ---
+        # 5. Kết nối các tín hiệu
         self.connect_signals()
         
         # Bắt đầu các luồng chạy ngầm
         self.processing_thread.start()
         self.bt_trigger.start_global_listener()
 
+    # --- HÀM MỚI: ĐỂ TẢI CONFIG ---
+    def _load_config(self) -> dict:
+        """
+        Tải file config.json từ thư mục AppData.
+        Nếu không có file, sẽ tạo file mặc định.
+        Đảm bảo các giá trị mặc định luôn tồn tại.
+        """
+        config_path = os.path.join(APP_DATA_DIR, "config.json")
+        
+        # Các giá trị mặc định để ứng dụng không bị lỗi nếu thiếu
+        defaults = {
+            "camera_index": 0,
+            "yolo_confidence_threshold": 0.75,
+            "manage_image_height": 400
+        }
+
+        try:
+            if not os.path.exists(config_path):
+                logging.warning(f"File config.json không tồn tại. Tạo file mặc định tại: {config_path}")
+                with open(config_path, "w", encoding='utf-8') as f:
+                    json.dump(defaults, f, indent=4)
+                return defaults
+            
+            with open(config_path, "r", encoding='utf-8') as f:
+                loaded_config = json.load(f)
+                # Hợp nhất config đã tải với mặc định để đảm bảo đủ khóa
+                defaults.update(loaded_config)
+                return defaults
+
+        except (json.JSONDecodeError, IOError) as e:
+            logging.error(f"Lỗi khi đọc/tạo file config: {e}. Sử dụng cấu hình mặc định.")
+            return defaults
+
+    # Các hàm còn lại giữ nguyên
     def connect_signals(self):
         # Điều hướng
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)       
@@ -122,7 +161,6 @@ class ApplicationController(QMainWindow):
             
         print("INFO: Dọn dẹp hoàn tất.")
 
-    # --- Các hàm hiển thị cửa sổ ---
     def show_main_menu(self):
         if self.stacked_widget.currentWidget() == self.practice_screen:
             self.practice_screen.shutdown_components()
@@ -137,16 +175,12 @@ class ApplicationController(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.manage_screen)
 
 if __name__ == '__main__':
-    # Bước 1: Tạo QApplication MỘT LẦN DUY NHẤT
     app = QApplication(sys.argv)
 
-    # Bước 2: Gọi hàm kiểm tra license. Hàm này sẽ sử dụng QApplication đã tồn tại
     if check_or_request_license():
-        # Bước 3: Nếu license hợp lệ, tạo và chạy ứng dụng chính
         controller = ApplicationController()
         app.aboutToQuit.connect(controller.cleanup_before_exit)
-        controller.showFullScreen()
+        controller.showMaximized()
         sys.exit(app.exec())
     else:
-        # Nếu người dùng nhấn Cancel ở hộp thoại license, ứng dụng sẽ thoát êm đẹp
         sys.exit()

@@ -3,7 +3,7 @@
 from ultralytics import YOLO
 
 class ObjectDetector:
-    def __init__(self, model_path="my_modelv8s.pt"):
+    def __init__(self, model_path="my_modelv8m.pt"):
         """
         Khởi tạo detector với model YOLO.
         """
