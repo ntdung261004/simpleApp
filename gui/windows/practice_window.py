@@ -19,6 +19,7 @@ from utils.camera import find_available_cameras, Camera
 from core.triggers import BluetoothTrigger
 from core.worker import ProcessingWorker
 from core.database import DatabaseManager
+from utils.filter import apply_gamma_correction
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,10 @@ class PracticeWindow(QMainWindow):
         self.gui.session_button.clicked.connect(self.toggle_session)
         self.gui.soldier_selector.currentIndexChanged.connect(self.reset_ui_state)
         
+        # --- Logic cho Filter ---
+        self.current_gamma = 1.0 # Giá trị gamma mặc định ban đầu
+        self.gui.gamma_slider.valueChanged.connect(self.on_gamma_slider_changed)
+
         # --- Khởi động ---
         #self.processing_thread.start()
         #self.bt_trigger.start_global_listener() 
@@ -216,34 +221,36 @@ class PracticeWindow(QMainWindow):
 
         if not ret or frame is None:
             self.frame_read_failures += 1
-            logger.warning(f"Không thể đọc frame, lần thất bại thứ: {self.frame_read_failures}")
             if self.frame_read_failures > self.FRAME_FAILURE_THRESHOLD:
-                logger.error("Mất kết nối với camera (đọc frame thất bại nhiều lần).")
-                self.disconnect_camera("Mất kết nối với camera...\nVui lòng kiểm tra kết nối và nhấn 'Làm mới'.")
+                self.disconnect_camera("Mất kết nối với camera...")
             return
-        
+
         self.frame_read_failures = 0
-        
+
         if not self.is_camera_connected:
             self.is_camera_connected = True
-            logger.info("Camera đã kết nối thành công và sẵn sàng để bắt đầu phiên tập.")
-            
+            logger.info("Camera đã kết nối thành công.")
+
         processed_frame = self.crop_and_resize_frame(frame)
-        self.gui.current_frame = processed_frame.copy() # Frame sạch, chưa zoom
-        
-        # `zoomed_frame` tại đây là ảnh đã zoom và hoàn toàn SẠCH
-        zoomed_frame = self.apply_digital_zoom(processed_frame, self.zoom_level)
-        
-        # --- BẮT ĐẦU LOGIC MỚI AN TOÀN HƠN ---
-        # 1. Lưu lại frame SẠCH này để dùng khi chụp ảnh training
+
+        # =================== ÁP DỤNG FILTER THEO THỜI GIAN THỰC ===================
+        #
+        # Áp dụng hiệu chỉnh Gamma với giá trị được lấy từ thanh trượt
+        filtered_frame = apply_gamma_correction(processed_frame, gamma=self.current_gamma)
+        #
+        # ========================================================================
+
+        # Các bước xử lý sau đó sẽ dùng ảnh đã được filter
+        self.gui.current_frame = filtered_frame.copy()
+        zoomed_frame = self.apply_digital_zoom(filtered_frame, self.zoom_level)
+
+        # Lưu lại frame SẠCH (đã qua filter và zoom) để dùng khi chụp ảnh
         self.last_clean_zoomed_frame = zoomed_frame
-        
-        # 2. Tạo một BẢN SAO RIÊNG chỉ để hiển thị
+
+        # Tạo bản sao riêng để vẽ tâm đỏ và hiển thị
         frame_to_display = zoomed_frame.copy()
-        
-        # 3. Mọi thao tác vẽ chỉ thực hiện trên BẢN SAO NÀY
+
         point_to_draw = None
-        # ... (logic tính toán point_to_draw giữ nguyên y hệt) ...
         if self.calibrated_center:
             cx, cy = self.calibrated_center
             h, w, _ = processed_frame.shape
@@ -259,12 +266,10 @@ class PracticeWindow(QMainWindow):
             point_to_draw = (w_zoom // 2, h_zoom // 2)
 
         if point_to_draw:
-            # Vẽ tâm đỏ LÊN BẢN SAO
             cv2.drawMarker(frame_to_display, point_to_draw, (0, 0, 255), cv2.MARKER_CROSS, 40, 2)
 
-        # 4. Hiển thị BẢN SAO đã có tâm đỏ
         self.gui.display_frame(frame_to_display)
-        # --- KẾT THÚC LOGIC MỚI ---
+        
     def capture_photo(self):
         if not self.is_camera_connected:
             logger.warning("Shot blocked: Camera is not connected.")
@@ -409,6 +414,18 @@ class PracticeWindow(QMainWindow):
 
     def on_zoom_changed(self, value):
         self.zoom_level = value / 10.0
+        
+    @Slot(int)
+    def on_gamma_slider_changed(self, value):
+        """
+        Được gọi mỗi khi người dùng kéo thanh trượt Gamma.
+        """
+        # Công thức này sẽ chuyển đổi giá trị slider (1 đến 20)
+        # thành giá trị gamma (0.1 đến 2.0)
+        self.current_gamma = value / 10.0
+        
+        # Cập nhật con số hiển thị trên giao diện
+        self.gui.gamma_value_label.setText(f"{self.current_gamma:.1f}")
     
     def connect_camera(self, index):
         """

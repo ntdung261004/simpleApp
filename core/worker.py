@@ -43,20 +43,36 @@ class ProcessingWorker(QObject):
         target_names = ['bia_4b', 'bia_4c']
         
         for name in target_names:
+            # Đường dẫn tới ảnh gốc CHÍNH (chụp bằng điện thoại)
             img_path = resource_path(os.path.join("assets", "images", "original", f"{name}.png"))
+            
+            # --- BẮT ĐẦU NÂNG CẤP ---
+            # Đường dẫn tới ảnh gốc PHỤ (chụp bằng webcam)
+            img_alt_path = resource_path(os.path.join("assets", "images", "warp", f"warp_{name}.png"))
+            # --- KẾT THÚC NÂNG CẤP ---
+
             mask_path = resource_path(os.path.join("assets", "images", "mask", f"mask_{name}.png"))
             
             img = cv2.imread(img_path)
             mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
 
             if img is not None and mask is not None:
-                # Sửa key để khớp với logic trong hàm xử lý
                 assets[name] = {
                     'original_img': img,
-                    'mask': mask
+                    'mask': mask,
+                    'original_img_alt': None # Khởi tạo là None
                 }
+                
+                # --- BẮT ĐẦU NÂNG CẤP ---
+                # Kiểm tra xem ảnh phụ có tồn tại không và tải nó
+                if os.path.exists(img_alt_path):
+                    img_alt = cv2.imread(img_alt_path)
+                    if img_alt is not None:
+                        assets[name]['original_img_alt'] = img_alt
+                        logger.info(f"Đã tải thành công ảnh tham chiếu phụ cho '{name}'.")
+                # --- KẾT THÚC NÂNG CẤP ---
             else:
-                logger.error(f"LỖI: Không tìm thấy file tài sản cho '{name}'.")
+                logger.error(f"LỖI: Không tìm thấy file tài sản chính cho '{name}'.")
         return assets
 
     @Slot(np.ndarray, object, str)

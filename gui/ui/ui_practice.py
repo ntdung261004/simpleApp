@@ -198,42 +198,33 @@ class MainGui(QWidget):
     # --- Các hàm tạo widget còn lại giữ nguyên cấu trúc, chỉ thay đổi style ---
 # Thay thế TOÀN BỘ hàm này trong file ui_practice.py
 
-# Thay thế TOÀN BỘ hàm này trong file ui_practice.py
+    # Thay thế TOÀN BỘ hàm này trong file ui_practice.py
 
     def _create_camera_column(self) -> QWidget:
         panel = self._create_styled_panel()
         main_layout = QVBoxLayout(panel)
         main_layout.setContentsMargins(15, 15, 15, 15)
-        main_layout.setSpacing(15) # Tăng khoảng cách giữa các phần tử dọc
+        main_layout.setSpacing(15)
 
-        # 1. Phần tiêu đề (đã được tinh chỉnh)
-        title_widget = QWidget() # Dùng QWidget để gói QLabel và kiểm soát layout
+        title_widget = QWidget()
         title_layout = QHBoxLayout(title_widget)
-        title_layout.setContentsMargins(0, 0, 0, 0) # Không padding cho layout này
+        title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(0)
-
         title = QLabel("Đường ngắm trực tiếp")
         title.setProperty("class", "panel-title")
-        title.setAlignment(Qt.AlignCenter) # Căn giữa tiêu đề
-        
-        # Để tiêu đề không quá dài, chỉ chiếm đủ không gian cần thiết
-        title_layout.addStretch(1) # Đẩy tiêu đề vào giữa
+        title.setAlignment(Qt.AlignCenter)
+        title_layout.addStretch(1)
         title_layout.addWidget(title)
-        title_layout.addStretch(1) # Đẩy tiêu đề vào giữa
+        title_layout.addStretch(1)
+        main_layout.addWidget(title_widget)
         
-        main_layout.addWidget(title_widget) # Thêm widget chứa tiêu đề vào layout chính
-        
-        # 2. Khung hiển thị camera (giữ nguyên)
         self.camera_view_label = VideoLabel()
         self.camera_view_label.setText("Vui lòng kết nối camera")
         main_layout.addWidget(self.camera_view_label, 1)
 
-        # 3. Khung điều khiển ở dưới (đã được tinh chỉnh padding)
         controls_panel = QWidget()
         controls_layout = QHBoxLayout(controls_panel)
-        # --- THAY ĐỔI: Tăng padding trái/phải cho controls_layout ---
-        controls_layout.setContentsMargins(10, 5, 10, 0) # Padding 10px ở trái/phải
-        # --- KẾT THÚC THAY ĐỔI ---
+        controls_layout.setContentsMargins(10, 5, 10, 0)
         controls_layout.setSpacing(10)
 
         self.refresh_button = QPushButton("Làm mới")
@@ -246,6 +237,7 @@ class MainGui(QWidget):
         
         controls_layout.addStretch(1)
 
+        # Cụm điều khiển Zoom
         zoom_text_label = QLabel("Khoảng cách:")
         self.zoom_slider = QSlider(Qt.Horizontal)
         self.zoom_slider.setMinimum(10)
@@ -255,8 +247,28 @@ class MainGui(QWidget):
         self.zoom_value_label.setObjectName("zoomValueLabel")
         
         controls_layout.addWidget(zoom_text_label)
-        controls_layout.addWidget(self.zoom_slider, 2)
+        controls_layout.addWidget(self.zoom_slider)
         controls_layout.addWidget(self.zoom_value_label)
+        
+        # =================== BẮT ĐẦU THÊM MỚI ===================
+        
+        controls_layout.addStretch(1)
+
+        # Cụm điều khiển Ánh sáng (Gamma)
+        gamma_text_label = QLabel("Cân bằng sáng:")
+        self.gamma_slider = QSlider(Qt.Horizontal)
+        self.gamma_slider.setMinimum(1)   # Tương ứng Gamma 0.1 (giảm sáng tối đa)
+        self.gamma_slider.setMaximum(20)  # Tương ứng Gamma 2.0 (tăng sáng vừa phải)
+        self.gamma_slider.setValue(10)    # Vẫn mặc định là 10 (Gamma 1.0 - không đổi)
+        
+        self.gamma_value_label = QLabel("1.0")
+        self.gamma_value_label.setObjectName("zoomValueLabel") # Tái sử dụng style của label zoom
+
+        controls_layout.addWidget(gamma_text_label)
+        controls_layout.addWidget(self.gamma_slider)
+        controls_layout.addWidget(self.gamma_value_label)
+
+        # ==================== KẾT THÚC THÊM MỚI =====================
         
         controls_layout.addStretch(1)
 
@@ -266,7 +278,8 @@ class MainGui(QWidget):
         main_layout.addWidget(controls_panel)
 
         self.zoom_slider.valueChanged.connect(self._update_zoom_value_label)
-        return panel  
+        return panel
+     
     def _update_zoom_value_label(self, value):
         zoom_factor = value / 10.0
         self.zoom_value_label.setText(f"{zoom_factor:.1f}x")
