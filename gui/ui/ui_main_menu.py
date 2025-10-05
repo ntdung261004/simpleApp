@@ -32,7 +32,7 @@ class Ui_MainMenuWindow(object):
         font.setPointSize(28)
         font.setBold(True)
         self.title_label.setFont(font)
-        self.title_label.setText("PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM\nSÚNG TIỂU LIÊN")
+        self.title_label.setText("PHẦN MỀM TẬP LUYỆN ĐƯỜNG NGẮM\nSÚNG NGẮN K54")
         self.title_label.setStyleSheet("color: #ecf0f1;")
         self.verticalLayout.addWidget(self.title_label)
         

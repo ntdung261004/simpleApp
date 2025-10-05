@@ -1,11 +1,11 @@
 ; === Shooting App Installer Script ===
 
-#define MyAppName "Kiem Tra Duong Ngam"
+#define MyAppName "Tap luyen K54"
 #define MyAppVersion "1.0"
 #define MyAppPublisher "MinhLuan"
-#define MyAppExeName "ShootingApp.exe"
+#define MyAppExeName "TrainingK54.exe"
 #define MyAppIconName "assets\app_icon.ico" 
-#define MyOutputFolder "dist\ShootingApp"
+#define MyOutputFolder "dist\TapLuyenK54"
 
 [Setup]
 ; AppId là một mã định danh duy nhất cho ứng dụng của bạn. 

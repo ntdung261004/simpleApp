@@ -8,32 +8,28 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from module.detection_module import ObjectDetector
 from utils.processing import check_object_center
-from utils.handles import handle_hit_bia_so_4, handle_hit_bia_so_7, handle_hit_bia_so_8, handle_miss
+from utils.handles import handle_hit_bia_4b, handle_hit_bia_4c, handle_miss
 from utils.resource_path import resource_path
+
 logger = logging.getLogger(__name__)
 
 class ProcessingWorker(QObject):
     finished = Signal(dict)
 
-    # --- BẮT ĐẦU THAY ĐỔI ---
-    def __init__(self, config: dict): # << Nhận 'config' từ main.py
+    def __init__(self, config: dict):
         super().__init__()
-        model_path = resource_path("assets/models/my_modelv8m.pt")
+        model_path = resource_path("assets/models/K54v1.pt")
         self.detector = ObjectDetector(model_path=model_path)
         self.assets = self._load_assets()
-
-        # Lấy ngưỡng tin cậy từ config, nếu không có thì dùng 0.75
         self.confidence_threshold = config.get('yolo_confidence_threshold', 0.75)
         logger.info(f"Worker initialized with confidence threshold: {self.confidence_threshold}")
-    # --- KẾT THÚC THAY ĐỔI ---
         
         self.hit_handlers = {
-            'bia_so_4': (handle_hit_bia_so_4, 'bia_so_4'),
-            'bia_so_7_8': (handle_hit_bia_so_7, 'bia_so_7'),
-            'bia_so_8': (handle_hit_bia_so_8, 'bia_so_8'),
+            'bia_4b': (handle_hit_bia_4b, 'bia_4b'),
+            'bia_4c': (handle_hit_bia_4c, 'bia_4c')
         }
 
-        # Logic "làm nóng" model
+        # Warm-up model
         logger.info("Worker: Thực hiện warm-up cho mô hình YOLO...")
         try:
             dummy_image = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -43,39 +39,46 @@ class ProcessingWorker(QObject):
             logger.error(f"Worker: Lỗi trong quá trình warm-up: {e}")
 
     def _load_assets(self):
-        # Hàm này giữ nguyên như trong file của bạn
         assets = {}
-        target_names = ['bia_so_4', 'bia_so_7', 'bia_so_8']
+        target_names = ['bia_4b', 'bia_4c']
         
         for name in target_names:
             img_path = resource_path(os.path.join("assets", "images", "original", f"{name}.png"))
-            img_alt_path = resource_path(os.path.join("assets", "images", "original", f"{name}_1.png"))
             mask_path = resource_path(os.path.join("assets", "images", "mask", f"mask_{name}.png"))
             
             img = cv2.imread(img_path)
             mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
 
             if img is not None and mask is not None:
+                # Sửa key để khớp với logic trong hàm xử lý
                 assets[name] = {
                     'original_img': img,
-                    'original_img_alt': cv2.imread(img_alt_path),
                     'mask': mask
                 }
             else:
-                logger.error(f"LỖI: Không tìm thấy file tài sản cho '{name}' tại đường dẫn dự kiến.")
+                logger.error(f"LỖI: Không tìm thấy file tài sản cho '{name}'.")
         return assets
 
     @Slot(np.ndarray, object, str)
     def process_image(self, photo_frame, calibrated_center, image_path):
-        # --- BẮT ĐẦU THAY ĐỔI ---
-        # Sử dụng ngưỡng tin cậy đã đọc từ config
+        """
+        Hàm này chỉ nhận ảnh, xử lý và trả kết quả. 
+        Nó không chịu trách nhiệm lưu ảnh training.
+        """
+        if photo_frame is None:
+            logger.warning("Worker: Nhận được frame rỗng, bỏ qua xử lý.")
+            return
+            
+        # 1. Phát hiện đối tượng trên ảnh được gửi đến
         detections = self.detector.detect(image=photo_frame, conf=self.confidence_threshold)
-        # --- KẾT THÚC THAY ĐỔI ---
 
+        # 2. Kiểm tra xem có trúng mục tiêu không
         status, hit_info = check_object_center(detections, photo_frame, calibrated_center)
 
         result_data = None
         target_detected_raw = None
+        
+        # 3. Xử lý logic trúng/trượt
         if status == "TRÚNG":
             detected_name = hit_info.get('name')
             target_detected_raw = detected_name
@@ -83,12 +86,16 @@ class ProcessingWorker(QObject):
 
             if handler_info:
                 handler_func, asset_key = handler_info
-                asset_bundle = self.assets[asset_key]
-                result_data = handler_func(
-                    hit_info=hit_info,
-                    original_frame=photo_frame,
-                    **asset_bundle
-                )
+                asset_bundle = self.assets.get(asset_key) # Dùng .get() để an toàn hơn
+                if asset_bundle:
+                    result_data = handler_func(
+                        hit_info=hit_info,
+                        original_frame=photo_frame,
+                        **asset_bundle
+                    )
+                else:
+                    logger.error(f"Không tìm thấy tài sản cho asset_key: {asset_key}")
+                    result_data = handle_miss(hit_info, photo_frame)
             else:
                 logger.warning(f"Bắn trúng '{detected_name}' nhưng không có handler được định nghĩa.")
                 result_data = handle_miss(hit_info, photo_frame)
@@ -97,22 +104,21 @@ class ProcessingWorker(QObject):
             result_data = handle_miss(hit_info, photo_frame)
             target_detected_raw = "Trượt" 
 
-        if result_data.get('score') is not None and result_data.get('score') > 0:
-            final_image_to_save = result_data.get('image')
-            if final_image_to_save is not None:
-                try:
-                    cv2.imwrite(image_path, final_image_to_save)
-                    logger.info(f"Worker: Đã ghi đè ảnh kết quả tại {image_path}")
-                except Exception as e:
-                    logger.error(f"Worker: Lỗi khi ghi đè ảnh kết quả: {e}")
+        # =================== PHẦN QUAN TRỌNG NHẤT ===================
+        #
+        # ĐÃ XÓA BỎ HOÀN TOÀN KHỐI LOGIC GHI ĐÈ ẢNH (cv2.imwrite) TẠI ĐÂY.
+        # Worker sẽ KHÔNG còn ghi đè lên file ảnh training sạch nữa.
+        #
+        # ==========================================================
 
+        # 4. Đóng gói kết quả cuối cùng để gửi về giao diện
         final_package = {
             'time_str': datetime.now().strftime('%H:%M:%S'),
             'target_name': result_data.get('target'),
             'score': result_data.get('score'),
-            'result_frame': result_data.get('image'),
+            'result_frame': result_data.get('image'), # Ảnh KẾT QUẢ (có tâm đỏ) để hiển thị
             'coords': result_data.get('coords'),
-            'image_path': image_path,
+            'image_path': image_path, # Vẫn gửi lại đường dẫn file gốc
             'target_detected_raw': target_detected_raw
         }
         

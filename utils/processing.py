@@ -101,88 +101,9 @@ def warp_crop_to_original(
     warped = cv2.warpPerspective(obj_crop, H, (original_img.shape[1], original_img.shape[0]), flags=cv2.INTER_LINEAR)
     return warped, transformed_point
 
-#tính điểm bia 8
-def calculate_score_bia8(pt: Tuple[float, float], original_img: np.ndarray, mask: np.ndarray) -> int:
-    """
-    Tính điểm cho bia số 8 dựa trên các vòng elip.
-    """
-    if pt is None or mask is None or original_img is None:
-        return 0
-
-    x, y = int(pt[0]), int(pt[1])
-    # Lấy kích thước từ ảnh gốc thay vì ảnh mask để đảm bảo chính xác
-    h, w = original_img.shape[:2]
-
-    if not (0 <= y < h and 0 <= x < w) or mask[y, x] == 0:
-        return 0
-
-    center_x, center_y = 87, 116
-
-    ellipse_rings = [
-        {'score': 10, 'width': 42,  'height': 63},
-        {'score': 9,  'width': 84, 'height': 126},
-        {'score': 8,  'width': 126, 'height': 190},
-        {'score': 7,  'width': 172, 'height': 258},
-        {'score': 6,  'width': 216, 'height': 324},
-        {'score': 5,  'width': 260, 'height': 324},
-        {'score': 4,  'width': 304, 'height': 456},
-        {'score': 3,  'width': 348, 'height': 522},
-        {'score': 2,  'width': 392, 'height': 588},
-        {'score': 1,  'width': 436, 'height': 654}
-    ]
-
-    for ring in ellipse_rings:
-        a = ring['width'] / 2.0
-        b = ring['height'] / 2.0
-        if a > 0 and b > 0:
-            check = ((x - center_x)**2 / a**2) + ((y - center_y)**2 / b**2)
-            if check <= 1:
-                return ring['score']
-    
-    return 0
-
-#tính điểm bia 7
-def calculate_score_bia7(pt: Tuple[float, float], original_img: np.ndarray, mask: np.ndarray) -> int:
-    """
-    Tính điểm cho bia số 7 dựa trên các vòng elip.
-    """
-    if pt is None or mask is None or original_img is None:
-        return 0
-
-    x, y = int(pt[0]), int(pt[1])
-    # Lấy kích thước từ ảnh gốc thay vì ảnh mask để đảm bảo chính xác
-    h, w = original_img.shape[:2]
-
-    if not (0 <= y < h and 0 <= x < w) or mask[y, x] == 0:
-        return 0
-
-    center_x, center_y = 136, 177
-
-    ellipse_rings = [
-        {'score': 10, 'width': 63,  'height': 95},
-        {'score': 9,  'width': 126, 'height': 190},
-        {'score': 8,  'width': 189, 'height': 284},
-        {'score': 7,  'width': 252, 'height': 378},
-        {'score': 6,  'width': 309, 'height': 464},
-        {'score': 5,  'width': 375, 'height': 562},
-        {'score': 4,  'width': 436, 'height': 654},
-        {'score': 3,  'width': 497, 'height': 746},
-        {'score': 2,  'width': 557, 'height': 836},
-        {'score': 1,  'width': 613, 'height': 920}
-    ]
-
-    for ring in ellipse_rings:
-        a = ring['width'] / 2.0
-        b = ring['height'] / 2.0
-        if a > 0 and b > 0:
-            check = ((x - center_x)**2 / a**2) + ((y - center_y)**2 / b**2)
-            if check <= 1:
-                return ring['score']
-    
-    return 0
 
 #tính điểm bia số 4
-def calculate_score_bia4(pt: Tuple[float, float], original_img: np.ndarray, mask: np.ndarray) -> int:
+def calculate_score_bia4b(pt: Tuple[float, float], original_img: np.ndarray, mask: np.ndarray) -> int:
     if original_img is None or mask is None or pt is None:
         return 0
     x, y = int(pt[0]), int(pt[1])
@@ -190,16 +111,42 @@ def calculate_score_bia4(pt: Tuple[float, float], original_img: np.ndarray, mask
     if not (0 <= x < w and 0 <= y < h):
         return 0
 
-    center_x, center_y = w // 2, h // 2
+    center_x, center_y = 254, 250
     distance = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
     
     # Kiểm tra xem điểm chạm có nằm trong vùng hợp lệ của bia không
     if mask[y, x] == 255:
-        if distance < 56: return 10
-        elif distance < 116: return 9
-        elif distance < 173: return 8
-        elif distance < 230: return 7
-        elif distance < 285: return 6
-        elif distance < 320: return 5
+        if distance < 23: return 10
+        elif distance < 45: return 9
+        elif distance < 69: return 8
+        elif distance < 92: return 7
+        elif distance < 115: return 6
+        elif distance < 137: return 5
+        elif distance < 162: return 4
+        elif distance < 185: return 3
+        elif distance < 208: return 2
+        elif distance < 231: return 1
+
+    return 0
+
+def calculate_score_bia4c(pt: Tuple[float, float], original_img: np.ndarray, mask: np.ndarray) -> int:
+    if original_img is None or mask is None or pt is None:
+        return 0
+    x, y = int(pt[0]), int(pt[1])
+    h, w = original_img.shape[:2]
+    if not (0 <= x < w and 0 <= y < h):
+        return 0
+
+    center_x, center_y = 249, 248.5
+    distance = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
     
+    # Kiểm tra xem điểm chạm có nằm trong vùng hợp lệ của bia không
+    if mask[y, x] == 255:
+        if distance < 46: return 10
+        elif distance < 83: return 9
+        elif distance < 121: return 8
+        elif distance < 158: return 7
+        elif distance < 194: return 6
+        elif distance < 231: return 5
+
     return 0

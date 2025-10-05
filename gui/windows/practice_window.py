@@ -27,7 +27,7 @@ class PracticeWindow(QMainWindow):
 
     def __init__(self, worker: ProcessingWorker, trigger: BluetoothTrigger):
         super().__init__()
-        self.setWindowTitle("Phần Mềm Kiểm Tra Đường Ngắm Súng Tiểu Liên STV")
+        self.setWindowTitle("Phần Mềm Luyện Tập Đường Ngắm Súng Ngắn K54")
         screen = QScreen.availableGeometry(QApplication.primaryScreen())
         self.setGeometry(screen)
         self.active_session_id = None
@@ -44,6 +44,8 @@ class PracticeWindow(QMainWindow):
         # <<< THAY ĐỔI: Thêm biến đếm số lần đọc frame thất bại
         self.frame_read_failures = 0
         self.FRAME_FAILURE_THRESHOLD = 3 # Ngắt kết nối nếu đọc lỗi 3 lần liên tiếp (khoảng 0.5s)
+        
+        self.last_clean_frame_for_training = None
         
         self.last_processed_frame = None
         
@@ -78,7 +80,7 @@ class PracticeWindow(QMainWindow):
         self.load_config()
         
         # Xác định đường dẫn lưu ảnh chụp trong thư mục AppData
-        self.save_dir = os.path.join(APP_DATA_DIR, "captured_images")
+        self.save_dir = "training_data"
         
         # Đảm bảo thư mục này tồn tại
         os.makedirs(self.save_dir, exist_ok=True)
@@ -203,39 +205,45 @@ class PracticeWindow(QMainWindow):
                 self.gui.soldier_selector.addItem(display_text, userData=soldier)
                 # === KẾT THÚC THAY ĐỔI ===
         else:
-            self.gui.soldier_selector.addItem("Chưa có người học")
+            self.gui.soldier_selector.addItem("Chưa có người tập")
 
+    # Thay thế TOÀN BỘ hàm update_frame cũ bằng hàm này
     def update_frame(self):
         if not (self.cam and self.cam.isOpened()):
-            # Trường hợp này hiếm khi xảy ra nếu logic disconnect đã tốt
             return
 
         ret, frame = self.cam.read()
 
-        # <<< THAY ĐỔI: Logic xử lý khi rút camera
         if not ret or frame is None:
             self.frame_read_failures += 1
             logger.warning(f"Không thể đọc frame, lần thất bại thứ: {self.frame_read_failures}")
             if self.frame_read_failures > self.FRAME_FAILURE_THRESHOLD:
                 logger.error("Mất kết nối với camera (đọc frame thất bại nhiều lần).")
                 self.disconnect_camera("Mất kết nối với camera...\nVui lòng kiểm tra kết nối và nhấn 'Làm mới'.")
-            return # Thoát khỏi hàm để không xử lý frame rỗng
-
-        # Nếu đọc thành công, reset bộ đếm lỗi
+            return
+        
         self.frame_read_failures = 0
         
-                # === TÍCH HỢP LOGIC KIỂM TRA KẾT NỐI TẠI ĐÂY ===
-        # Ngay sau khi xác nhận có frame hợp lệ, chúng ta đặt cờ báo hiệu
         if not self.is_camera_connected:
             self.is_camera_connected = True
             logger.info("Camera đã kết nối thành công và sẵn sàng để bắt đầu phiên tập.")
-        # ===============================================
-        # Chỉ khi frame hợp lệ, chúng ta mới tiếp tục xử lý
+            
         processed_frame = self.crop_and_resize_frame(frame)
-        self.gui.current_frame = processed_frame.copy()
+        self.gui.current_frame = processed_frame.copy() # Frame sạch, chưa zoom
+        
+        # `zoomed_frame` tại đây là ảnh đã zoom và hoàn toàn SẠCH
         zoomed_frame = self.apply_digital_zoom(processed_frame, self.zoom_level)
         
+        # --- BẮT ĐẦU LOGIC MỚI AN TOÀN HƠN ---
+        # 1. Lưu lại frame SẠCH này để dùng khi chụp ảnh training
+        self.last_clean_zoomed_frame = zoomed_frame
+        
+        # 2. Tạo một BẢN SAO RIÊNG chỉ để hiển thị
+        frame_to_display = zoomed_frame.copy()
+        
+        # 3. Mọi thao tác vẽ chỉ thực hiện trên BẢN SAO NÀY
         point_to_draw = None
+        # ... (logic tính toán point_to_draw giữ nguyên y hệt) ...
         if self.calibrated_center:
             cx, cy = self.calibrated_center
             h, w, _ = processed_frame.shape
@@ -247,57 +255,48 @@ class PracticeWindow(QMainWindow):
                 if zoomed_cx < w and zoomed_cy < h:
                     point_to_draw = (zoomed_cx, zoomed_cy)
         else:
-            h_zoom, w_zoom, _ = zoomed_frame.shape
+            h_zoom, w_zoom, _ = frame_to_display.shape
             point_to_draw = (w_zoom // 2, h_zoom // 2)
 
         if point_to_draw:
-            cv2.drawMarker(zoomed_frame, point_to_draw, (0, 0, 255), cv2.MARKER_CROSS, 40, 2)
+            # Vẽ tâm đỏ LÊN BẢN SAO
+            cv2.drawMarker(frame_to_display, point_to_draw, (0, 0, 255), cv2.MARKER_CROSS, 40, 2)
 
-        # --- BẮT ĐẦU THAY ĐỔI ---
-        # Lưu lại frame đã xử lý ngay trước khi hiển thị
-        self.last_processed_frame = zoomed_frame.copy() 
-        self.gui.display_frame(self.last_processed_frame)
-        # --- KẾT THÚC THAY ĐỔI ---
-
+        # 4. Hiển thị BẢN SAO đã có tâm đỏ
+        self.gui.display_frame(frame_to_display)
+        # --- KẾT THÚC LOGIC MỚI ---
     def capture_photo(self):
-        """
-        Lấy frame ảnh mới nhất từ camera, xử lý và gửi đi cho worker.
-        """
         if not self.is_camera_connected:
             logger.warning("Shot blocked: Camera is not connected.")
             return
-        # --- BẮT ĐẦU THAY ĐỔI ---
-        # Sử dụng frame đã được xử lý và hiển thị gần nhất
-        zoomed_photo_frame = self.last_processed_frame
+
+        # Lấy frame SẠCH đã được lưu từ `update_frame`
+        image_to_save = self.last_clean_zoomed_frame
         
-        # Kiểm tra xem frame có tồn tại không
-        if zoomed_photo_frame is None:
-            logger.error("Không có frame đã xử lý để chụp khi có tín hiệu.")
+        if image_to_save is None:
+            logger.error("Không có frame sạch để lưu lại cho training.")
             return
 
-        # Lấy frame gốc (chưa zoom) để gửi đi phân tích
-        # Vì self.gui.current_frame được cập nhật trong update_frame trước khi zoom
-        processed_frame = self.gui.current_frame
+        # Lấy frame sạch CHƯA zoom để gửi đi phân tích điểm
+        frame_to_process = self.gui.current_frame
 
-        if processed_frame is None:
+        if frame_to_process is None:
             logger.error("Không có frame gốc (chưa zoom) để phân tích.")
             return
-        # --- KẾT THÚC THAY ĐỔI ---
             
         self.audio_manager.play_sound('shot')
         
-        # Logic lưu ảnh
         try:
-            # Thay vì zoom lại, ta dùng luôn ảnh đã zoom để lưu
-            image_to_save = zoomed_photo_frame 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
             filename = f"shot_{timestamp}.png"
             save_path = os.path.join(self.save_dir, filename)
+            
+            # Lưu lại ảnh SẠCH (không có tâm đỏ)
             cv2.imwrite(save_path, image_to_save)
-            logger.info(f"Đã lưu ảnh tại: {save_path}")
+            logger.info(f"Đã lưu ảnh training (không có tâm đỏ) tại: {save_path}")
 
-            # Gửi frame gốc (chưa zoom) đi để xử lý
-            self.request_processing.emit(processed_frame, self.calibrated_center, save_path)
+            # Gửi frame sạch (chưa zoom) đi để xử lý điểm
+            self.request_processing.emit(frame_to_process, self.calibrated_center, save_path)
             logger.info("GUI: Đã gửi yêu cầu xử lý cho worker.")
             
         except Exception as e:

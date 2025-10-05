@@ -60,7 +60,7 @@ def check_or_request_license() -> bool:
 class ApplicationController(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Phần Mềm Kiểm Tra Đường Ngắm Súng Tiểu Liên STV")
+        self.setWindowTitle("Phần Mềm Tập Luyện Đường Ngắm Súng Ngắn K54 ")
 
         # --- BẮT ĐẦU THAY ĐỔI ---
 
