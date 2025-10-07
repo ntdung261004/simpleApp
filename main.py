@@ -112,7 +112,7 @@ class ApplicationController(QMainWindow):
         # Các giá trị mặc định để ứng dụng không bị lỗi nếu thiếu
         defaults = {
             "camera_index": 0,
-            "yolo_confidence_threshold": 0.75,
+            "yolo_confidence_threshold": 0.45,
             "manage_image_height": 400
         }
 

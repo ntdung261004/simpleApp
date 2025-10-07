@@ -38,67 +38,68 @@ def check_object_center(detections, image, calibrated_center):
     print("❌ TRƯỢT | Tâm ngắm không nằm trong bất kỳ mục tiêu nào.")
     return "TRƯỢT", {'shot_point': (center_x, center_y)}
 
-def warp_crop_to_original(original_img, cropped_img, shot_point_relative):
-    MIN_MATCH_COUNT = 4 # Giữ nguyên ngưỡng
-    
-    try:
-        # --- BẮT ĐẦU NÂNG CẤP ---
-        # 1. Chuyển cả hai ảnh sang ảnh xám để loại bỏ yếu tố màu sắc
-        original_gray = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
-        cropped_gray = cv2.cvtColor(cropped_img, cv2.COLOR_BGR2GRAY)
-
-        # 2. Cân bằng độ sáng để tăng độ tương phản và làm nổi bật các đặc điểm
-        original_gray = cv2.equalizeHist(original_gray)
-        cropped_gray = cv2.equalizeHist(cropped_gray)
-        # --- KẾT THÚC NÂNG CẤP ---
-
-        # Sử dụng SIFT detector, một thuật toán mạnh mẽ
-        sift = cv2.SIFT_create()
-        
-        # Tìm các điểm đặc trưng và mô tả trên ảnh đã xử lý
-        kp1, des1 = sift.detectAndCompute(original_gray, None)
-        kp2, des2 = sift.detectAndCompute(cropped_gray, None)
-        
-        if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
-            print("[warp_crop_to_original] Không đủ features để so khớp.")
-            return None, None
-
-        # Sử dụng FLANN matcher để tìm các cặp điểm tương đồng tốt nhất
-        FLANN_INDEX_KDTREE = 1
-        index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
-        search_params = dict(checks=50)
-        flann = cv2.FlannBasedMatcher(index_params, search_params)
-        matches = flann.knnMatch(des2, des1, k=2)
-
-        # Lọc ra các cặp điểm "tốt" bằng 'ratio test' của Lowe
-        good_matches = []
-        for m, n in matches:
-            if m.distance < 0.7 * n.distance:
-                good_matches.append(m)
-
-        print(f"[warp_crop_to_original] Số cặp điểm tốt tìm thấy: {len(good_matches)}")
-
-        if len(good_matches) > MIN_MATCH_COUNT:
-            # Lấy tọa độ của các cặp điểm tốt
-            src_pts = np.float32([kp2[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-            dst_pts = np.float32([kp1[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-            
-            # Tìm ma trận biến đổi (homography)
-            M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-            if M is None:
-                return None, None
-            
-            # Áp dụng ma trận biến đổi lên tọa độ điểm bắn
-            shot_point_np = np.float32([[shot_point_relative]]).reshape(-1, 1, 2)
-            transformed_point = cv2.perspectiveTransform(shot_point_np, M)
-            
-            return M, (transformed_point[0][0][0], transformed_point[0][0][1])
-        else:
-            return None, None
-
-    except cv2.error as e:
-        print(f"[warp_crop_to_original] Lỗi OpenCV: {e}")
+def warp_crop_to_original(
+    original_img: np.ndarray,
+    obj_crop: np.ndarray,
+    shot_point: Optional[Tuple[float, float]] = None,
+    min_inliers: int = 5,
+    ratio_thresh: float = 0.75,
+    ransac_thresh: float = 4.0,
+    max_reproj: float = 5.0,
+) -> Tuple[Optional[np.ndarray], Optional[Tuple[float, float]]]:
+    if original_img is None or obj_crop is None:
+        print("[warp_crop_to_original] ERROR: Ảnh đầu vào bị None")
         return None, None
+
+    orb = cv2.ORB_create(nfeatures=1500, scaleFactor=1.2, edgeThreshold=15, patchSize=31)
+    kp1, des1 = orb.detectAndCompute(original_img, None)
+    kp2, des2 = orb.detectAndCompute(obj_crop, None)
+
+    if des1 is None or des2 is None or len(kp1) < 10 or len(kp2) < 10:
+        print("[warp_crop_to_original] Không đủ đặc trưng để match.")
+        return None, None
+
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+    matches12 = bf.knnMatch(des1, des2, k=2)
+    matches21 = bf.knnMatch(des2, des1, k=2)
+    
+    # Lọc các điểm match tốt bằng Lowe's ratio test
+    good12 = [m for m, n in matches12 if m.distance < ratio_thresh * n.distance]
+    good21 = [m for m, n in matches21 if m.distance < ratio_thresh * n.distance]
+
+    # Lọc các điểm match tương hỗ (mutual matches)
+    mutual = []
+    reverse_map = {(m.trainIdx, m.queryIdx) for m in good21}
+    for m in good12:
+        if (m.queryIdx, m.trainIdx) in reverse_map:
+            mutual.append(m)
+
+    if len(mutual) < min_inliers:
+        print(f"[warp_crop_to_original] Mutual matches quá ít: {len(mutual)}")
+        return None, None
+
+    src_pts = np.float32([kp1[m.queryIdx].pt for m in mutual]).reshape(-1, 1, 2)
+    dst_pts = np.float32([kp2[m.trainIdx].pt for m in mutual]).reshape(-1, 1, 2)
+
+    H, mask = cv2.findHomography(dst_pts, src_pts, cv2.RANSAC, ransac_thresh)
+    if H is None or abs(np.linalg.det(H)) < 1e-6:
+        print("[warp_crop_to_original] Homography không hợp lệ hoặc suy biến.")
+        return None, None
+
+    transformed_point = None
+    if shot_point is not None:
+        try:
+            px, py = float(shot_point[0]), float(shot_point[1])
+            src_pt = np.array([[[px, py]]], dtype=np.float32)
+            warped_pt = cv2.perspectiveTransform(src_pt, H)[0][0]
+            transformed_point = (float(warped_pt[0]), float(warped_pt[1]))
+            print(f"[warp_crop_to_original] Tọa độ vết đạn chuyển sang ảnh gốc: {transformed_point}")
+        except Exception as e:
+            print(f"[warp_crop_to_original] Lỗi chuyển tọa độ điểm: {e}")
+
+    print("[warp_crop_to_original] Warp ảnh thành công")
+    warped = cv2.warpPerspective(obj_crop, H, (original_img.shape[1], original_img.shape[0]), flags=cv2.INTER_LINEAR)
+    return warped, transformed_point
 
 #tính điểm bia số 4
 def calculate_score_bia4b(pt: Tuple[float, float], original_img: np.ndarray, mask: np.ndarray) -> int:

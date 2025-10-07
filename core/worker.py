@@ -18,10 +18,10 @@ class ProcessingWorker(QObject):
 
     def __init__(self, config: dict):
         super().__init__()
-        model_path = resource_path("assets/models/K54v1.pt")
+        model_path = resource_path("assets/models/K54v2.pt")
         self.detector = ObjectDetector(model_path=model_path)
         self.assets = self._load_assets()
-        self.confidence_threshold = config.get('yolo_confidence_threshold', 0.75)
+        self.confidence_threshold = config.get('yolo_confidence_threshold', 0.45)
         logger.info(f"Worker initialized with confidence threshold: {self.confidence_threshold}")
         
         self.hit_handlers = {
