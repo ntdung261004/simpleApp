@@ -24,6 +24,7 @@ class MainMenuWindow(QMainWindow):
         # Gán các nút từ giao diện vào thuộc tính của lớp để dễ truy cập hơn
         # Điều này giúp cho file main.py có thể truy cập trực tiếp các nút này
         # ví dụ: self.main_menu.practice_button.clicked.connect(...)
+        self.competition_button = self.ui.competition_button
         self.practice_button = self.ui.practice_button
         self.stats_button = self.ui.stats_button
         self.exit_button = self.ui.exit_button

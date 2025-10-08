@@ -60,6 +60,10 @@ class Ui_MainMenuWindow(object):
             }
         """
 
+        self.competition_button = QPushButton("THI ĐẤU", self.centralwidget)
+        self.competition_button.setMinimumSize(QSize(300, 75))
+        self.competition_button.setStyleSheet(button_style)
+        self.verticalLayout.addWidget(self.competition_button, 0, Qt.AlignHCenter)
         # Practice Button
         self.practice_button = QPushButton("TẬP LUYỆN", self.centralwidget)
         self.practice_button.setMinimumSize(QSize(300, 75))
