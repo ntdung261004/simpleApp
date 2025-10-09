@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
 )
 from datetime import datetime
 from PySide6.QtGui import QPixmap, QImage
-from PySide6.QtCore import Qt
+# === THAY ĐỔI: Thêm 'Signal' vào import ===
+from PySide6.QtCore import Qt, Signal
 from gui.ui.ui_manage import ManageGui 
 from core.database import DatabaseManager
 from utils.resource_path import resource_path
@@ -119,23 +120,21 @@ class GroupingDisplayDialog(QDialog):
             self.image_label.setPixmap(scaled_pixmap)
 
 class ManageWindow(QMainWindow):
+    # === THAY ĐỔI: Thêm tín hiệu để quay về menu chính ===
+    back_to_main_menu = Signal()
     DATA_PAGE = 0
     MESSAGE_PAGE = 1
     
-    # --- BẮT ĐẦU THAY ĐỔI ---
-    def __init__(self, config: dict): # << Nhận 'config' từ main.py
+    def __init__(self, config: dict):
         super().__init__()
         self.setWindowTitle("Quản lý và Thống kê")
         
-        # Lấy chiều cao từ config và truyền vào giao diện
         image_height = config.get('manage_image_height', 350)
         self.ui = ManageGui(image_height=image_height)
         
         self.setCentralWidget(self.ui)
         self.db = DatabaseManager()
-    # --- KẾT THÚC THAY ĐỔI ---
         
-        # Các biến trạng thái giữ nguyên
         self.current_soldier_id = None
         self.current_session_id = None
         self.current_shots = []
@@ -171,6 +170,9 @@ class ManageWindow(QMainWindow):
         self.ui.shot_table.setStyleSheet(table_stylesheet)
 
     def connect_signals(self):
+        # === THAY ĐỔI: Kết nối nút back trong UI với tín hiệu của cửa sổ ===
+        self.ui.back_button.clicked.connect(self.back_to_main_menu.emit)
+        
         self.ui.add_button.clicked.connect(self.open_add_soldier_dialog)
         self.ui.soldier_table.itemSelectionChanged.connect(self.on_soldier_selected)
         self.ui.history_list.itemSelectionChanged.connect(self.on_session_selected)
@@ -252,17 +254,28 @@ class ManageWindow(QMainWindow):
                 return
             
             self.set_panels_state("SOLDIER_SELECTED")
+            
+            # Sắp xếp các phiên tập theo ngày tháng, mới nhất lên đầu
+            sessions.sort(key=lambda s: datetime.strptime(s.get('session_date', '1970-01-01 00:00:00'), '%Y-%m-%d %H:%M:%S'), reverse=True)
+
             for session in sessions:
                 session_name = session.get('exercise_name') or f"Phiên tập #{session['id']}"
-                try:
-                    date_obj = datetime.strptime(session['session_date'], '%Y-%m-%d %H:%M:%S')
-                    formatted_date = date_obj.strftime('%H:%M - %d-%m-%Y')
-                except ValueError:
-                    formatted_date = session['session_date']
+                # Lấy session_date đã được đổi tên từ database.py
+                date_str = session.get('session_date') 
+                if date_str:
+                    try:
+                        date_obj = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                        formatted_date = date_obj.strftime('%H:%M - %d-%m-%Y')
+                    except (ValueError, TypeError):
+                        formatted_date = "Lỗi ngày"
+                else:
+                    formatted_date = "Không có ngày"
+                    
                 item_text = f"{session_name}\n{formatted_date}"
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.UserRole, session['id'])
                 self.ui.history_list.addItem(item)
+
             logging.info(f"Đã-tải {len(sessions)} phiên-tập-cho-chiến-sĩ ID {soldier_id}.")
         except Exception as e:
             logging.error(f"Lỗi-khi-tải-lịch-sử-bắn: {e}", exc_info=True)
@@ -307,9 +320,15 @@ class ManageWindow(QMainWindow):
             target_key = shot.get('target_detected')
             if target_key in stats_by_target:
                 stats_by_target[target_key]['scores'].append(shot['score'])
-                if shot.get('hit_coordinate_x') is not None and shot.get('hit_coordinate_y') is not None:
-                    coords = (shot['hit_coordinate_x'], shot['hit_coordinate_y'])
-                    stats_by_target[target_key]['coords'].append(coords)
+                # Sửa lại logic lấy tọa độ từ coords
+                coords_str = shot.get('coords')
+                if coords_str:
+                    try:
+                        coords = json.loads(coords_str)
+                        if coords and 'hit_coordinate_x' in coords and 'hit_coordinate_y' in coords:
+                           stats_by_target[target_key]['coords'].append((coords['hit_coordinate_x'], coords['hit_coordinate_y']))
+                    except (json.JSONDecodeError, TypeError):
+                        pass
         
         self.current_shot_coords = {key: data['coords'] for key, data in stats_by_target.items()}
 
@@ -339,7 +358,7 @@ class ManageWindow(QMainWindow):
                 QTableWidgetItem(str(shot['shot_number'])),
                 QTableWidgetItem(formatted_ts),
                 QTableWidgetItem(target_display),
-                QTableWidgetItem(str(shot['score']))
+                QTableWidgetItem(str(shot.get('score', 'N/A'))) # An toàn hơn
             ]
             for col, item in enumerate(items):
                 item.setTextAlignment(Qt.AlignCenter)
@@ -378,13 +397,13 @@ class ManageWindow(QMainWindow):
         if self.current_shot_index > 0:
             self.current_shot_index -= 1
             self.ui.shot_table.selectRow(self.current_shot_index)
-            self.update_shot_display()
+            # self.update_shot_display() # Bị gọi 2 lần, on_shot_table_selected sẽ gọi nó
 
     def show_next_shot(self):
         if self.current_shot_index < len(self.current_shots) - 1:
             self.current_shot_index += 1
             self.ui.shot_table.selectRow(self.current_shot_index)
-            self.update_shot_display()
+            # self.update_shot_display() # Bị gọi 2 lần, on_shot_table_selected sẽ gọi nó
             
     def on_shot_table_selected(self):
         selected_rows = self.ui.shot_table.selectionModel().selectedRows()
@@ -400,7 +419,7 @@ class ManageWindow(QMainWindow):
         if dialog.exec() == QDialog.Accepted:
             data = dialog.get_data()
             if not data["name"]:
-                QMessageBox.warning(self, "Thiếu thông tin", "Vui lòng điền Họ và Tên.")
+                # Validation đã xử lý, có thể bỏ qua
                 return
             try:
                 self.db.add_soldier(**data)

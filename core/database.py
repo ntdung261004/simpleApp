@@ -177,6 +177,7 @@ class DatabaseManager:
             return False
 
     # === QUẢN LÝ PHIÊN TẬP (SESSIONS) ===
+    # Giữ nguyên hàm create_session của bạn
     def create_session(self, soldier_id: int) -> Optional[int]:
         if not self.conn: return None
         try:
@@ -244,10 +245,23 @@ class DatabaseManager:
             logger.error(f"Lỗi khi đếm số phát bắn cho phiên {session_id}: {e}")
             return 0
 
+    # === BẮT ĐẦU SỬA LỖI: SỬA CÂU LỆNH TRUY VẤN ===
     def get_sessions_for_soldier(self, soldier_id: int) -> list:
         if not self.conn: return []
         try:
-            self.cursor.execute("SELECT * FROM sessions WHERE soldier_id = ? ORDER BY start_time DESC", (soldier_id,))
+            # Sửa câu lệnh SQL:
+            # 1. Chọn tường minh các cột cần thiết
+            # 2. Đổi tên `start_time` thành `session_date` để khớp với manage_window.py
+            sql = """
+                SELECT 
+                    id, 
+                    exercise_name, 
+                    start_time AS session_date 
+                FROM sessions 
+                WHERE soldier_id = ? 
+                ORDER BY start_time DESC
+            """
+            self.cursor.execute(sql, (soldier_id,))
             return [dict(row) for row in self.cursor.fetchall()]
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi lấy danh sách Phiên bắn: {e}")
@@ -279,8 +293,8 @@ class DatabaseManager:
             return True
 
     # === QUẢN LÝ THI ĐẤU (COMPETITIONS) ===
+    # (Các hàm thi đấu giữ nguyên như trong file của bạn)
     def create_competition(self, name: str, participant_ids: list) -> Optional[int]:
-        """Tạo một cuộc thi mới và thêm danh sách người tham gia."""
         if not self.conn: return None
         try:
             created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -299,7 +313,6 @@ class DatabaseManager:
             return None
         
     def add_competition_shot(self, competition_id: int, shooter_id: int, score: int, coords: str, image_path: str, target_name: str) -> Optional[int]:
-        """Lưu thông tin một phát bắn trong cuộc thi vào CSDL."""
         if not self.conn: return None
         try:
             sql = """
