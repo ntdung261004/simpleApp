@@ -203,7 +203,7 @@ class PracticeWindow(QMainWindow):
                 self.gui.soldier_selector.addItem(display_text, userData=soldier)
                 # === KẾT THÚC THAY ĐỔI ===
         else:
-            self.gui.soldier_selector.addItem("Chưa có người học")
+            self.gui.soldier_selector.addItem("Chưa có chiến sĩ")
 
     def update_frame(self):
         if not (self.cam and self.cam.isOpened()):

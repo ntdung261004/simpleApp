@@ -90,7 +90,7 @@ class ManageGui(QWidget):
         root_layout.setContentsMargins(20, 10, 20, 20)
         root_layout.setSpacing(15)
 
-        title_label = QLabel("QUẢN LÝ DANH SÁCH NGƯỜI HỌC VÀ THỐNG KÊ KẾT QUẢ BẮN")
+        title_label = QLabel("QUẢN LÝ DANH SÁCH CHIẾN SĨ VÀ THỐNG KÊ KẾT QUẢ BẮN")
         title_label.setObjectName("title")
         title_label.setAlignment(Qt.AlignCenter)
         title_font = QFont('Segoe UI', 18, QFont.Bold)
@@ -121,12 +121,12 @@ class ManageGui(QWidget):
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(15)
 
-        soldier_box = QGroupBox("Danh sách Người học")
+        soldier_box = QGroupBox("Danh sách Chiến sĩ")
         soldier_layout = QVBoxLayout(soldier_box)
 
         self.soldier_table = QTableWidget()
         self.soldier_table.setColumnCount(2)
-        self.soldier_table.setHorizontalHeaderLabels(["Họ và Tên", "Lớp"])
+        self.soldier_table.setHorizontalHeaderLabels(["Họ và Tên", "Đơn vị"])
         self.soldier_table.verticalHeader().setVisible(False)
         self.soldier_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.soldier_table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -278,7 +278,7 @@ class ManageGui(QWidget):
         data_layout.setContentsMargins(15, 15, 15, 15)
         data_layout.setSpacing(15)
 
-        history_box = QGroupBox("Lịch sử bắn của Người học được chọn")
+        history_box = QGroupBox("Lịch sử bắn của Chiến sĩ được chọn")
         history_layout = QVBoxLayout(history_box)
         self.history_list = QListWidget()
         history_layout.addWidget(self.history_list)

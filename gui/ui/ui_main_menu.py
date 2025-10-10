@@ -3,7 +3,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
-    QLabel, QPushButton, QSpacerItem, QSizePolicy
+    QLabel, QPushButton
 )
 
 class Ui_MainMenuWindow(object):
@@ -25,6 +25,18 @@ class Ui_MainMenuWindow(object):
         self.verticalLayout.setContentsMargins(50, 50, 50, 50)
         self.verticalLayout.setSpacing(15)
 
+        # --- DÒNG CHỮ THÊM MỚI ---
+        self.subtitle_label = QLabel(self.centralwidget)
+        self.subtitle_label.setAlignment(Qt.AlignCenter)
+        subtitle_font = QFont()
+        subtitle_font.setPointSize(18)  # nhỏ hơn tiêu đề
+        subtitle_font.setBold(True)
+        self.subtitle_label.setFont(subtitle_font)
+        self.subtitle_label.setStyleSheet("color: #bdc3c7;")  # màu xám sáng
+        self.subtitle_label.setText("BAN CHỈ HUY QUÂN SỰ PHƯỜNG MÔNG DƯƠNG")
+        self.verticalLayout.addWidget(self.subtitle_label)
+        # --- HẾT DÒNG CHỮ THÊM MỚI ---
+
         # Title Label
         self.title_label = QLabel(self.centralwidget)
         self.title_label.setAlignment(Qt.AlignCenter)
@@ -35,11 +47,9 @@ class Ui_MainMenuWindow(object):
         self.title_label.setText("PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM\nSÚNG TIỂU LIÊN")
         self.title_label.setStyleSheet("color: #ecf0f1;")
         self.verticalLayout.addWidget(self.title_label)
-        
-        # --- BẮT ĐẦU THAY ĐỔI ---
-        # Thêm khoảng trống co giãn ở trên với tỉ lệ 1
+
+        # Thêm khoảng trống co giãn ở trên
         self.verticalLayout.addStretch(1)
-        # --- KẾT THÚC THAY ĐỔI ---
 
         # Button style
         button_style = """
@@ -92,10 +102,7 @@ class Ui_MainMenuWindow(object):
         self.exit_button.setStyleSheet(exit_button_style)
         self.verticalLayout.addWidget(self.exit_button, 0, Qt.AlignHCenter)
 
-        # --- BẮT ĐẦU THAY ĐỔI ---
-        # Thêm khoảng trống co giãn ở dưới với tỉ lệ 2
-        # (Lớn hơn ở trên, sẽ đẩy các nút lên cao hơn)
+        # Thêm khoảng trống ở dưới
         self.verticalLayout.addStretch(2)
-        # --- KẾT THÚC THAY ĐỔI ---
 
         MainMenuWindow.setCentralWidget(self.centralwidget)

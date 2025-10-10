@@ -283,7 +283,7 @@ class MainGui(QWidget):
         session_layout = QVBoxLayout(session_box)
         
         soldier_select_layout = QHBoxLayout()
-        soldier_select_label = QLabel("Người học:")
+        soldier_select_label = QLabel("Chiến sĩ:")
         self.soldier_selector = QComboBox()
         soldier_select_layout.addWidget(soldier_select_label)
         soldier_select_layout.addWidget(self.soldier_selector, 1)
