@@ -17,7 +17,7 @@ from gui.ui.ui_manage import ManageGui
 from core.database import DatabaseManager
 from utils.resource_path import resource_path
 
-# Các lớp Dialog (AddSoldierDialog, GroupingDisplayDialog) giữ nguyên
+# Các lớp Dialog giữ nguyên
 class AddSoldierDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -79,8 +79,10 @@ class ManageWindow(QMainWindow):
     def __init__(self, config: dict):
         super().__init__()
         self.setWindowTitle("Quản lý và Thống kê")
-        image_height = config.get('manage_image_height', 350)
-        self.ui = ManageGui(image_height=image_height)
+        
+        # === SỬA LỖI: Khởi tạo ManageGui không cần tham số ===
+        self.ui = ManageGui()
+        
         self.setCentralWidget(self.ui); self.db = DatabaseManager()
         self.current_soldier_id = None; self.current_session_id = None
         self.current_shots = []; self.current_shot_index = -1; self.current_shot_coords = {}
@@ -88,74 +90,7 @@ class ManageWindow(QMainWindow):
         self.ui.soldier_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ui.history_list.setContextMenuPolicy(Qt.CustomContextMenu)
 
-    # === BẮT ĐẦU VÙNG SỬA LỖI LOGIC TÍNH ĐIỂM TRUNG BÌNH ===
-    def load_session_details(self, session_id):
-        self.current_shots = self.db.get_shots_for_session(session_id)
-        total_shots = len(self.current_shots)
-        
-        # 1. Lấy tất cả điểm, coi những phát 'N/A' hoặc None là 0 điểm
-        all_scores = [s.get('score', 0) for s in self.current_shots if s.get('score') != 'N/A']
-        total_score = sum(all_scores)
-        
-        # 2. Tính số phát bắn trúng (điểm > 0)
-        hit_shots_count = sum(1 for s in all_scores if s > 0)
-        
-        # 3. Tính toán các chỉ số
-        hit_rate = (hit_shots_count / total_shots * 100) if total_shots > 0 else 0
-        # Sửa lại: Điểm trung bình = Tổng điểm / Tổng số phát bắn
-        avg_score = (total_score / total_shots) if total_shots > 0 else 0
-        
-        self.ui.analysis_summary_label.setText(f"Tổng phát bắn: {total_shots}  |  Tỷ lệ trúng: {hit_rate:.1f}%  |  Điểm trung bình: {avg_score:.2f}")
-        
-        # Logic phân tích theo bia (giữ nguyên nhưng sửa cách lấy dữ liệu)
-        stats_by_target = {'bia_4b': {'scores': [], 'coords': []}, 'bia_4c': {'scores': [], 'coords': []}}
-        for shot in self.current_shots:
-            target_key = shot.get('target_detected')
-            score = shot.get('score', 0)
-            if target_key in stats_by_target and score > 0:
-                stats_by_target[target_key]['scores'].append(score)
-                coords_str = shot.get('coords')
-                if coords_str:
-                    try:
-                        coords = json.loads(coords_str)
-                        if isinstance(coords, list) and len(coords) == 2:
-                            stats_by_target[target_key]['coords'].append(tuple(coords))
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-        self.current_shot_coords = {key: data['coords'] for key, data in stats_by_target.items()}
-        
-        target_map_to_row = {'bia_4b': 0, 'bia_4c': 1}
-        for target_key, row_index in target_map_to_row.items():
-            data = stats_by_target.get(target_key, {'scores': [], 'coords': []})
-            self.ui.analysis_target_table.item(row_index, 1).setText(str(len(data['scores'])))
-            self.ui.analysis_target_table.item(row_index, 2).setText(str(sum(data['scores'])))
-            self.ui.analysis_view_buttons[target_key].setEnabled(len(data['coords']) > 0)
-
-        # Logic hiển thị bảng (giữ nguyên)
-        self.ui.shot_table.setRowCount(total_shots)
-        for row, shot in enumerate(self.current_shots):
-            target_raw = shot['target_detected']; target_display = 'Trượt'
-            if target_raw == 'bia_4b': target_display = 'Bia 4b'
-            elif target_raw == 'bia_4c': target_display = 'Bia 4c'
-            try: formatted_ts = datetime.strptime(shot['timestamp'], '%Y-%m-%d %H:%M:%S').strftime('%H:%M:%S - %d-%m-%Y')
-            except (ValueError, TypeError): formatted_ts = shot['timestamp']
-            items = [QTableWidgetItem(str(shot['shot_number'])), QTableWidgetItem(formatted_ts), QTableWidgetItem(target_display), QTableWidgetItem(str(shot.get('score', 'N/A')))]
-            for col, item in enumerate(items):
-                item.setTextAlignment(Qt.AlignCenter); 
-                if col == 0: item.setData(Qt.UserRole, shot)
-                self.ui.shot_table.setItem(row, col, item)
-
-        if total_shots > 0:
-            self.current_shot_index = 0
-            self.update_shot_display()
-            self.ui.shot_table.selectRow(0)
-        else:
-            self.current_shot_index = -1
-            self.update_shot_display()
-    # === KẾT THÚC VÙNG SỬA LỖI ===
-
-    # --- Các hàm logic còn lại không thay đổi ---
+    # --- Các hàm còn lại giữ nguyên, không thay đổi ---
     def setup_ui_styles(self):
         self.ui.history_list.setStyleSheet(""" QListWidget::item { padding: 10px; border-bottom: 1px solid #4a6278; } QListWidget::item:selected { background-color: #1abc9c; color: #2c3e50; border-bottom: 1px solid #16a085; } """)
         self.ui.soldier_table.setStyleSheet("QTableWidget::item:selected { background-color: #1abc9c; color: white; }")
@@ -183,6 +118,44 @@ class ManageWindow(QMainWindow):
         if not selected_rows: return
         selected_row_index = selected_rows[0].row()
         if self.current_shot_index != selected_row_index: self.current_shot_index = selected_row_index; self.update_shot_display()
+    def load_session_details(self, session_id):
+        self.current_shots = self.db.get_shots_for_session(session_id); total_shots = len(self.current_shots)
+        all_scores = [s.get('score', 0) for s in self.current_shots if isinstance(s.get('score'), int)]
+        total_score = sum(all_scores)
+        hit_shots_count = sum(1 for s in all_scores if s > 0)
+        hit_rate = (hit_shots_count / total_shots * 100) if total_shots > 0 else 0; avg_score = (total_score / total_shots) if total_shots > 0 else 0
+        self.ui.analysis_summary_label.setText(f"Tổng phát bắn: {total_shots}  |  Tỷ lệ trúng: {hit_rate:.1f}%  |  Điểm trung bình: {avg_score:.2f}")
+        stats_by_target = {'bia_4b': {'scores': [], 'coords': []}, 'bia_4c': {'scores': [], 'coords': []}}
+        for shot in self.current_shots:
+            target_key = shot.get('target_detected'); score = shot.get('score', 0)
+            if target_key in stats_by_target and isinstance(score, int) and score > 0:
+                stats_by_target[target_key]['scores'].append(score); coords_str = shot.get('coords')
+                if coords_str:
+                    try:
+                        coords = json.loads(coords_str)
+                        if isinstance(coords, list) and len(coords) == 2: stats_by_target[target_key]['coords'].append(tuple(coords))
+                    except (json.JSONDecodeError, TypeError): pass
+        self.current_shot_coords = {key: data['coords'] for key, data in stats_by_target.items()}
+        target_map_to_row = {'bia_4b': 0, 'bia_4c': 1}
+        for target_key, row_index in target_map_to_row.items():
+            data = stats_by_target.get(target_key, {'scores': [], 'coords': []})
+            self.ui.analysis_target_table.item(row_index, 1).setText(str(len(data['scores'])))
+            self.ui.analysis_target_table.item(row_index, 2).setText(str(sum(data['scores'])))
+            self.ui.analysis_view_buttons[target_key].setEnabled(len(data['coords']) > 0)
+        self.ui.shot_table.setRowCount(total_shots)
+        for row, shot in enumerate(self.current_shots):
+            target_raw = shot['target_detected']; target_display = 'Trượt'
+            if target_raw == 'bia_4b': target_display = 'Bia 4b'
+            elif target_raw == 'bia_4c': target_display = 'Bia 4c'
+            try: formatted_ts = datetime.strptime(shot['timestamp'], '%Y-%m-%d %H:%M:%S').strftime('%H:%M:%S - %d-%m-%Y')
+            except (ValueError, TypeError): formatted_ts = shot['timestamp']
+            items = [QTableWidgetItem(str(shot['shot_number'])), QTableWidgetItem(formatted_ts), QTableWidgetItem(target_display), QTableWidgetItem(str(shot.get('score', 'N/A')))]
+            for col, item in enumerate(items):
+                item.setTextAlignment(Qt.AlignCenter); 
+                if col == 0: item.setData(Qt.UserRole, shot)
+                self.ui.shot_table.setItem(row, col, item)
+        if total_shots > 0: self.current_shot_index = 0; self.update_shot_display(); self.ui.shot_table.selectRow(0)
+        else: self.current_shot_index = -1; self.update_shot_display()
     def show_grouping_popup(self, target_key: str):
         coords = self.current_shot_coords.get(target_key)
         if not coords: QMessageBox.information(self, "Thông báo", "Không có dữ liệu điểm bắn cho loại bia này."); return
