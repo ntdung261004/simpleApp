@@ -40,8 +40,8 @@ def check_or_request_license() -> bool:
         if not ok: return False
         if verify_key(key):
             with open(license_file_path, 'w', encoding='utf-8') as f: f.write(key)
-            QMessageBox.information(None, "Thành công", "Kích hoạt thành công! Ứng dụng sẽ khởi động."); return True
-        else: QMessageBox.warning(None, "Lỗi", "License Key không hợp lệ cho máy tính này. Vui lòng thử lại.")
+            QMessageBox.information(None, "Thành công", "Kích hoạt thành công!"); return True
+        else: QMessageBox.warning(None, "Lỗi", "License Key không hợp lệ.")
 
 class ApplicationController(QMainWindow):
     def __init__(self):
@@ -53,12 +53,16 @@ class ApplicationController(QMainWindow):
         self.processing_worker = ProcessingWorker(self.config)
         self.bt_trigger = BluetoothTrigger()
         self.processing_worker.moveToThread(self.processing_thread)
+        
+        # --- THAY ĐỔI: Truyền `self.config` vào các cửa sổ cần thiết ---
         self.main_menu = MainMenuWindow()
-        self.practice_screen = PracticeWindow(self.processing_worker, self.bt_trigger)
+        self.practice_screen = PracticeWindow(self.processing_worker, self.bt_trigger, self.config)
         self.manage_screen = ManageWindow(self.config)
         self.competition_menu = CompetitionMenuWindow()
         self.setup_competition_screen = SetupCompetitionWindow()
-        self.competition_screen = CompetitionWindow(self.processing_worker, self.bt_trigger)
+        self.competition_screen = CompetitionWindow(self.processing_worker, self.bt_trigger, self.config)
+        # --- Kết thúc thay đổi ---
+        
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
         self.stacked_widget.addWidget(self.main_menu); self.stacked_widget.addWidget(self.practice_screen)
@@ -71,44 +75,33 @@ class ApplicationController(QMainWindow):
         self.bt_trigger.start_global_listener()
 
     def _load_config(self) -> dict:
-        config_path = os.path.join(APP_DATA_DIR, "config.json"); defaults = {"camera_index": 0, "yolo_confidence_threshold": 0.45, "manage_image_height": 400}
+        config_path = os.path.join(APP_DATA_DIR, "config.json")
+        defaults = {"camera_index": 0, "yolo_confidence_threshold": 0.45, "manage_image_height": 400}
         try:
             if not os.path.exists(config_path):
                 with open(config_path, "w", encoding='utf-8') as f: json.dump(defaults, f, indent=4)
                 return defaults
             with open(config_path, "r", encoding='utf-8') as f: loaded_config = json.load(f)
-            defaults.update(loaded_config); return defaults
-        except (json.JSONDecodeError, IOError) as e: return defaults
+            defaults.update(loaded_config)
+            return defaults
+        except (json.JSONDecodeError, IOError): return defaults
 
     def connect_signals(self):
-        """Kết nối tập trung tất cả các tín hiệu."""
-        # --- Điều hướng Menu ---
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)
         self.main_menu.stats_button.clicked.connect(self.show_manage_screen)
         self.main_menu.competition_button.clicked.connect(self.show_competition_menu)
         self.main_menu.exit_button.clicked.connect(self.close)
-        
-        # --- Điều hướng Thi đấu ---
         self.competition_menu.start_button.clicked.connect(self.show_setup_competition_screen)
         self.competition_menu.back_button.clicked.connect(self.show_main_menu)
-        
-        # === BẮT ĐẦU SỬA LỖI: Kết nối đến TÍN HIỆU tùy chỉnh, không phải nút bấm ===
         self.setup_competition_screen.start_competition_signal.connect(self.start_new_competition)
         self.setup_competition_screen.back_button.clicked.connect(self.show_competition_menu)
-        # === KẾT THÚC SỬA LỖI ===
-
-        # --- Nút Back từ các màn hình chính ---
         self.practice_screen.back_to_main_menu.connect(self.show_main_menu) 
         self.manage_screen.back_to_main_menu.connect(self.show_main_menu)
         self.competition_screen.back_to_menu_signal.connect(self.show_competition_menu)
-       
-        # --- Luồng xử lý ảnh ---
         self.practice_screen.request_processing.connect(self.processing_worker.process_image)
         self.competition_screen.request_processing.connect(self.processing_worker.process_image)
         self.processing_worker.practice_finished.connect(self.practice_screen.on_processing_finished)
         self.processing_worker.competition_finished.connect(self.competition_screen.handle_processing_result)
-        
-        # --- Trigger ---
         self.bt_trigger.triggered.connect(self.handle_global_trigger)
 
     @Slot()
@@ -120,15 +113,9 @@ class ApplicationController(QMainWindow):
             self.competition_screen.handle_shot()
 
     def start_new_competition(self):
-        # Hàm này bây giờ sẽ được gọi một cách an toàn SAU KHI màn hình setup đã kiểm tra xong
         selected_ids = self.setup_competition_screen.get_selected_soldier_ids()
-        
-        # Mặc dù đã có kiểm tra ở màn hình setup, kiểm tra lại ở đây để tăng độ an toàn
         if not selected_ids:
-            # Dòng này gần như sẽ không bao giờ được gọi, nhưng vẫn nên có
-            QMessageBox.warning(self, "Lỗi Logic", "Không có xạ thủ nào được chọn.")
-            return
-
+            QMessageBox.warning(self, "Lỗi", "Không có xạ thủ nào được chọn."); return
         competition_name = f"Cuộc thi ngày {datetime.now().strftime('%d-%m-%Y %H:%M')}"
         db_manager = self.setup_competition_screen.db
         competition_id = db_manager.create_competition(competition_name, selected_ids)
@@ -136,31 +123,42 @@ class ApplicationController(QMainWindow):
             all_soldiers = db_manager.get_all_soldiers()
             selected_participants = [s for s in all_soldiers if s['id'] in selected_ids]
             self.competition_screen.setup_competition(competition_id, selected_participants)
-            logging.info(f"Đã tạo cuộc thi ID {competition_id}, chuẩn bị chuyển sang màn hình bắn.")
             self.show_competition_screen()
-        else: QMessageBox.critical(self, "Lỗi Database", "Không thể tạo cuộc thi mới. Vui lòng kiểm tra log.")
+        else: QMessageBox.critical(self, "Lỗi Database", "Không thể tạo cuộc thi mới.")
     
-    # (Các hàm còn lại giữ nguyên)
     def cleanup_before_exit(self):
-        logging.info("Bắt đầu quá trình dọn dẹp ứng dụng...")
+        logging.info("Dọn dẹp ứng dụng...")
         if self.bt_trigger: self.bt_trigger.stop_global_listener()
         if self.processing_thread.isRunning():
             self.processing_thread.quit()
             if not self.processing_thread.wait(3000): self.processing_thread.terminate()
         logging.info("Dọn dẹp hoàn tất.")
+
     def show_main_menu(self):
         current = self.stacked_widget.currentWidget()
         if hasattr(current, 'shutdown_components'): current.shutdown_components()
         self.stacked_widget.setCurrentWidget(self.main_menu)
-    def show_practice_screen(self): self.practice_screen.start_camera(); self.stacked_widget.setCurrentWidget(self.practice_screen)
-    def show_manage_screen(self): self.manage_screen.load_soldiers(); self.stacked_widget.setCurrentWidget(self.manage_screen)
+
+    def show_practice_screen(self): 
+        self.stacked_widget.setCurrentWidget(self.practice_screen)
+        self.practice_screen.start_camera()
+
+    def show_manage_screen(self): 
+        self.manage_screen.load_soldiers()
+        self.stacked_widget.setCurrentWidget(self.manage_screen)
+
     def show_competition_menu(self):
         current = self.stacked_widget.currentWidget()
         if hasattr(current, 'shutdown_components'): current.shutdown_components()
         self.stacked_widget.setCurrentWidget(self.competition_menu)
-    def show_setup_competition_screen(self): self.setup_competition_screen.load_soldiers(); self.stacked_widget.setCurrentWidget(self.setup_competition_screen)
-    def show_competition_screen(self): self.competition_screen.start_camera(); self.stacked_widget.setCurrentWidget(self.competition_screen)
-    def feature_not_implemented(self): QMessageBox.information(self, "Thông báo", "Chức năng này đang được phát triển.")
+
+    def show_setup_competition_screen(self): 
+        self.setup_competition_screen.load_soldiers()
+        self.stacked_widget.setCurrentWidget(self.setup_competition_screen)
+
+    def show_competition_screen(self): 
+        self.stacked_widget.setCurrentWidget(self.competition_screen)
+        self.competition_screen.start_camera()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

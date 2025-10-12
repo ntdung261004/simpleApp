@@ -23,8 +23,6 @@ class ProcessingWorker(QObject):
         self.detector = ObjectDetector(model_path=model_path)
         self.assets = self._load_assets()
         self.confidence_threshold = config.get('yolo_confidence_threshold', 0.45)
-        logger.info(f"Worker initialized with confidence threshold: {self.confidence_threshold}")
-        
         self.hit_handlers = {
             'bia_4b': (handle_hit_bia_4b, 'bia_4b'),
             'bia_4c': (handle_hit_bia_4c, 'bia_4c')
@@ -32,92 +30,70 @@ class ProcessingWorker(QObject):
         self._warm_up_model()
 
     def _warm_up_model(self):
-        logger.info("Worker: Thực hiện warm-up cho mô hình YOLO...")
         try:
             dummy_image = np.zeros((480, 640, 3), dtype=np.uint8)
-            self.detector.detect(dummy_image)
-            logger.info("Worker: Warm-up hoàn tất.")
-        except Exception as e:
-            logger.error(f"Worker: Lỗi trong quá trình warm-up: {e}")
-    
+            self.detector.detect(dummy_image); logger.info("Worker: Warm-up model thành công.")
+        except Exception as e: logger.error(f"Worker: Lỗi khi warm-up model: {e}")
+            
     def _load_assets(self):
-        # (Hàm này giữ nguyên như trong file của bạn)
-        assets = {}
-        target_names = ['bia_4b', 'bia_4c']
-        for name in target_names:
-            img_path = resource_path(os.path.join("assets", "images", "original", f"{name}.png"))
-            img_alt_path = resource_path(os.path.join("assets", "images", "warp", f"warp_{name}.png"))
-            mask_path = resource_path(os.path.join("assets", "images", "mask", f"mask_{name}.png"))
-            
-            img = cv2.imread(img_path)
-            mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+        try:
+            assets = {
+                'bia_4b': {'original_img': cv2.imread(resource_path("assets/images/original/bia_4b.png")), 'mask': cv2.imread(resource_path("assets/images/mask/mask_4b.png"), cv2.IMREAD_GRAYSCALE)},
+                'bia_4c': {'original_img': cv2.imread(resource_path("assets/images/original/bia_4c.png")), 'mask': cv2.imread(resource_path("assets/images/mask/mask_4c.png"), cv2.IMREAD_GRAYSCALE)}
+            }
+            for key in assets:
+                alt_path = resource_path(os.path.join("assets", "images", "warp", f"warp_{key}.png"))
+                assets[key]['original_img_alt'] = cv2.imread(alt_path) if os.path.exists(alt_path) else None
+            return assets
+        except Exception as e:
+            logger.error(f"Worker: Lỗi nghiêm trọng khi tải tài nguyên: {e}"); return None
 
-            if img is not None and mask is not None:
-                assets[name] = { 'original_img': img, 'mask': mask, 'original_img_alt': None }
-                if os.path.exists(img_alt_path):
-                    img_alt = cv2.imread(img_alt_path)
-                    if img_alt is not None:
-                        assets[name]['original_img_alt'] = img_alt
-            else:
-                logger.error(f"LỖI: Không tìm thấy file tài sản chính cho '{name}'.")
-        return assets
-
-    # === THAY THẾ TOÀN BỘ HÀM NÀY ===
     @Slot(np.ndarray, str, str, object)
-    def process_image(self, photo_frame, image_path, mode='practice', context=None):
-        logger.info(f"Worker bắt đầu xử lý ảnh cho chế độ: '{mode}'")
-        if photo_frame is None: return
-            
-        calibrated_center = context.get('calibrated_center') if mode == 'competition' else context
+    def process_image(self, photo_frame, image_path, mode, metadata):
+        if self.assets is None or photo_frame is None: return
 
-        # 1. Nhận dạng và kiểm tra trúng/trượt (Giữ nguyên)
-        detections = self.detector.detect(image=photo_frame, conf=self.confidence_threshold)
-        status, hit_info = check_object_center(detections, photo_frame, calibrated_center)
+        aim_point = metadata.get('aim_point') if isinstance(metadata, dict) else None
+        detections = self.detector.detect(photo_frame, conf=self.confidence_threshold)
+        status, hit_info = check_object_center(detections, photo_frame, aim_point)
 
-        # 2. Xử lý logic để có ảnh kết quả (Giữ nguyên)
-        result_data = None
-        target_detected_raw = None
+        result_data = {}; target_detected_raw = "N/A"
+        
         if status == "TRÚNG":
-            detected_name = hit_info.get('name')
-            target_detected_raw = detected_name
-            handler_info = self.hit_handlers.get(detected_name)
+            target_name = hit_info.get('name')
+            target_detected_raw = target_name
+            handler_info = self.hit_handlers.get(target_name)
+            
             if handler_info:
                 handler_func, asset_key = handler_info
                 asset_bundle = self.assets.get(asset_key)
                 if asset_bundle:
                     result_data = handler_func(hit_info=hit_info, original_frame=photo_frame, **asset_bundle)
-                else:
-                    result_data = handle_miss(hit_info, photo_frame)
-            else:
-                result_data = handle_miss(hit_info, photo_frame)
-        else:
+            
+            if not result_data or result_data.get('score', 0) == 0:
+                 result_data = handle_miss(hit_info, photo_frame)
+                 target_detected_raw = "Trượt" # Ghi đè lại nếu điểm là 0
+        else: # status == "TRƯỢT"
             result_data = handle_miss(hit_info, photo_frame)
             target_detected_raw = "Trượt"
-            
-        # 3. LƯU ẢNH KẾT QUẢ (CHO THỐNG KÊ)
-        final_image_to_save = result_data.get('image')
-        if final_image_to_save is not None and image_path:
-            try:
-                os.makedirs(os.path.dirname(image_path), exist_ok=True)
-                cv2.imwrite(image_path, final_image_to_save)
-                logger.info(f"Worker: Đã lưu ảnh KẾT QUẢ (thống kê) tại {image_path}")
-            except Exception as e:
-                logger.error(f"Worker: Lỗi khi lưu ảnh kết quả: {e}")
+        
+        # Lưu ảnh gốc (để train)
+        if image_path:
+            try: cv2.imwrite(image_path, photo_frame)
+            except Exception as e: logger.error(f"Worker: Lỗi khi lưu ảnh gốc: {e}")
 
-        # 4. Đóng gói và gửi tín hiệu (Giữ nguyên)
+        # Đóng gói kết quả
         final_package = {
             'time_str': datetime.now().strftime('%H:%M:%S'),
-            'target_name': result_data.get('target'),
-            'score': result_data.get('score'),
-            'result_frame': result_data.get('image'),
+            'target_name': result_data.get('target', 'Trượt'),
+            'score': result_data.get('score', 0),
+            'result_frame': result_data.get('image'), # Ảnh này là BIA GIẤY (nếu trúng) hoặc CAM GỐC (nếu trượt)
             'coords': result_data.get('coords'),
             'image_path': image_path,
-            'target_detected_raw': target_detected_raw
+            'target_detected_raw': target_detected_raw,
+            'aim_point_used': aim_point
         }
         
-        if mode == 'competition':
-            self.competition_finished.emit(final_package, context)
-        else:
+        if mode == 'practice':
             self.practice_finished.emit(final_package)
-            
-        logger.info(f"Worker: Đã xử lý xong. Chế độ: {mode}. Điểm: {final_package.get('score')}")
+        elif mode == 'competition':
+            self.competition_finished.emit(final_package, metadata)
