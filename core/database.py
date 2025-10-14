@@ -7,10 +7,31 @@ import shutil
 import sys
 from typing import Optional, List, Dict, Any
 from config import APP_DATA_DIR
-import json # Thêm import json để xử lý coords
+import json
+import numpy as np # <<< THÊM 1: Import thư viện numpy
 
 # Cấu hình logger
 logger = logging.getLogger(__name__)
+
+# === BẮT ĐẦU VÙNG SỬA LỖI ===
+def convert_numpy_types(obj):
+    """
+    Hàm đệ quy để chuyển đổi các kiểu dữ liệu của NumPy (vd: float32)
+    thành các kiểu dữ liệu gốc của Python (vd: float) để có thể serialize JSON.
+    Đây là giải pháp triệt để cho lỗi 'TypeError: Object of type float32 is not JSON serializable'.
+    """
+    if isinstance(obj, (np.integer, np.int_)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float_)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (list, tuple)):
+        return [convert_numpy_types(x) for x in obj]
+    elif isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    return obj
+# === KẾT THÚC VÙNG SỬA LỖI ===
 
 def get_app_data_path(file_name: str) -> str:
     """
@@ -177,7 +198,6 @@ class DatabaseManager:
             return False
 
     # === QUẢN LÝ PHIÊN TẬP (SESSIONS) ===
-    # Giữ nguyên hàm create_session của bạn
     def create_session(self, soldier_id: int) -> Optional[int]:
         if not self.conn: return None
         try:
@@ -205,7 +225,12 @@ class DatabaseManager:
         if not self.conn: return
         try:
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            coords_str = json.dumps(coords) if coords else None
+            
+            # === SỬA LỖI: Chuyển đổi kiểu dữ liệu NumPy trước khi lưu ===
+            safe_coords = convert_numpy_types(coords)
+            coords_str = json.dumps(safe_coords) if safe_coords is not None else None
+            # ==========================================================
+
             sql = "INSERT INTO shots (session_id, shot_number, score, target_detected, coords, image_path, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)"
             self.cursor.execute(sql, (session_id, shot_number, score, target_detected, coords_str, image_path, timestamp))
             self.conn.commit()
@@ -245,13 +270,9 @@ class DatabaseManager:
             logger.error(f"Lỗi khi đếm số phát bắn cho phiên {session_id}: {e}")
             return 0
 
-    # === BẮT ĐẦU SỬA LỖI: SỬA CÂU LỆNH TRUY VẤN ===
     def get_sessions_for_soldier(self, soldier_id: int) -> list:
         if not self.conn: return []
         try:
-            # Sửa câu lệnh SQL:
-            # 1. Chọn tường minh các cột cần thiết
-            # 2. Đổi tên `start_time` thành `session_date` để khớp với manage_window.py
             sql = """
                 SELECT 
                     id, 
@@ -293,7 +314,6 @@ class DatabaseManager:
             return True
 
     # === QUẢN LÝ THI ĐẤU (COMPETITIONS) ===
-    # (Các hàm thi đấu giữ nguyên như trong file của bạn)
     def create_competition(self, name: str, participant_ids: list) -> Optional[int]:
         if not self.conn: return None
         try:
@@ -321,7 +341,13 @@ class DatabaseManager:
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """
             shot_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            params = (competition_id, shooter_id, score, coords, image_path, target_name, shot_time)
+            
+            # === SỬA LỖI: Cũng áp dụng hàm chuyển đổi cho chức năng thi đấu để đảm bảo an toàn ===
+            safe_coords = convert_numpy_types(coords)
+            coords_str = json.dumps(safe_coords) if safe_coords is not None else None
+            # ======================================================================================
+
+            params = (competition_id, shooter_id, score, coords_str, image_path, target_name, shot_time)
             self.cursor.execute(sql, params)
             self.conn.commit()
             shot_id = self.cursor.lastrowid
