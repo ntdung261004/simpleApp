@@ -141,7 +141,6 @@ class DatabaseManager:
             self.cursor.execute(sql, params); return self.cursor.fetchone() is not None
         except sqlite3.Error as e: logger.error(f"Lỗi khi kiểm tra tên phiên: {e}"); return True
 
-    # === BẮT ĐẦU VÙNG THAY ĐỔI LOGIC THI ĐẤU ===
     def create_competition(self, name: str, participant_soldier_ids: list) -> Optional[int]:
         if not self.conn: return None
         try:
@@ -159,24 +158,39 @@ class DatabaseManager:
     def add_competition_shot(self, competition_id: int, soldier_id: int, score: int, coords: Optional[Any], image_path: str, target_name: str):
         if not self.conn: return
         try:
-            # 1. Đếm số phát bắn đã có của xạ thủ này trong cuộc thi này
             self.cursor.execute("SELECT COUNT(id) FROM competition_shots WHERE competition_id = ? AND participant_id = ?", (competition_id, soldier_id))
-            shot_count = self.cursor.fetchone()[0]
-            shot_number = shot_count + 1
-
-            # 2. Chuẩn bị dữ liệu để chèn
+            shot_count = self.cursor.fetchone()[0]; shot_number = shot_count + 1
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            safe_coords = convert_numpy_types(coords)
-            coords_str = json.dumps(safe_coords) if safe_coords is not None else None
+            safe_coords = convert_numpy_types(coords); coords_str = json.dumps(safe_coords) if safe_coords is not None else None
             sql = "INSERT INTO competition_shots (competition_id, participant_id, shot_number, score, target_detected, coords, image_path, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             params = (competition_id, soldier_id, shot_number, score, target_name, coords_str, image_path, timestamp)
-            
-            # 3. Thực thi
             self.cursor.execute(sql, params); self.conn.commit()
             logger.info(f"Đã lưu phát bắn thứ {shot_number} của xạ thủ ID {soldier_id} cho cuộc thi ID {competition_id}.")
+        except sqlite3.Error as e: logger.error(f"Lỗi khi thêm phát bắn vào cuộc thi: {e}"); self.conn.rollback()
+        
+    # === BẮT ĐẦU VÙNG THÊM MỚI ===
+    def delete_shots_for_turn(self, competition_id: int, soldier_id: int, num_shots_to_delete: int) -> bool:
+        """Xóa N phát bắn cuối cùng của một xạ thủ trong một cuộc thi."""
+        if not self.conn: return False
+        try:
+            # Lấy ID của N phát bắn cuối cùng
+            sql_get_ids = "SELECT id FROM competition_shots WHERE competition_id = ? AND participant_id = ? ORDER BY id DESC LIMIT ?"
+            self.cursor.execute(sql_get_ids, (competition_id, soldier_id, num_shots_to_delete))
+            ids_to_delete = [row[0] for row in self.cursor.fetchall()]
+            
+            if not ids_to_delete:
+                logger.warning(f"Không tìm thấy phát bắn nào để xóa cho xạ thủ {soldier_id} trong cuộc thi {competition_id}")
+                return True # Vẫn trả về True vì không có gì để xóa
+
+            # Xóa các phát bắn dựa trên ID
+            sql_delete = f"DELETE FROM competition_shots WHERE id IN ({','.join('?' for _ in ids_to_delete)})"
+            self.cursor.execute(sql_delete, ids_to_delete)
+            self.conn.commit()
+            logger.info(f"Đã xóa thành công {len(ids_to_delete)} phát bắn của xạ thủ {soldier_id} trong cuộc thi {competition_id}.")
+            return True
         except sqlite3.Error as e:
-            logger.error(f"Lỗi khi thêm phát bắn vào cuộc thi: {e}"); self.conn.rollback()
-    # === KẾT THÚC VÙNG THAY ĐỔI LOGIC THI ĐẤU ===
+            logger.error(f"Lỗi khi xóa các phát bắn của lượt: {e}"); self.conn.rollback(); return False
+    # === KẾT THÚC VÙNG THÊM MỚI ===
 
     def close(self):
         if self.conn: self.conn.close(); logger.info("Đã đóng kết nối database.")
