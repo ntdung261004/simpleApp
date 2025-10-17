@@ -58,7 +58,7 @@ class DatabaseManager:
             self.cursor.execute(""" 
                 CREATE TABLE IF NOT EXISTS competitions (
                     id INTEGER PRIMARY KEY, 
-                    name TEXT NOT NULL, 
+                    name TEXT NOT NULL UNIQUE, 
                     status TEXT NOT NULL DEFAULT 'in_progress', 
                     state TEXT, 
                     created_at TEXT NOT NULL
@@ -73,11 +73,21 @@ class DatabaseManager:
     def _update_schema(self):
         if not self.cursor: return
         try:
+            # Thêm cột state nếu chưa có
             self.cursor.execute("ALTER TABLE competitions ADD COLUMN state TEXT")
             self.conn.commit()
             logger.info("Cột 'state' đã được thêm vào bảng 'competitions'.")
         except sqlite3.OperationalError:
             logger.info("Cột 'state' đã tồn tại trong bảng 'competitions'.")
+
+        try:
+            # Thêm ràng buộc UNIQUE cho cột name nếu chưa có
+            self.cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_competition_name ON competitions(name)')
+            self.conn.commit()
+            logger.info("Ràng buộc UNIQUE đã được áp dụng cho cột 'name' trong bảng 'competitions'.")
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi thêm UNIQUE index cho 'competitions.name': {e}")
+
 
     def add_soldier(self, name: str, class_name: str) -> Optional[int]:
         if not self.conn: return None
@@ -170,8 +180,25 @@ class DatabaseManager:
             self.conn.commit()
             logger.info(f"Đã tạo cuộc thi '{name}' (ID: {competition_id}) với {len(participant_soldier_ids)} người tham gia.")
             return competition_id
+        except sqlite3.IntegrityError: # Bắt lỗi UNIQUE
+            logger.error(f"Lỗi khi tạo cuộc thi: Tên '{name}' đã tồn tại.")
+            self.conn.rollback()
+            return None
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi tạo cuộc thi: {e}"); self.conn.rollback(); return None
+
+    # === BẮT ĐẦU VÙNG THAY ĐỔI ===
+    def competition_name_exists(self, name: str) -> bool:
+        """Kiểm tra xem tên một cuộc thi đã tồn tại hay chưa."""
+        if not self.conn: return True # Mặc định là có để tránh tạo trùng nếu DB lỗi
+        try:
+            sql = "SELECT 1 FROM competitions WHERE name = ?"
+            self.cursor.execute(sql, (name,))
+            return self.cursor.fetchone() is not None
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi kiểm tra tên cuộc thi: {e}")
+            return True
+    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def add_competition_shot(self, competition_id: int, soldier_id: int, score: int, coords: Optional[Any], image_path: str, target_name: str):
         if not self.conn: return
@@ -250,9 +277,7 @@ class DatabaseManager:
             logger.error(f"Lỗi khi lấy danh sách các cuộc thi đã lưu: {e}")
             return []
 
-    # === BẮT ĐẦU VÙNG SỬA LỖI: THÊM HÀM TRUY VẤN ĐÚNG BẢNG ===
     def get_shots_for_competition(self, competition_id: int) -> list:
-        """Lấy chi tiết các phát bắn của một cuộc thi từ bảng competition_shots."""
         if not self.conn: return []
         try:
             sql = "SELECT * FROM competition_shots WHERE competition_id = ? ORDER BY shot_number ASC"
@@ -261,7 +286,6 @@ class DatabaseManager:
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi lấy chi tiết các phát bắn của cuộc thi: {e}")
             return []
-    # === KẾT THÚC VÙNG SỬA LỖI ===
 
     def update_competition_status(self, competition_id: int, status: str) -> bool:
         if not self.conn: return False

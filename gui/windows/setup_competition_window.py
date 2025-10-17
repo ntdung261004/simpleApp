@@ -25,7 +25,6 @@ class SoldierListItemWidget(QWidget):
     def is_selected(self) -> bool: return self.select_checkbox.isChecked()
 
 class SetupCompetitionWindow(QMainWindow):
-    # === THAY ĐỔI 1: Cập nhật signal để gửi thêm tên cuộc thi (str) và danh sách ID (list) ===
     start_competition_signal = Signal(str, list)
 
     def __init__(self):
@@ -34,14 +33,25 @@ class SetupCompetitionWindow(QMainWindow):
         self.ui.setupUi(self)
         self.db = DatabaseManager()
         self.ui.start_competition_button.clicked.connect(self.on_start_competition)
-        self.ui.back_button.clicked.connect(self.hide) # Giả sử có nút back
         self.ui.select_all_checkbox.clicked.connect(self.toggle_select_all)
 
-    # === THAY ĐỔI 2: Cập nhật logic khi nhấn nút bắt đầu ===
+    # === BẮT ĐẦU VÙNG THAY ĐỔI ===
+    def reset_form(self):
+        """Xóa trắng các trường nhập liệu và lựa chọn về trạng thái ban đầu."""
+        self.ui.competition_name_input.clear()
+        self.ui.select_all_checkbox.setChecked(False)
+        self.toggle_select_all() # Áp dụng việc bỏ chọn cho tất cả
+        self.update_selection_count()
+
     def on_start_competition(self):
         competition_name = self.ui.competition_name_input.text().strip()
         if not competition_name:
             QMessageBox.warning(self, "Thiếu thông tin", "Vui lòng nhập tên cho cuộc thi.")
+            return
+
+        # Kiểm tra tên trùng lặp
+        if self.db.competition_name_exists(competition_name):
+            QMessageBox.warning(self, "Tên Bị Trùng", f"Tên cuộc thi '{competition_name}' đã tồn tại. Vui lòng chọn một tên khác.")
             return
             
         selected_ids = self.get_selected_soldier_ids()
@@ -50,6 +60,7 @@ class SetupCompetitionWindow(QMainWindow):
             return
             
         self.start_competition_signal.emit(competition_name, selected_ids)
+    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def load_soldiers(self):
         self.ui.soldier_list.clear()

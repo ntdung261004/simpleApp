@@ -13,9 +13,7 @@ from gui.windows.manage_window import ManageWindow
 from gui.windows.competition_menu_window import CompetitionMenuWindow
 from gui.windows.competition_window import CompetitionWindow
 from gui.windows.setup_competition_window import SetupCompetitionWindow
-# === BẮT ĐẦU VÙNG THÊM MỚI: IMPORT CỬA SỔ MỚI ===
 from gui.windows.saved_competitions_window import SavedCompetitionsWindow
-# === KẾT THÚC VÙNG THÊM MỚI ===
 
 from core.worker import ProcessingWorker
 from core.triggers import BluetoothTrigger
@@ -57,13 +55,10 @@ class ApplicationController(QMainWindow):
         self.competition_menu = CompetitionMenuWindow()
         self.setup_competition_screen = SetupCompetitionWindow()
         self.competition_screen = CompetitionWindow(self.processing_worker, self.bt_trigger, self.config)
-        # === BẮT ĐẦU VÙNG THÊM MỚI: KHỞI TẠO CỬA SỔ MỚI ===
         self.saved_competitions_screen = SavedCompetitionsWindow()
-        # === KẾT THÚC VÙNG THÊM MỚI ===
         
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
-        # Thêm tất cả các cửa sổ vào stacked_widget
         all_screens = [
             self.main_menu, self.practice_screen, self.manage_screen, 
             self.competition_menu, self.setup_competition_screen, 
@@ -85,7 +80,6 @@ class ApplicationController(QMainWindow):
         except (json.JSONDecodeError, IOError): return defaults
 
     def _connect_signals(self):
-        # Menu chính
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)
         self.main_menu.stats_button.clicked.connect(self.show_manage_screen)
         self.main_menu.competition_button.clicked.connect(self.show_competition_menu)
@@ -94,26 +88,18 @@ class ApplicationController(QMainWindow):
         self.practice_screen.back_to_main_menu.connect(self.show_main_menu)
         self.manage_screen.back_to_main_menu.connect(self.show_main_menu)
         
-        # Menu thi đấu
         self.competition_menu.start_button.clicked.connect(self.show_setup_competition_screen)
         self.competition_menu.back_button.clicked.connect(self.show_main_menu)
-        # === BẮT ĐẦU VÙNG THÊM MỚI: KẾT NỐI CHO CỬA SỔ MỚI ===
         self.competition_menu.ui.saved_button.clicked.connect(self.show_saved_competitions_screen)
-        # === KẾT THÚC VÙNG THÊM MỚI ===
 
-        # Thiết lập thi đấu
         self.setup_competition_screen.start_competition_signal.connect(self.start_new_competition)
         self.setup_competition_screen.ui.back_button.clicked.connect(self.show_competition_menu)
         
-        # Màn hình thi đấu
         self.competition_screen.back_to_menu_signal.connect(self.show_competition_menu)
 
-        # === BẮT ĐẦU VÙNG THÊM MỚI: KẾT NỐI CÁC TÍN HIỆU CỦA CỬA SỔ "PHIÊN ĐÃ LƯU" ===
         self.saved_competitions_screen.back_to_menu_signal.connect(self.show_competition_menu)
         self.saved_competitions_screen.resume_competition_signal.connect(self.resume_competition)
-        # === KẾT THÚC VÙNG THÊM MỚI ===
 
-        # Worker và Trigger
         self.practice_screen.request_processing.connect(self.processing_worker.process_image)
         self.competition_screen.request_processing.connect(self.processing_worker.process_image)
         self.processing_worker.practice_finished.connect(self.practice_screen.on_processing_finished)
@@ -132,23 +118,18 @@ class ApplicationController(QMainWindow):
         all_soldiers = db_manager.get_all_soldiers()
         selected_participants = [s for s in all_soldiers if s['id'] in selected_soldier_ids]
         
-        # Tạo cuộc thi mới trong DB
         competition_id = db_manager.create_competition(competition_name, [p['id'] for p in selected_participants])
         
         if competition_id:
-            # Thiết lập màn hình thi đấu với dữ liệu mới
             self.competition_screen.setup_competition(competition_id, competition_name, selected_participants)
             self.show_competition_screen()
         else:
-            QMessageBox.critical(self, "Lỗi Database", "Không thể tạo cuộc thi mới trong cơ sở dữ liệu.")
+            QMessageBox.critical(self, "Lỗi Database", "Không thể tạo cuộc thi mới. Tên cuộc thi có thể đã tồn tại.")
 
-    # === BẮT ĐẦU VÙNG THÊM MỚI: LOGIC TIẾP TỤC PHIÊN ĐÃ LƯU ===
     @Slot(dict)
     def resume_competition(self, state_data: dict):
-        """Nhận tín hiệu từ SavedCompetitionsWindow và khôi phục màn hình thi đấu."""
         self.competition_screen.load_from_state(state_data)
         self.show_competition_screen()
-    # === KẾT THÚC VÙNG THÊM MỚI ===
 
     def cleanup_before_exit(self):
         logging.info("Dọn dẹp ứng dụng...")
@@ -171,16 +152,17 @@ class ApplicationController(QMainWindow):
         self._switch_screen(self.manage_screen)
         self.manage_screen.load_soldiers()
 
+    # === BẮT ĐẦU VÙNG THAY ĐỔI ===
     def show_setup_competition_screen(self): 
+        # Luôn reset form mỗi khi vào màn hình này
+        self.setup_competition_screen.reset_form()
         self._switch_screen(self.setup_competition_screen)
         self.setup_competition_screen.load_soldiers()
+    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
-    # === BẮT ĐẦU VÙNG THÊM MỚI: HÀM HIỂN THỊ CỬA SỔ MỚI ===
     def show_saved_competitions_screen(self):
         self._switch_screen(self.saved_competitions_screen)
-        # Gọi hàm enter_view để tải dữ liệu mới nhất mỗi khi vào màn hình
         self.saved_competitions_screen.enter_view()
-    # === KẾT THÚC VÙNG THÊM MỚI ===
 
     def closeEvent(self, event): self.cleanup_before_exit(); super().closeEvent(event)
 
