@@ -13,7 +13,6 @@ from utils.resource_path import resource_path
 logger = logging.getLogger(__name__)
 
 class VideoLabel(QLabel):
-    # (Lớp này giữ nguyên, không thay đổi)
     clicked = Signal(QPoint)
     def __init__(self, parent=None):
         super().__init__(parent); self._pixmap = QPixmap(); self.setScaledContents(False)
@@ -34,66 +33,52 @@ class VideoLabel(QLabel):
         x = (self.width() - scaled_pixmap.width()) / 2; y = (self.height() - scaled_pixmap.height()) / 2
         painter = QPainter(self); painter.drawPixmap(QPoint(int(x), int(y)), scaled_pixmap)
 
-# === BẮT ĐẦU VÙNG THAY ĐỔI ===
 class SquareImageLabel(QLabel):
-    """QLabel được nâng cấp để có thể vẽ các vệt đạn lên trên ảnh bia."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(50, 50)
         self.setAlignment(Qt.AlignCenter)
         self._pixmap = QPixmap()
-        self.hit_points_relative = [] # Danh sách lưu tọa độ tương đối (0.0 -> 1.0) của các vệt đạn
+        self.hit_points_relative = [] 
 
     def setPixmap(self, pixmap: QPixmap):
         self._pixmap = pixmap
-        self.update() # Yêu cầu vẽ lại
+        self.update() 
 
     def add_hit_marker(self, relative_point: tuple[float, float]):
-        """Thêm một vệt đạn mới dựa trên tọa độ tương đối và yêu cầu vẽ lại."""
         if relative_point:
             self.hit_points_relative.append(relative_point)
             self.update()
 
     def clear_hit_markers(self):
-        """Xóa tất cả các vệt đạn và yêu cầu vẽ lại."""
         self.hit_points_relative.clear()
         self.update()
 
     def paintEvent(self, event):
-        """
-        Vẽ lại widget. Đầu tiên vẽ ảnh bia, sau đó vẽ các vệt đạn lên trên.
-        """
-        super().paintEvent(event) # Gọi hàm gốc để xử lý nền, viền...
+        super().paintEvent(event) 
         painter = QPainter(self)
         
         if self._pixmap.isNull():
             return
 
-        # 1. Vẽ ảnh bia (đã co giãn) vào giữa QLabel
         scaled_pixmap = self._pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
         offset_x = (self.width() - scaled_pixmap.width()) / 2
         offset_y = (self.height() - scaled_pixmap.height()) / 2
         painter.drawPixmap(QPoint(int(offset_x), int(offset_y)), scaled_pixmap)
 
-        # 2. Vẽ các vệt đạn lên trên ảnh bia
-        pen = QPen(QColor("#e74c3c")) # Màu đỏ
+        pen = QPen(QColor("#e74c3c")) 
         pen.setWidth(2)
         painter.setPen(pen)
         
         for rel_x, rel_y in self.hit_points_relative:
-            # Chuyển đổi tọa độ tương đối (0.0-1.0) thành tọa độ tuyệt đối trên ảnh đã co giãn
             draw_x = offset_x + (rel_x * scaled_pixmap.width())
             draw_y = offset_y + (rel_y * scaled_pixmap.height())
             
-            # Vẽ dấu +
             marker_size = 6
             painter.drawLine(int(draw_x - marker_size), int(draw_y), int(draw_x + marker_size), int(draw_y))
             painter.drawLine(int(draw_x), int(draw_y - marker_size), int(draw_x), int(draw_y + marker_size))
 
-# === KẾT THÚC VÙNG THAY ĐỔI ===
-
 class CompetitionGui(QWidget):
-    # (Phần còn lại của file giữ nguyên, không thay đổi)
     def __init__(self):
         super().__init__(); self.setStyleSheet("""
             QWidget { background-color: #2c3e50; color: #ecf0f1; font-family: 'Segoe UI'; }
@@ -115,11 +100,32 @@ class CompetitionGui(QWidget):
         columns_layout.addWidget(self._create_camera_column(), 4)
         columns_layout.addWidget(self._create_score_column(), 3)
         root_layout.addLayout(columns_layout)
+
     def _create_participants_column(self) -> QWidget:
         panel = QGroupBox("Danh sách Xạ thủ"); layout = QVBoxLayout(panel); layout.setContentsMargins(15, 25, 15, 15); layout.setSpacing(10)
         self.participants_list = QListWidget(); self.participants_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.participants_list.setStyleSheet("font-size: 14px; border: 1px solid #4a6278;"); layout.addWidget(self.participants_list, 1)
-        self.back_button = QPushButton("Về Menu Thi đấu"); self.back_button.setObjectName("danger"); layout.addWidget(self.back_button); return panel
+
+        # === BẮT ĐẦU VÙNG THAY ĐỔI ===
+        # Tạo layout ngang cho các nút điều khiển
+        buttons_layout = QHBoxLayout()
+        
+        # Thêm nút Lưu Phiên
+        self.save_button = QPushButton("Lưu Phiên")
+        
+        # Thêm nút Về Menu
+        self.back_button = QPushButton("Về Menu Thi đấu")
+        self.back_button.setObjectName("danger")
+        
+        buttons_layout.addWidget(self.save_button)
+        buttons_layout.addWidget(self.back_button)
+        
+        # Thêm layout chứa các nút vào layout chính của panel
+        layout.addLayout(buttons_layout)
+        # === KẾT THÚC VÙNG THAY ĐỔI ===
+        
+        return panel
+
     def _create_camera_column(self) -> QWidget:
         panel = QGroupBox("Đường ngắm Trực tiếp"); layout = QVBoxLayout(panel); layout.setContentsMargins(15, 25, 15, 15); layout.setSpacing(10)
         self.camera_view_label = VideoLabel(); self.camera_view_label.setText("Vui lòng kết nối camera"); layout.addWidget(self.camera_view_label, 1)

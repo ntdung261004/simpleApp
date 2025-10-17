@@ -43,6 +43,7 @@ class DatabaseManager:
             self.cursor = self.conn.cursor()
             self.cursor.execute("PRAGMA foreign_keys = ON;")
             self._create_tables()
+            self._update_schema() # Chạy hàm cập nhật schema
             logger.info(f"Kết nối thành công tới database: {self.db_path}")
         except sqlite3.Error as e:
             logger.critical(f"Lỗi nghiêm trọng khi kết nối database: {e}")
@@ -54,12 +55,35 @@ class DatabaseManager:
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS soldiers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, class_name TEXT) """)
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY, soldier_id INTEGER NOT NULL, exercise_name TEXT, start_time TEXT NOT NULL, end_time TEXT, FOREIGN KEY (soldier_id) REFERENCES soldiers (id) ON DELETE CASCADE) """)
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS shots (id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL, shot_number INTEGER NOT NULL, score INTEGER, target_detected TEXT, coords TEXT, image_path TEXT, timestamp TEXT NOT NULL, FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE) """)
-            self.cursor.execute(""" CREATE TABLE IF NOT EXISTS competitions (id INTEGER PRIMARY KEY, name TEXT NOT NULL, status TEXT DEFAULT 'ongoing', created_at TEXT NOT NULL) """)
+            # === BẮT ĐẦU VÙNG THAY ĐỔI: CẬP NHẬT BẢNG COMPETITIONS ===
+            self.cursor.execute(""" 
+                CREATE TABLE IF NOT EXISTS competitions (
+                    id INTEGER PRIMARY KEY, 
+                    name TEXT NOT NULL, 
+                    status TEXT NOT NULL DEFAULT 'in_progress', 
+                    state TEXT, 
+                    created_at TEXT NOT NULL
+                ) 
+            """)
+            # === KẾT THÚC VÙNG THAY ĐỔI ===
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS competition_participants (id INTEGER PRIMARY KEY, competition_id INTEGER NOT NULL, soldier_id INTEGER NOT NULL, FOREIGN KEY (competition_id) REFERENCES competitions (id) ON DELETE CASCADE, FOREIGN KEY (soldier_id) REFERENCES soldiers (id) ON DELETE CASCADE) """)
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS competition_shots (id INTEGER PRIMARY KEY, competition_id INTEGER NOT NULL, participant_id INTEGER NOT NULL, shot_number INTEGER NOT NULL, score INTEGER, target_detected TEXT, coords TEXT, image_path TEXT, timestamp TEXT NOT NULL, FOREIGN KEY (competition_id) REFERENCES competitions (id) ON DELETE CASCADE, FOREIGN KEY (participant_id) REFERENCES soldiers (id) ON DELETE CASCADE) """)
             self.conn.commit()
             logger.info("Kiểm tra và tạo các bảng thành công.")
         except sqlite3.Error as e: logger.error(f"Lỗi khi tạo bảng: {e}")
+
+    # === BẮT ĐẦU VÙNG THAY ĐỔI: THÊM HÀM CẬP NHẬT SCHEMA ===
+    def _update_schema(self):
+        """Thêm các cột mới vào bảng hiện có một cách an toàn."""
+        if not self.cursor: return
+        try:
+            self.cursor.execute("ALTER TABLE competitions ADD COLUMN state TEXT")
+            self.conn.commit()
+            logger.info("Cột 'state' đã được thêm vào bảng 'competitions'.")
+        except sqlite3.OperationalError:
+            # Bỏ qua lỗi nếu cột đã tồn tại
+            logger.info("Cột 'state' đã tồn tại trong bảng 'competitions'.")
+    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def add_soldier(self, name: str, class_name: str) -> Optional[int]:
         if not self.conn: return None
@@ -145,7 +169,7 @@ class DatabaseManager:
         if not self.conn: return None
         try:
             created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            self.cursor.execute("INSERT INTO competitions (name, created_at) VALUES (?, ?)", (name, created_at))
+            self.cursor.execute("INSERT INTO competitions (name, created_at, status) VALUES (?, ?, 'in_progress')", (name, created_at))
             competition_id = self.cursor.lastrowid
             participants_data = [(competition_id, soldier_id) for soldier_id in participant_soldier_ids]
             self.cursor.executemany("INSERT INTO competition_participants (competition_id, soldier_id) VALUES (?, ?)", participants_data)
@@ -167,22 +191,19 @@ class DatabaseManager:
             self.cursor.execute(sql, params); self.conn.commit()
             logger.info(f"Đã lưu phát bắn thứ {shot_number} của xạ thủ ID {soldier_id} cho cuộc thi ID {competition_id}.")
         except sqlite3.Error as e: logger.error(f"Lỗi khi thêm phát bắn vào cuộc thi: {e}"); self.conn.rollback()
-        
-    # === BẮT ĐẦU VÙNG THÊM MỚI ===
+
     def delete_shots_for_turn(self, competition_id: int, soldier_id: int, num_shots_to_delete: int) -> bool:
         """Xóa N phát bắn cuối cùng của một xạ thủ trong một cuộc thi."""
         if not self.conn: return False
         try:
-            # Lấy ID của N phát bắn cuối cùng
             sql_get_ids = "SELECT id FROM competition_shots WHERE competition_id = ? AND participant_id = ? ORDER BY id DESC LIMIT ?"
             self.cursor.execute(sql_get_ids, (competition_id, soldier_id, num_shots_to_delete))
             ids_to_delete = [row[0] for row in self.cursor.fetchall()]
             
             if not ids_to_delete:
                 logger.warning(f"Không tìm thấy phát bắn nào để xóa cho xạ thủ {soldier_id} trong cuộc thi {competition_id}")
-                return True # Vẫn trả về True vì không có gì để xóa
+                return True
 
-            # Xóa các phát bắn dựa trên ID
             sql_delete = f"DELETE FROM competition_shots WHERE id IN ({','.join('?' for _ in ids_to_delete)})"
             self.cursor.execute(sql_delete, ids_to_delete)
             self.conn.commit()
@@ -190,6 +211,62 @@ class DatabaseManager:
             return True
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi xóa các phát bắn của lượt: {e}"); self.conn.rollback(); return False
+
+    # === BẮT ĐẦU VÙNG THÊM MỚI ===
+    def save_competition_state(self, competition_id: int, state_json: str) -> bool:
+        """Lưu trạng thái hiện tại của một cuộc thi vào CSDL dưới dạng JSON."""
+        if not self.conn: return False
+        try:
+            sql = "UPDATE competitions SET state = ? WHERE id = ?"
+            self.cursor.execute(sql, (state_json, competition_id))
+            self.conn.commit()
+            logger.info(f"Đã lưu trạng thái cho cuộc thi ID {competition_id}.")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi lưu trạng thái cuộc thi ID {competition_id}: {e}")
+            self.conn.rollback()
+            return False
+
+    def get_competition(self, competition_id: int) -> Optional[Dict[str, Any]]:
+        """Lấy toàn bộ thông tin của một cuộc thi, bao gồm cả state."""
+        if not self.conn: return None
+        try:
+            sql = "SELECT * FROM competitions WHERE id = ?"
+            self.cursor.execute(sql, (competition_id,))
+            row = self.cursor.fetchone()
+            return dict(row) if row else None
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi lấy thông tin cuộc thi ID {competition_id}: {e}")
+            return None
+
+    def update_competition_status(self, competition_id: int, status: str) -> bool:
+        """Cập nhật trạng thái của cuộc thi (ví dụ: 'in_progress', 'completed')."""
+        if not self.conn: return False
+        try:
+            sql = "UPDATE competitions SET status = ? WHERE id = ?"
+            self.cursor.execute(sql, (status, competition_id))
+            self.conn.commit()
+            logger.info(f"Đã cập nhật trạng thái của cuộc thi ID {competition_id} thành '{status}'.")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi cập nhật trạng thái cuộc thi ID {competition_id}: {e}")
+            self.conn.rollback()
+            return False
+
+    def delete_competition(self, competition_id: int) -> bool:
+        """Xóa hoàn toàn một cuộc thi và tất cả dữ liệu liên quan."""
+        if not self.conn: return False
+        try:
+            # Foreign key với ON DELETE CASCADE sẽ tự động xử lý participants và shots.
+            sql = "DELETE FROM competitions WHERE id = ?"
+            self.cursor.execute(sql, (competition_id,))
+            self.conn.commit()
+            logger.info(f"Đã xóa hoàn toàn cuộc thi ID {competition_id}.")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi xóa cuộc thi ID {competition_id}: {e}")
+            self.conn.rollback()
+            return False
     # === KẾT THÚC VÙNG THÊM MỚI ===
 
     def close(self):
