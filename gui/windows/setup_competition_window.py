@@ -4,15 +4,14 @@ from PySide6.QtWidgets import (
     QMainWindow, QListWidgetItem, QMessageBox, QWidget,
     QHBoxLayout, QVBoxLayout, QLabel, QCheckBox,  QAbstractItemView
 )
-# === THAY ĐỔI 1: Import thêm 'Signal' ===
-from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtCore import Qt, QSize, Signal, Slot
 from PySide6.QtGui import QFont, QPixmap
 
 from ..ui.ui_setup_competition import Ui_SetupCompetitionWindow
 from core.database import DatabaseManager
 from utils.resource_path import resource_path
 
-# Lớp SoldierListItemWidget (Giữ nguyên)
+# Lớp SoldierListItemWidget (Giữ nguyên không thay đổi)
 class SoldierListItemWidget(QWidget):
     def __init__(self, soldier_id: int, name: str, class_name: str, parent=None):
         super().__init__(parent)
@@ -22,45 +21,46 @@ class SoldierListItemWidget(QWidget):
             QLabel { background-color: transparent; }
         """)
         main_layout = QHBoxLayout(self); main_layout.setContentsMargins(10, 15, 15, 15); main_layout.setSpacing(20)
+        
         self.icon_label = QLabel(); self.icon_label.setFixedSize(32, 32)
         icon_path = resource_path("assets/images/icon/user_icon.png")
         self.icon_label.setPixmap(QPixmap(icon_path)); self.icon_label.setScaledContents(True)
+        
         info_layout = QVBoxLayout(); info_layout.setSpacing(0)
-        self.name_label = QLabel(name); self.name_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #ecf0f1;")
-        self.class_name_label = QLabel(class_name); self.class_name_label.setStyleSheet("font-size: 13px; color: #bdc3c7;")
-        info_layout.addWidget(self.name_label); info_layout.addWidget(self.class_name_label)
-        self.checkbox = QCheckBox(); self.checkbox.setFixedSize(QSize(30, 30))
-        main_layout.addWidget(self.icon_label); main_layout.addLayout(info_layout, 1); main_layout.addWidget(self.checkbox)
+        self.name_label = QLabel(f"<b>{name}</b>"); self.name_label.setFont(QFont("Segoe UI", 12))
+        self.class_label = QLabel(class_name); self.class_label.setStyleSheet("color: #bdc3c7;")
+        info_layout.addWidget(self.name_label); info_layout.addWidget(self.class_label)
+        
+        self.select_checkbox = QCheckBox(); self.select_checkbox.setFixedSize(QSize(25, 25))
+        
+        main_layout.addWidget(self.icon_label); main_layout.addLayout(info_layout, 1); main_layout.addWidget(self.select_checkbox)
+        
     def is_selected(self) -> bool:
-        return self.checkbox.isChecked()
-
+        return self.select_checkbox.isChecked()
 
 class SetupCompetitionWindow(QMainWindow):
-    # === THAY ĐỔI 2: Định nghĩa Signal tùy chỉnh ===
-    # Tín hiệu này sẽ được phát ra sau khi nút "Bắt đầu" được nhấn và đã kiểm tra hợp lệ
     start_competition_signal = Signal()
-    
+
     def __init__(self):
         super().__init__()
         self.ui = Ui_SetupCompetitionWindow()
         self.ui.setupUi(self)
         self.db = DatabaseManager()
-        
-        # Kết nối nút bấm với hàm xử lý nội bộ
-        self.ui.start_competition_button.clicked.connect(self.handle_start_button)
-        # Gán nút back để main.py kết nối
-        self.back_button = self.ui.back_button
 
-    def handle_start_button(self):
-        """
-        Hàm này được gọi khi nút 'Bắt đầu Thi đấu' được nhấn.
-        Nó sẽ kiểm tra xem có ai được chọn không, sau đó mới phát tín hiệu.
-        """
+        self.back_button = self.ui.back_button
+        self.start_competition_button = self.ui.start_competition_button
+
+        self.start_competition_button.clicked.connect(self.on_start_competition)
+        
+        # === BẮT ĐẦU VÙNG SỬA LỖI ===
+        # Thay đổi từ stateChanged sang clicked để đảm bảo logic đơn giản và chính xác hơn
+        self.ui.select_all_checkbox.clicked.connect(self.toggle_select_all)
+        # === KẾT THÚC VÙNG SỬA LỖI ===
+
+    def on_start_competition(self):
         if not self.get_selected_soldier_ids():
             QMessageBox.warning(self, "Chưa chọn Xạ thủ", "Vui lòng chọn ít nhất một người để bắt đầu thi đấu.")
-            return # Không phát tín hiệu nếu chưa chọn ai
-            
-        # Nếu đã có người được chọn, phát tín hiệu để main.py xử lý
+            return
         self.start_competition_signal.emit()
 
     def load_soldiers(self):
@@ -74,16 +74,66 @@ class SetupCompetitionWindow(QMainWindow):
                 item = QListWidgetItem(self.ui.soldier_list)
                 size_hint = soldier_widget.sizeHint(); size_hint.setHeight(size_hint.height() + 10)
                 item.setSizeHint(size_hint)
+                
+                # Kết nối tín hiệu từ checkbox của từng người lính
+                soldier_widget.select_checkbox.stateChanged.connect(self.update_selection_count)
+                
                 self.ui.soldier_list.addItem(item)
                 self.ui.soldier_list.setItemWidget(item, soldier_widget)
         else:
             self.ui.soldier_list.addItem("Chưa có người lính nào trong dữ liệu.")
             
+        self.update_selection_count()
+
     def get_selected_soldier_ids(self) -> list:
         selected_ids = []
         for i in range(self.ui.soldier_list.count()):
             item = self.ui.soldier_list.item(i)
             widget = self.ui.soldier_list.itemWidget(item)
-            if widget and hasattr(widget, 'is_selected') and widget.is_selected():
+            if widget and isinstance(widget, SoldierListItemWidget) and widget.is_selected():
                 selected_ids.append(widget.soldier_id)
         return selected_ids
+    
+    # === BẮT ĐẦU VÙNG SỬA LỖI ===
+    @Slot()
+    def toggle_select_all(self):
+        """Chọn hoặc bỏ chọn tất cả các mục dựa trên trạng thái của checkbox chính."""
+        # Lấy trạng thái hiện tại của checkbox "Chọn tất cả"
+        is_checked = self.ui.select_all_checkbox.isChecked()
+        
+        for i in range(self.ui.soldier_list.count()):
+            item = self.ui.soldier_list.item(i)
+            widget = self.ui.soldier_list.itemWidget(item)
+            if widget and isinstance(widget, SoldierListItemWidget):
+                # Tạm khóa tín hiệu để không gọi update_selection_count lặp lại nhiều lần
+                widget.select_checkbox.blockSignals(True)
+                widget.select_checkbox.setChecked(is_checked)
+                widget.select_checkbox.blockSignals(False)
+        
+        # Cập nhật lại số đếm một lần duy nhất sau khi thay đổi tất cả
+        self.update_selection_count()
+    # === KẾT THÚC VÙNG SỬA LỖI ===
+        
+    @Slot()
+    def update_selection_count(self):
+        """Đếm số mục đã chọn và cập nhật giao diện."""
+        selected_count = 0
+        total_items = 0
+        
+        for i in range(self.ui.soldier_list.count()):
+            item = self.ui.soldier_list.item(i)
+            widget = self.ui.soldier_list.itemWidget(item)
+            if widget and isinstance(widget, SoldierListItemWidget):
+                total_items += 1
+                if widget.is_selected():
+                    selected_count += 1
+        
+        self.ui.selected_count_label.setText(f"Đã chọn: {selected_count}")
+
+        # Đồng bộ trạng thái của checkbox "Chọn tất cả"
+        self.ui.select_all_checkbox.blockSignals(True)
+        if total_items > 0 and selected_count == total_items:
+            self.ui.select_all_checkbox.setChecked(True)
+        else:
+            self.ui.select_all_checkbox.setChecked(False)
+        self.ui.select_all_checkbox.blockSignals(False)

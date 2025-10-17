@@ -1,7 +1,11 @@
+# file: utils/processing.py
 import cv2
 import numpy as np
 from typing import Optional, Tuple, List
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 def friendly_object_name(filename: str) -> str:
     base = filename.split('/')[-1]
@@ -29,92 +33,76 @@ def check_object_center(detections, image, calibrated_center):
             'name': highest_conf_hit['class_name'],
             'crop': image[y1:y2, x1:x2].copy(),
             'shot_point_relative': (center_x - x1, center_y - y1),
-            'shot_point_absolute': (center_x, center_y), # Đảm bảo trả về tọa độ tuyệt đối
+            'shot_point_absolute': (center_x, center_y),
             'conf': highest_conf_hit['conf']
         }
-        print(f"✅ TRÚNG | Mục tiêu: {hit_info['name']} (Conf: {hit_info['conf']:.2f})")
+        logger.info(f"✅ TRÚNG | Mục tiêu: {hit_info['name']} (Conf: {hit_info['conf']:.2f})")
         return "TRÚNG", hit_info
     
-    print("❌ TRƯỢT | Tâm ngắm không nằm trong bất kỳ mục tiêu nào.")
-    return "TRƯỢT", {'shot_point': (center_x, center_y)}
+    logger.warning("❌ TRƯỢT | Tâm ngắm không nằm trong bất kỳ mục tiêu nào.")
+    return "TRƯỢT", {'shot_point_absolute': (center_x, center_y)}
 
-# file: utils/processing.py
-# Thay thế TOÀN BỘ hàm warp_crop_to_original cũ bằng hàm này
+# === BẮT ĐẦU THUẬT TOÁN MỚI TỐI ƯU ===
 
-def warp_crop_to_original(original_img, cropped_img, shot_point_relative):
-    MIN_MATCH_COUNT = 4 
+def _find_bounding_rect_corners(image: np.ndarray) -> Optional[np.ndarray]:
+    """
+    Tìm contour lớn nhất và trả về 4 góc của hình chữ nhật bao quanh nó.
+    Thứ tự các góc luôn cố định, đảm bảo không bị lật ngược.
+    """
+    if image is None or image.size == 0:
+        return None
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if not contours:
+        return None
+
+    largest_contour = max(contours, key=cv2.contourArea)
+    x, y, w, h = cv2.boundingRect(largest_contour)
     
+    # Trả về 4 góc theo thứ tự: trên-trái, trên-phải, dưới-phải, dưới-trái
+    corners = np.float32([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]).reshape(-1, 1, 2)
+    return corners
+
+def warp_via_bounding_rect(original_img: np.ndarray, cropped_img: np.ndarray, shot_point_relative: Tuple[float, float]) -> Tuple[Optional[np.ndarray], Optional[Tuple[float, float]]]:
+    """
+    Ánh xạ ảnh crop vào ảnh bia gốc bằng hình chữ nhật bao quanh.
+    Đây là phương pháp ổn định và chống lật ngược hình ảnh.
+    """
     try:
-        original_gray = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
-        cropped_gray = cv2.cvtColor(cropped_img, cv2.COLOR_BGR2GRAY)
-        original_gray = cv2.equalizeHist(original_gray)
-        cropped_gray = cv2.equalizeHist(cropped_gray)
+        logger.info("Bắt đầu warp bằng phương pháp Bounding Rectangle...")
+        dst_pts = _find_bounding_rect_corners(original_img)
+        src_pts = _find_bounding_rect_corners(cropped_img)
 
-        sift = cv2.SIFT_create()
-        kp1, des1 = sift.detectAndCompute(original_gray, None)
-        kp2, des2 = sift.detectAndCompute(cropped_gray, None)
+        if dst_pts is None or src_pts is None:
+            logger.warning("Warp thất bại: Không thể tìm thấy bounding rect trên ảnh nguồn hoặc ảnh đích.")
+            return None, None
+            
+        # Sử dụng getPerspectiveTransform cho 4 điểm, chính xác và nhanh hơn
+        M = cv2.getPerspectiveTransform(src_pts, dst_pts)
         
-        if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
-            print("[warp_crop_to_original] Không đủ features để so khớp.")
+        if M is None:
+            logger.warning("Warp thất bại: getPerspectiveTransform không thể tính toán ma trận.")
             return None, None
-
-        FLANN_INDEX_KDTREE = 1
-        index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
-        search_params = dict(checks=50)
-        flann = cv2.FlannBasedMatcher(index_params, search_params)
-        matches = flann.knnMatch(des2, des1, k=2)
-
-        good_matches = []
-        try:
-            for m, n in matches:
-                if m.distance < 0.7 * n.distance:
-                    good_matches.append(m)
-        except ValueError:
-            pass
-
-        print(f"[warp_crop_to_original] Số cặp điểm tốt tìm thấy: {len(good_matches)}")
-
-        if len(good_matches) >= MIN_MATCH_COUNT:
-            src_pts = np.float32([kp2[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-            dst_pts = np.float32([kp1[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
             
-            M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-            if M is None:
-                return None, None
-            
-            # ================= BẮT ĐẦU LOGIC SỬA LỖI XOAY 180 ĐỘ =================
-            #
-            # Ma trận biến đổi M có dạng 3x3. Các phần tử M[0,0] và M[1,1] cho biết
-            # tỷ lệ co giãn theo trục x và y. Nếu cả hai đều là số âm, điều đó
-            # cho thấy một phép lật ngược (tương đương xoay 180 độ).
-            #
-            if M[0, 0] < 0 and M[1, 1] < 0:
-                print("--- Phát hiện xoay 180 độ! Đang tiến hành sửa lỗi... ---")
-                h, w = original_img.shape[:2]
-                
-                # Tạo một ma trận xoay 180 độ quanh tâm ảnh gốc
-                rotation_matrix = cv2.getRotationMatrix2D((w / 2, h / 2), 180, 1)
-                
-                # Chuyển ma trận xoay 2x3 thành ma trận biến đổi 3x3
-                fix_homography = np.vstack([rotation_matrix, [0, 0, 1]])
-                
-                # Nhân ma trận sửa lỗi với ma trận bị ngược để có được ma trận đúng
-                M = np.dot(fix_homography, M)
-            #
-            # ================= KẾT THÚC LOGIC SỬA LỖI XOAY 180 ĐỘ =================
-            
-            shot_point_np = np.float32([[shot_point_relative]]).reshape(-1, 1, 2)
-            transformed_point = cv2.perspectiveTransform(shot_point_np, M)
-            
-            return M, (transformed_point[0][0][0], transformed_point[0][0][1])
-        else:
-            return None, None
+        shot_point_np = np.float32([[shot_point_relative]]).reshape(-1, 1, 2)
+        transformed_point_np = cv2.perspectiveTransform(shot_point_np, M)
+        
+        transformed_point = (transformed_point_np[0][0][0], transformed_point_np[0][0][1])
+        logger.info("Warp bằng Bounding Rectangle thành công.")
+        return M, transformed_point
 
-    except cv2.error as e:
-        print(f"[warp_crop_to_original] Lỗi OpenCV: {e}")
+    except Exception as e:
+        logger.error(f"Lỗi nghiêm trọng trong hàm warp_via_bounding_rect: {e}", exc_info=True)
         return None, None
-    
-#tính điểm bia số 4
+
+# === KẾT THÚC THUẬT TOÁN MỚI TỐI ƯU ===
+
+
+# --- Các hàm tính điểm giữ nguyên ---
 def calculate_score_bia4b(pt: Tuple[float, float], original_img: np.ndarray, mask: np.ndarray) -> int:
     if original_img is None or mask is None or pt is None:
         return 0
@@ -126,7 +114,6 @@ def calculate_score_bia4b(pt: Tuple[float, float], original_img: np.ndarray, mas
     center_x, center_y = 254, 250
     distance = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
     
-    # Kiểm tra xem điểm chạm có nằm trong vùng hợp lệ của bia không
     if mask[y, x] == 255:
         if distance < 23: return 10
         elif distance < 45: return 9
@@ -138,7 +125,6 @@ def calculate_score_bia4b(pt: Tuple[float, float], original_img: np.ndarray, mas
         elif distance < 185: return 3
         elif distance < 208: return 2
         elif distance < 231: return 1
-
     return 0
 
 def calculate_score_bia4c(pt: Tuple[float, float], original_img: np.ndarray, mask: np.ndarray) -> int:
@@ -152,7 +138,6 @@ def calculate_score_bia4c(pt: Tuple[float, float], original_img: np.ndarray, mas
     center_x, center_y = 249, 248.5
     distance = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
     
-    # Kiểm tra xem điểm chạm có nằm trong vùng hợp lệ của bia không
     if mask[y, x] == 255:
         if distance < 46: return 10
         elif distance < 83: return 9
@@ -160,5 +145,4 @@ def calculate_score_bia4c(pt: Tuple[float, float], original_img: np.ndarray, mas
         elif distance < 158: return 7
         elif distance < 194: return 6
         elif distance < 231: return 5
-
     return 0
