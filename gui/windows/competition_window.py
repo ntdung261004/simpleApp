@@ -13,7 +13,6 @@ from PySide6.QtGui import QPixmap, QFont, QColor
 import numpy as np
 import cv2
 
-# === THAY ĐỔI: Import SquareImageLabel để sử dụng ===
 from ..ui.ui_competition import CompetitionGui, SquareImageLabel
 from core.worker import ProcessingWorker
 from core.triggers import BluetoothTrigger
@@ -26,20 +25,67 @@ from utils.resource_path import resource_path
 
 logger = logging.getLogger(__name__)
 
-# --- Các lớp Dialog (TurnResultDialog, CompetitionRankingDialog) giữ nguyên ---
+# === BẮT ĐẦU VÙNG THAY ĐỔI: NÂNG CẤP POPUP KẾT QUẢ ===
 class TurnResultDialog(QDialog):
-    def __init__(self, shooter_name: str, scores: list, parent=None):
-        super().__init__(parent); self.setWindowTitle("Kết quả Lượt bắn"); self.setMinimumWidth(450)
-        self.setStyleSheet(""" QDialog { background-color: #34495e; } QLabel { color: #ecf0f1; font-size: 14px; } QLabel#title { font-size: 18px; font-weight: bold; } QLabel#total_score { font-size: 24px; font-weight: bold; color: #f1c40f; } QGroupBox { font-size: 14px; font-weight: bold; border: 1px solid #4a6278; border-radius: 8px; margin-top: 8px; } QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top center; padding: 2px 8px; } QPushButton { background-color: #1abc9c; color: white; font-size: 14px; font-weight: bold; border: none; padding: 8px 18px; border-radius: 8px; } QPushButton:hover { background-color: #16a085; } QPushButton[objectName="retryButton"] { background-color: #e67e22; } QPushButton[objectName="retryButton"]:hover { background-color: #d35400; } """)
-        main_layout = QVBoxLayout(self); main_layout.setSpacing(15); title_label = QLabel(f"Kết quả của: {shooter_name}"); title_label.setObjectName("title"); title_label.setAlignment(Qt.AlignCenter); main_layout.addWidget(title_label)
+    def __init__(self, shooter_name: str, scores: list, target_pixmaps: list, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Kết quả Lượt bắn")
+        # 1. Tăng kích thước tối thiểu để chứa được ảnh
+        self.setMinimumWidth(600) 
+        self.setStyleSheet("""
+            QDialog { background-color: #34495e; }
+            QLabel { color: #ecf0f1; font-size: 14px; }
+            QLabel#title { font-size: 18px; font-weight: bold; }
+            QLabel#total_score { font-size: 24px; font-weight: bold; color: #f1c40f; }
+            QGroupBox { font-size: 14px; font-weight: bold; border: 1px solid #4a6278; border-radius: 8px; margin-top: 8px; }
+            QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top center; padding: 2px 8px; }
+            QPushButton { background-color: #1abc9c; color: white; font-size: 14px; font-weight: bold; border: none; padding: 8px 18px; border-radius: 8px; }
+            QPushButton:hover { background-color: #16a085; }
+            QPushButton[objectName="retryButton"] { background-color: #e67e22; }
+            QPushButton[objectName="retryButton"]:hover { background-color: #d35400; }
+        """)
+
+        main_layout = QVBoxLayout(self); main_layout.setSpacing(15)
+        
+        # Title và Summary (giữ nguyên)
+        title_label = QLabel(f"Kết quả của: {shooter_name}"); title_label.setObjectName("title"); title_label.setAlignment(Qt.AlignCenter); main_layout.addWidget(title_label)
         summary_layout = QHBoxLayout(); summary_layout.setAlignment(Qt.AlignCenter); summary_label = QLabel("Tổng điểm:"); summary_layout.addWidget(summary_label); total_score_label = QLabel(str(sum(scores))); total_score_label.setObjectName("total_score"); summary_layout.addWidget(total_score_label); main_layout.addLayout(summary_layout)
+        
+        # 2. Thêm layout chứa 4 ảnh bia
+        targets_image_box = QGroupBox("Ảnh bia Thực tế")
+        targets_image_layout = QHBoxLayout(targets_image_box)
+        targets_image_layout.setSpacing(10)
+
+        for i, pixmap in enumerate(target_pixmaps):
+            target_widget = QWidget()
+            target_layout = QVBoxLayout(target_widget)
+            
+            img_label = QLabel()
+            img_label.setPixmap(pixmap.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            img_label.setAlignment(Qt.AlignCenter)
+
+            bia_label = QLabel(f"Bia {i+1}")
+            bia_label.setAlignment(Qt.AlignCenter)
+
+            target_layout.addWidget(img_label)
+            target_layout.addWidget(bia_label)
+            targets_image_layout.addWidget(target_widget)
+
+        main_layout.addWidget(targets_image_box)
+
+        # Separator và Details (giữ nguyên)
         separator = QFrame(); separator.setFrameShape(QFrame.HLine); separator.setFrameShadow(QFrame.Sunken); main_layout.addWidget(separator)
-        details_box = QGroupBox("Chi tiết các bia"); details_layout = QGridLayout(details_box); targets_scores = [scores[i:i + 3] for i in range(0, len(scores), 3)]
+        details_box = QGroupBox("Chi tiết điểm số"); details_layout = QGridLayout(details_box); targets_scores = [scores[i:i + 3] for i in range(0, len(scores), 3)]
         for i, target_shots in enumerate(targets_scores):
             target_label = QLabel(f"<b>Bia số {i+1}:</b>"); details_layout.addWidget(target_label, i, 0); scores_text = " - ".join(map(str, target_shots)); details_layout.addWidget(QLabel(scores_text), i, 1); total_label = QLabel(f"<b>Tổng: {sum(target_shots)}</b>"); total_label.setAlignment(Qt.AlignRight); details_layout.addWidget(total_label, i, 2)
-        main_layout.addWidget(details_box); buttons = QDialogButtonBox(); save_button = buttons.addButton("Lưu & Tiếp tục", QDialogButtonBox.AcceptRole); retry_button = buttons.addButton("Bắn lại", QDialogButtonBox.RejectRole); retry_button.setObjectName("retryButton"); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); main_layout.addWidget(buttons)
+        main_layout.addWidget(details_box)
+        
+        # Buttons (giữ nguyên)
+        buttons = QDialogButtonBox(); save_button = buttons.addButton("Lưu & Tiếp tục", QDialogButtonBox.AcceptRole); retry_button = buttons.addButton("Bắn lại", QDialogButtonBox.RejectRole); retry_button.setObjectName("retryButton"); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); main_layout.addWidget(buttons)
+# === KẾT THÚC VÙNG THAY ĐỔI ===
 
 class CompetitionRankingDialog(QDialog):
+    # (Lớp này giữ nguyên)
     def __init__(self, competition_name: str, participants_data: list, parent=None):
         super().__init__(parent); self.setWindowTitle("Bảng Xếp Hạng Chung Cuộc"); self.setMinimumSize(600, 500)
         self.setStyleSheet(""" QDialog { background-color: #2c3e50; } QLabel#title { font-size: 22px; font-weight: bold; color: #1abc9c; padding-bottom: 10px; } QTableWidget { background-color: #34495e; border: 1px solid #4a6278; gridline-color: #4a6278; font-size: 14px; } QHeaderView::section { background-color: #415a72; color: white; padding: 8px; font-weight: bold; border: none; } QTableWidget::item { padding: 10px; border-bottom: 1px solid #4a6278; } QPushButton { background-color: #3498db; color: white; font-size: 14px; font-weight: bold; border: none; padding: 10px 20px; border-radius: 8px; } QPushButton:hover { background-color: #2980b9; } QPushButton[objectName="exitButton"] { background-color: #e74c3c; } QPushButton[objectName="exitButton"]:hover { background-color: #c0392b; } """)
@@ -54,6 +100,7 @@ class CompetitionRankingDialog(QDialog):
             self.table.setItem(i, 0, rank_item); self.table.setItem(i, 1, QTableWidgetItem(p['name'])); self.table.setItem(i, 2, QTableWidgetItem(p['class_name'])); total_score = sum(p.get('shots', [])); score_item = QTableWidgetItem(str(total_score)); score_item.setTextAlignment(Qt.AlignCenter); score_item.setFont(QFont("Segoe UI", 14, QFont.Bold)); score_item.setForeground(QColor("#f1c40f")); self.table.setItem(i, 3, score_item)
 
 class ParticipantItemWidget(QWidget):
+    # (Lớp này giữ nguyên)
     def __init__(self, name: str, class_name: str, parent=None):
         super().__init__(parent); self.setStyleSheet(""" QWidget { background-color: #34495e; border-radius: 8px; } QLabel { color: white; background-color: transparent; border: none; } #status_label { font-size: 11px; font-weight: bold; padding: 3px 10px; border-radius: 5px; } """); main_layout = QHBoxLayout(self); main_layout.setContentsMargins(10, 10, 10, 10); main_layout.setSpacing(15); icon_label = QLabel(); icon_label.setFixedSize(32, 32); icon_label.setPixmap(QPixmap(resource_path("assets/images/icon/user_icon.png"))); icon_label.setScaledContents(True); info_layout = QVBoxLayout(); info_layout.setSpacing(0); name_label = QLabel(f"<b>{name}</b>"); class_label = QLabel(class_name); class_label.setStyleSheet("color: #bdc3c7;"); info_layout.addWidget(name_label); info_layout.addWidget(class_label); self.status_label = QLabel("Chưa bắn"); self.status_label.setObjectName("status_label"); self.status_label.setAlignment(Qt.AlignCenter); main_layout.addWidget(icon_label); main_layout.addLayout(info_layout, 1); main_layout.addWidget(self.status_label)
     def set_status(self, status: str):
@@ -61,30 +108,20 @@ class ParticipantItemWidget(QWidget):
 
 # --- LỚP CHÍNH CỦA CỬA SỔ THI ĐẤU ---
 class CompetitionWindow(QMainWindow):
+    # (Hầu hết các hàm giữ nguyên, chỉ thay đổi ở show_turn_result_popup)
     request_processing = Signal(np.ndarray, str, str, object)
     back_to_menu_signal = Signal()
     TOTAL_SHOTS = 12
-    # === BẮT ĐẦU VÙNG THÊM MỚI: Kích thước bia gốc ===
-    TARGET_DIMENSIONS = {
-        'bia_4b': (500, 500), # (width, height)
-        'bia_4c': (500, 500)
-    }
-    # === KẾT THÚC VÙNG THÊM MỚI ===
+    TARGET_DIMENSIONS = {'bia_4b': (500, 500), 'bia_4c': (500, 500)}
 
     def __init__(self, worker: ProcessingWorker, trigger: BluetoothTrigger, config: dict):
         super().__init__(); self.gui = CompetitionGui(); self.setCentralWidget(self.gui); self.setWindowTitle("Chế Độ Thi Đấu")
-        self.configured_camera_index = config.get('camera_index', 0)
-        self.db = DatabaseManager(); self.trigger = trigger; self.worker = worker; self.audio_manager = AudioManager()
+        self.configured_camera_index = config.get('camera_index', 0); self.db = DatabaseManager(); self.trigger = trigger; self.worker = worker; self.audio_manager = AudioManager()
         self.cam = None; self.final_size = (640, 480); self.zoom_level = 1.0; self.current_gamma = 1.0
         self.video_timer = QTimer(self); self.video_timer.timeout.connect(self.update_frame)
         self.competition_data = None; self.current_shooter_index = -1; self.current_shot_count = 0
         self.is_camera_connected = False; self.calibrated_center = None; self.is_processing = False
-        
-        # === THÊM MỚI: Ánh xạ tới các label ảnh bia ===
-        self.target_image_labels = {
-            1: self.gui.target_1_image_label, 2: self.gui.target_2_image_label,
-            3: self.gui.target_3_image_label, 4: self.gui.target_4_image_label
-        }
+        self.target_image_labels = {1: self.gui.target_1_image_label, 2: self.gui.target_2_image_label, 3: self.gui.target_3_image_label, 4: self.gui.target_4_image_label}
         self._setup_connections()
 
     def _setup_connections(self):
@@ -93,7 +130,6 @@ class CompetitionWindow(QMainWindow):
         self.gui.refresh_button.clicked.connect(self.refresh_camera_connection); self.gui.start_turn_button.clicked.connect(self.start_current_turn)
         self.gui.back_button.clicked.connect(self.confirm_end_competition); self.gui.participants_list.itemClicked.connect(self.on_participant_selected)
 
-    # --- Các hàm camera giữ nguyên ---
     def _crop_frame_to_3_4(self, frame: np.ndarray) -> np.ndarray:
         h, w = frame.shape[:2]; new_w = int(h * 3.0 / 4.0);
         if new_w > w: return frame
@@ -103,8 +139,7 @@ class CompetitionWindow(QMainWindow):
         if self.current_gamma != 1.0: processed_frame = apply_gamma_correction(processed_frame, self.current_gamma)
         if self.zoom_level > 1.0:
             h, w, _ = processed_frame.shape; new_w, new_h = int(w / self.zoom_level), int(h / self.zoom_level)
-            start_x, start_y = (w - new_w) // 2, (h - new_h) // 2
-            processed_frame = processed_frame[start_y : start_y + new_h, start_x : start_x + new_w]
+            start_x, start_y = (w - new_w) // 2, (h - new_h) // 2; processed_frame = processed_frame[start_y : start_y + new_h, start_x : start_x + new_w]
             processed_frame = cv2.resize(processed_frame, (w, h))
         return processed_frame
     def update_frame(self):
@@ -133,12 +168,7 @@ class CompetitionWindow(QMainWindow):
                 current_shooter = self.competition_data['participants'][self.current_shooter_index]
                 if not self.competition_data or shooter_data['id'] != current_shooter['id']: return
                 self.current_shot_count += 1; score = result.get('score', 0); self.audio_manager.play_score(score)
-                current_shooter['shots'].append(score); 
-                
-                # === BẮT ĐẦU VÙNG THAY ĐỔI: LOGIC VẼ VỆT ĐẠN ===
-                self._update_scoreboard_and_markers(self.current_shot_count, score, result)
-                # === KẾT THÚC VÙNG THAY ĐỔI ===
-                
+                current_shooter['shots'].append(score); self._update_scoreboard_and_markers(self.current_shot_count, score, result)
                 self.db.add_competition_shot(competition_id=self.competition_data['id'], soldier_id=shooter_data['id'], score=score, coords=result.get('coords'), image_path=result.get('image_path'), target_name=result.get('target_detected_raw', 'N/A'))
                 if self.current_shot_count >= self.TOTAL_SHOTS: self.show_turn_result_popup()
             finally: self.is_processing = False
@@ -149,8 +179,7 @@ class CompetitionWindow(QMainWindow):
         self.is_processing = True
         ret, frame = self.cam.read()
         if ret and frame is not None:
-            self.audio_manager.play_sound('shot')
-            frame_resized = cv2.resize(self._crop_frame_to_3_4(frame), (self.final_size[1], self.final_size[0]))
+            self.audio_manager.play_sound('shot'); frame_resized = cv2.resize(self._crop_frame_to_3_4(frame), (self.final_size[1], self.final_size[0]))
             frame_to_send = self._apply_effects_to_frame(frame_resized)
             h, w, _ = frame_resized.shape; original_aim_point = self.calibrated_center if self.calibrated_center else (w // 2, h // 2)
             final_aim_point = original_aim_point
@@ -163,53 +192,39 @@ class CompetitionWindow(QMainWindow):
             metadata = {'id': shooter['id'], 'aim_point': final_aim_point}; self.request_processing.emit(frame_to_send, image_path, 'competition', metadata)
         else: self.is_processing = False
 
-    # === THAY ĐỔI: Tách hàm _update_scoreboard thành hàm mới ===
     def _update_scoreboard_and_markers(self, shot_number, score, result: dict):
         target_scores_labels = {1: self.gui.target_1_score_label, 2: self.gui.target_2_score_label, 3: self.gui.target_3_score_label, 4: self.gui.target_4_score_label}
         target_index = ((shot_number - 1) // 3) + 1; shot_in_target = ((shot_number - 1) % 3) + 1
-        
-        # Cập nhật text điểm số
         if target_index in target_scores_labels:
             current_text = target_scores_labels[target_index].text()
             if shot_in_target == 1: new_text = f"{score}"
             else: new_text = current_text.replace("Điểm: ", "") + f" - {score}"
             target_scores_labels[target_index].setText(f"Điểm: {new_text}")
-        
-        # Vẽ vệt đạn
-        coords = result.get('coords')
-        target_name = result.get('target_detected_raw')
+        coords = result.get('coords'); target_name = result.get('target_detected_raw')
         if coords and target_name in self.TARGET_DIMENSIONS:
             orig_w, orig_h = self.TARGET_DIMENSIONS[target_name]
             if orig_w > 0 and orig_h > 0:
                 relative_coords = (coords[0] / orig_w, coords[1] / orig_h)
                 target_image_label = self.target_image_labels.get(target_index)
-                if target_image_label:
-                    target_image_label.add_hit_marker(relative_coords)
-
-        # Cập nhật tổng điểm và số đạn
+                if target_image_label: target_image_label.add_hit_marker(relative_coords)
         total_score = sum(self.competition_data['participants'][self.current_shooter_index]['shots'])
         self.gui.total_score_label.setText(f"Tổng điểm: {total_score}"); self.gui.ammo_count_label.setText(f"Số đạn còn lại: {self.TOTAL_SHOTS - shot_number}/{self.TOTAL_SHOTS}")
 
     def _reset_scoreboard(self):
         self.gui.target_1_score_label.setText("Điểm: --"); self.gui.target_2_score_label.setText("Điểm: --"); self.gui.target_3_score_label.setText("Điểm: --"); self.gui.target_4_score_label.setText("Điểm: --")
         self.gui.total_score_label.setText("Tổng điểm: 0"); self.gui.ammo_count_label.setText(f"Số đạn còn lại: {self.TOTAL_SHOTS}/{self.TOTAL_SHOTS}")
-        # THÊM MỚI: Xóa các vệt đạn cũ
-        for label in self.target_image_labels.values():
-            label.clear_hit_markers()
+        for label in self.target_image_labels.values(): label.clear_hit_markers()
         
     def start_camera(self):
         self.disconnect_camera(); num_cameras = count_available_cameras()
         if num_cameras == 0: self.disconnect_camera("Không tìm thấy camera.")
         elif num_cameras <= 1: self.disconnect_camera("Vui lòng kết nối USB Camera.")
         else: self.connect_camera(self.configured_camera_index)
-        
     def refresh_camera_connection(self): self.start_camera()
-
     def connect_camera(self, index: int):
         self.cam = Camera(index)
         if self.cam.isOpened(): self.video_timer.start(30); self.is_camera_connected = True
         else: self.disconnect_camera(f"Lỗi khi mở Camera Index {index}")
-
     def disconnect_camera(self, message="Vui lòng kết nối camera và nhấn 'Làm mới'"):
         self.video_timer.stop(); self.is_camera_connected = False; self.trigger.deactivate()
         if self.cam: self.cam.release(); self.cam = None
@@ -222,11 +237,9 @@ class CompetitionWindow(QMainWindow):
             widget = ParticipantItemWidget(p['name'], p['class_name']); widget.set_status(p['status']); item = QListWidgetItem()
             item.setSizeHint(widget.sizeHint()); self.gui.participants_list.addItem(item); self.gui.participants_list.setItemWidget(item, widget)
         if current_row != -1: self.gui.participants_list.setCurrentRow(current_row)
-        
     def _reset_competition_ui(self):
         self._update_participant_list(); self.gui.score_stack.setCurrentIndex(0); self.gui.start_turn_button.setEnabled(False)
         self.gui.shooter_name_label.setText("Tên: --"); self.gui.shooter_class_label.setText("Đơn vị: --")
-        
     @Slot(QListWidgetItem)
     def on_participant_selected(self, item):
         row = self.gui.participants_list.row(item); shooter = self.competition_data['participants'][row]
@@ -241,11 +254,19 @@ class CompetitionWindow(QMainWindow):
         if shooter['status'] != 'waiting': return
         shooter['status'] = 'shooting'; self.current_shot_count = 0; self._update_participant_list(); self.gui.participants_list.setEnabled(False); self.gui.start_turn_button.setEnabled(False); self.gui.score_stack.setCurrentIndex(1); self._reset_scoreboard(); self.trigger.activate()
 
+    # === THAY ĐỔI: Lấy ảnh từ các label để truyền vào Dialog ===
     def show_turn_result_popup(self):
-        self.trigger.deactivate(); shooter = self.competition_data['participants'][self.current_shooter_index]; dialog = TurnResultDialog(shooter['name'], shooter['shots'], self)
+        self.trigger.deactivate()
+        shooter = self.competition_data['participants'][self.current_shooter_index]
+
+        # Chụp lại ảnh của 4 widget bia (bao gồm cả vệt đạn đã vẽ)
+        target_pixmaps = [self.target_image_labels[i].grab() for i in range(1, 5)]
+        
+        dialog = TurnResultDialog(shooter['name'], shooter['shots'], target_pixmaps, self)
         result = dialog.exec()
         if result == QDialog.Accepted: self.finalize_turn()
         else: self.retry_turn()
+    # === KẾT THÚC THAY ĐỔI ===
 
     def finalize_turn(self):
         if 0 <= self.current_shooter_index < len(self.competition_data['participants']): self.competition_data['participants'][self.current_shooter_index]['status'] = 'finished'
@@ -253,25 +274,16 @@ class CompetitionWindow(QMainWindow):
         else: self._update_participant_list(); self.gui.participants_list.setEnabled(True); self.gui.participants_list.setCurrentRow(-1); self.gui.score_stack.setCurrentIndex(0)
 
     def retry_turn(self):
-        shooter = self.competition_data['participants'][self.current_shooter_index]
-        # === SỬA LỖI: Gọi hàm xóa các phát bắn khỏi DB ===
-        success = self.db.delete_shots_for_turn(self.competition_data['id'], shooter['id'], self.TOTAL_SHOTS)
+        shooter = self.competition_data['participants'][self.current_shooter_index]; success = self.db.delete_shots_for_turn(self.competition_data['id'], shooter['id'], self.TOTAL_SHOTS)
         if not success:
-            QMessageBox.critical(self, "Lỗi Database", "Không thể xóa các phát bắn cũ. Vui lòng thử lại sau.")
-            # Nếu không xóa được DB thì không nên tiếp tục để tránh sai dữ liệu
-            self.finalize_turn()
-            return
-        
+            QMessageBox.critical(self, "Lỗi Database", "Không thể xóa các phát bắn cũ. Vui lòng thử lại sau."); self.finalize_turn(); return
         shooter['shots'] = []; shooter['status'] = 'waiting'; self._update_participant_list(); self.gui.participants_list.setEnabled(True)
-        self.gui.participants_list.setCurrentRow(self.current_shooter_index); self.on_participant_selected(self.gui.participants_list.item(self.current_shooter_index))
-        self.gui.score_stack.setCurrentIndex(0)
+        self.gui.participants_list.setCurrentRow(self.current_shooter_index); self.on_participant_selected(self.gui.participants_list.item(self.current_shooter_index)); self.gui.score_stack.setCurrentIndex(0)
 
     def confirm_end_competition(self):
         if QMessageBox.question(self, "Kết thúc", "Bạn có chắc muốn kết thúc cuộc thi và quay về menu?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes: self.back_to_menu_signal.emit()
-
     def end_competition(self):
-        dialog = CompetitionRankingDialog(self.competition_data['name'], self.competition_data['participants'], self); dialog.exec()
-        self.back_to_menu_signal.emit()
+        dialog = CompetitionRankingDialog(self.competition_data['name'], self.competition_data['participants'], self); dialog.exec(); self.back_to_menu_signal.emit()
 
     def shutdown_components(self): self.trigger.deactivate(); self.disconnect_camera()
 
