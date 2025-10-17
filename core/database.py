@@ -43,7 +43,7 @@ class DatabaseManager:
             self.cursor = self.conn.cursor()
             self.cursor.execute("PRAGMA foreign_keys = ON;")
             self._create_tables()
-            self._update_schema() # Chạy hàm cập nhật schema
+            self._update_schema()
             logger.info(f"Kết nối thành công tới database: {self.db_path}")
         except sqlite3.Error as e:
             logger.critical(f"Lỗi nghiêm trọng khi kết nối database: {e}")
@@ -67,27 +67,20 @@ class DatabaseManager:
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS competition_participants (id INTEGER PRIMARY KEY, competition_id INTEGER NOT NULL, soldier_id INTEGER NOT NULL, FOREIGN KEY (competition_id) REFERENCES competitions (id) ON DELETE CASCADE, FOREIGN KEY (soldier_id) REFERENCES soldiers (id) ON DELETE CASCADE) """)
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS competition_shots (id INTEGER PRIMARY KEY, competition_id INTEGER NOT NULL, participant_id INTEGER NOT NULL, shot_number INTEGER NOT NULL, score INTEGER, target_detected TEXT, coords TEXT, image_path TEXT, timestamp TEXT NOT NULL, FOREIGN KEY (competition_id) REFERENCES competitions (id) ON DELETE CASCADE, FOREIGN KEY (participant_id) REFERENCES soldiers (id) ON DELETE CASCADE) """)
             self.conn.commit()
-            logger.info("Kiểm tra và tạo các bảng thành công.")
         except sqlite3.Error as e: logger.error(f"Lỗi khi tạo bảng: {e}")
 
     def _update_schema(self):
         if not self.cursor: return
         try:
-            # Thêm cột state nếu chưa có
             self.cursor.execute("ALTER TABLE competitions ADD COLUMN state TEXT")
             self.conn.commit()
-            logger.info("Cột 'state' đã được thêm vào bảng 'competitions'.")
         except sqlite3.OperationalError:
-            logger.info("Cột 'state' đã tồn tại trong bảng 'competitions'.")
-
+            pass
         try:
-            # Thêm ràng buộc UNIQUE cho cột name nếu chưa có
             self.cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_competition_name ON competitions(name)')
             self.conn.commit()
-            logger.info("Ràng buộc UNIQUE đã được áp dụng cho cột 'name' trong bảng 'competitions'.")
         except sqlite3.Error as e:
-            logger.error(f"Lỗi khi thêm UNIQUE index cho 'competitions.name': {e}")
-
+            logger.error(f"Lỗi khi thêm UNIQUE index: {e}")
 
     def add_soldier(self, name: str, class_name: str) -> Optional[int]:
         if not self.conn: return None
@@ -148,7 +141,7 @@ class DatabaseManager:
     def get_shot_count_for_session(self, session_id: int) -> int:
         if not self.conn: return 0
         try: self.cursor.execute("SELECT COUNT(id) FROM shots WHERE session_id = ?", (session_id,)); return self.cursor.fetchone()[0]
-        except sqlite3.Error as e: logger.error(f"Lỗi khi đếm số phát bắn cho phiên {session_id}: {e}"); return 0
+        except sqlite3.Error as e: logger.error(f"Lỗi khi đếm số phát bắn: {e}"); return 0
 
     def get_sessions_for_soldier(self, soldier_id: int) -> list:
         if not self.conn: return []
@@ -178,27 +171,20 @@ class DatabaseManager:
             participants_data = [(competition_id, soldier_id) for soldier_id in participant_soldier_ids]
             self.cursor.executemany("INSERT INTO competition_participants (competition_id, soldier_id) VALUES (?, ?)", participants_data)
             self.conn.commit()
-            logger.info(f"Đã tạo cuộc thi '{name}' (ID: {competition_id}) với {len(participant_soldier_ids)} người tham gia.")
             return competition_id
-        except sqlite3.IntegrityError: # Bắt lỗi UNIQUE
+        except sqlite3.IntegrityError:
             logger.error(f"Lỗi khi tạo cuộc thi: Tên '{name}' đã tồn tại.")
-            self.conn.rollback()
-            return None
+            self.conn.rollback(); return None
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi tạo cuộc thi: {e}"); self.conn.rollback(); return None
 
-    # === BẮT ĐẦU VÙNG THAY ĐỔI ===
     def competition_name_exists(self, name: str) -> bool:
-        """Kiểm tra xem tên một cuộc thi đã tồn tại hay chưa."""
-        if not self.conn: return True # Mặc định là có để tránh tạo trùng nếu DB lỗi
+        if not self.conn: return True
         try:
             sql = "SELECT 1 FROM competitions WHERE name = ?"
-            self.cursor.execute(sql, (name,))
-            return self.cursor.fetchone() is not None
+            self.cursor.execute(sql, (name,)); return self.cursor.fetchone() is not None
         except sqlite3.Error as e:
-            logger.error(f"Lỗi khi kiểm tra tên cuộc thi: {e}")
-            return True
-    # === KẾT THÚC VÙNG THAY ĐỔI ===
+            logger.error(f"Lỗi khi kiểm tra tên cuộc thi: {e}"); return True
 
     def add_competition_shot(self, competition_id: int, soldier_id: int, score: int, coords: Optional[Any], image_path: str, target_name: str):
         if not self.conn: return
@@ -210,8 +196,7 @@ class DatabaseManager:
             sql = "INSERT INTO competition_shots (competition_id, participant_id, shot_number, score, target_detected, coords, image_path, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             params = (competition_id, soldier_id, shot_number, score, target_name, coords_str, image_path, timestamp)
             self.cursor.execute(sql, params); self.conn.commit()
-            logger.info(f"Đã lưu phát bắn thứ {shot_number} của xạ thủ ID {soldier_id} cho cuộc thi ID {competition_id}.")
-        except sqlite3.Error as e: logger.error(f"Lỗi khi thêm phát bắn vào cuộc thi: {e}"); self.conn.rollback()
+        except sqlite3.Error as e: logger.error(f"Lỗi khi thêm phát bắn: {e}"); self.conn.rollback()
 
     def delete_shots_for_turn(self, competition_id: int, soldier_id: int, num_shots_to_delete: int) -> bool:
         if not self.conn: return False
@@ -219,99 +204,104 @@ class DatabaseManager:
             sql_get_ids = "SELECT id FROM competition_shots WHERE competition_id = ? AND participant_id = ? ORDER BY id DESC LIMIT ?"
             self.cursor.execute(sql_get_ids, (competition_id, soldier_id, num_shots_to_delete))
             ids_to_delete = [row[0] for row in self.cursor.fetchall()]
-            
-            if not ids_to_delete:
-                logger.warning(f"Không tìm thấy phát bắn nào để xóa cho xạ thủ {soldier_id} trong cuộc thi {competition_id}")
-                return True
-
+            if not ids_to_delete: return True
             sql_delete = f"DELETE FROM competition_shots WHERE id IN ({','.join('?' for _ in ids_to_delete)})"
             self.cursor.execute(sql_delete, ids_to_delete)
             self.conn.commit()
-            logger.info(f"Đã xóa thành công {len(ids_to_delete)} phát bắn của xạ thủ {soldier_id} trong cuộc thi {competition_id}.")
             return True
         except sqlite3.Error as e:
-            logger.error(f"Lỗi khi xóa các phát bắn của lượt: {e}"); self.conn.rollback(); return False
+            logger.error(f"Lỗi khi xóa lượt bắn: {e}"); self.conn.rollback(); return False
 
     def save_competition_state(self, competition_id: int, state_json: str) -> bool:
         if not self.conn: return False
         try:
             sql = "UPDATE competitions SET state = ? WHERE id = ?"
-            self.cursor.execute(sql, (state_json, competition_id))
-            self.conn.commit()
-            logger.info(f"Đã lưu trạng thái cho cuộc thi ID {competition_id}.")
-            return True
+            self.cursor.execute(sql, (state_json, competition_id)); self.conn.commit(); return True
         except sqlite3.Error as e:
-            logger.error(f"Lỗi khi lưu trạng thái cuộc thi ID {competition_id}: {e}")
-            self.conn.rollback()
-            return False
+            logger.error(f"Lỗi khi lưu trạng thái: {e}"); self.conn.rollback(); return False
 
     def get_competition(self, competition_id: int) -> Optional[Dict[str, Any]]:
         if not self.conn: return None
         try:
             sql = "SELECT * FROM competitions WHERE id = ?"
-            self.cursor.execute(sql, (competition_id,))
-            row = self.cursor.fetchone()
+            self.cursor.execute(sql, (competition_id,)); row = self.cursor.fetchone()
             return dict(row) if row else None
         except sqlite3.Error as e:
-            logger.error(f"Lỗi khi lấy thông tin cuộc thi ID {competition_id}: {e}")
-            return None
+            logger.error(f"Lỗi khi lấy thông tin cuộc thi: {e}"); return None
 
     def get_saved_competitions(self) -> List[Dict[str, Any]]:
         if not self.conn: return []
         try:
             sql = """
-                SELECT 
-                    c.id, 
-                    c.name, 
-                    c.created_at, 
-                    COUNT(p.id) as participant_count
-                FROM competitions c
-                LEFT JOIN competition_participants p ON c.id = p.competition_id
-                WHERE c.status = 'in_progress'
-                GROUP BY c.id
-                ORDER BY c.created_at DESC
+                SELECT c.id, c.name, c.created_at, COUNT(p.id) as participant_count
+                FROM competitions c LEFT JOIN competition_participants p ON c.id = p.competition_id
+                WHERE c.status = 'in_progress' GROUP BY c.id ORDER BY c.created_at DESC
             """
-            self.cursor.execute(sql)
-            return [dict(row) for row in self.cursor.fetchall()]
+            self.cursor.execute(sql); return [dict(row) for row in self.cursor.fetchall()]
         except sqlite3.Error as e:
-            logger.error(f"Lỗi khi lấy danh sách các cuộc thi đã lưu: {e}")
-            return []
+            logger.error(f"Lỗi khi lấy các cuộc thi đã lưu: {e}"); return []
 
-    def get_shots_for_competition(self, competition_id: int) -> list:
+    def get_completed_competitions(self) -> List[Dict[str, Any]]:
         if not self.conn: return []
         try:
-            sql = "SELECT * FROM competition_shots WHERE competition_id = ? ORDER BY shot_number ASC"
-            self.cursor.execute(sql, (competition_id,))
+            sql = """
+                SELECT c.id, c.name, c.created_at, COUNT(p.id) as participant_count
+                FROM competitions c LEFT JOIN competition_participants p ON c.id = p.competition_id
+                WHERE c.status = 'completed' GROUP BY c.id ORDER BY c.created_at DESC
+            """
+            self.cursor.execute(sql); return [dict(row) for row in self.cursor.fetchall()]
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi lấy các cuộc thi đã hoàn thành: {e}"); return []
+
+    def get_competition_ranking(self, competition_id: int) -> List[Dict[str, Any]]:
+        if not self.conn: return []
+        try:
+            sql = """
+                SELECT s.id as soldier_id, s.name, s.class_name, SUM(cs.score) as total_score
+                FROM competition_shots cs JOIN soldiers s ON cs.participant_id = s.id
+                WHERE cs.competition_id = ? GROUP BY s.id ORDER BY total_score DESC
+            """
+            self.cursor.execute(sql, (competition_id,)); return [dict(row) for row in self.cursor.fetchall()]
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi lấy bảng xếp hạng: {e}"); return []
+
+    # === BẮT ĐẦU VÙNG THAY ĐỔI ===
+    def get_shots_for_competition(self, competition_id: int, participant_id: int = None) -> list:
+        """
+        Lấy chi tiết các phát bắn của một cuộc thi.
+        Nếu có participant_id, chỉ lấy của người đó.
+        """
+        if not self.conn: return []
+        try:
+            if participant_id:
+                sql = "SELECT * FROM competition_shots WHERE competition_id = ? AND participant_id = ? ORDER BY shot_number ASC"
+                params = (competition_id, participant_id)
+            else:
+                sql = "SELECT * FROM competition_shots WHERE competition_id = ? ORDER BY participant_id, shot_number ASC"
+                params = (competition_id,)
+            
+            self.cursor.execute(sql, params)
             return [dict(row) for row in self.cursor.fetchall()]
         except sqlite3.Error as e:
-            logger.error(f"Lỗi khi lấy chi tiết các phát bắn của cuộc thi: {e}")
+            logger.error(f"Lỗi khi lấy chi tiết phát bắn cuộc thi: {e}")
             return []
+    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def update_competition_status(self, competition_id: int, status: str) -> bool:
         if not self.conn: return False
         try:
             sql = "UPDATE competitions SET status = ? WHERE id = ?"
-            self.cursor.execute(sql, (status, competition_id))
-            self.conn.commit()
-            logger.info(f"Đã cập nhật trạng thái của cuộc thi ID {competition_id} thành '{status}'.")
-            return True
+            self.cursor.execute(sql, (status, competition_id)); self.conn.commit(); return True
         except sqlite3.Error as e:
-            logger.error(f"Lỗi khi cập nhật trạng thái cuộc thi ID {competition_id}: {e}")
-            self.conn.rollback()
-            return False
+            logger.error(f"Lỗi khi cập nhật trạng thái: {e}"); self.conn.rollback(); return False
 
     def delete_competition(self, competition_id: int) -> bool:
         if not self.conn: return False
         try:
             sql = "DELETE FROM competitions WHERE id = ?"
-            self.cursor.execute(sql, (competition_id,))
-            self.conn.commit()
-            logger.info(f"Đã xóa hoàn toàn cuộc thi ID {competition_id}.")
-            return True
+            self.cursor.execute(sql, (competition_id,)); self.conn.commit(); return True
         except sqlite3.Error as e:
-            logger.error(f"Lỗi khi xóa cuộc thi ID {competition_id}: {e}")
-            self.conn.rollback()
-            return False
+            logger.error(f"Lỗi khi xóa cuộc thi: {e}"); self.conn.rollback(); return False
 
     def close(self):
-        if self.conn: self.conn.close(); logger.info("Đã đóng kết nối database.")
+        if self.conn: self.conn.close()

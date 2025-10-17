@@ -14,6 +14,9 @@ from gui.windows.competition_menu_window import CompetitionMenuWindow
 from gui.windows.competition_window import CompetitionWindow
 from gui.windows.setup_competition_window import SetupCompetitionWindow
 from gui.windows.saved_competitions_window import SavedCompetitionsWindow
+# === BẮT ĐẦU VÙNG THAY ĐỔI ===
+from gui.windows.competition_stats_window import CompetitionStatsWindow
+# === KẾT THÚC VÙNG THAY ĐỔI ===
 
 from core.worker import ProcessingWorker
 from core.triggers import BluetoothTrigger
@@ -56,13 +59,17 @@ class ApplicationController(QMainWindow):
         self.setup_competition_screen = SetupCompetitionWindow()
         self.competition_screen = CompetitionWindow(self.processing_worker, self.bt_trigger, self.config)
         self.saved_competitions_screen = SavedCompetitionsWindow()
+        # === BẮT ĐẦU VÙNG THAY ĐỔI ===
+        self.competition_stats_screen = CompetitionStatsWindow()
+        # === KẾT THÚC VÙNG THAY ĐỔI ===
         
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
         all_screens = [
             self.main_menu, self.practice_screen, self.manage_screen, 
             self.competition_menu, self.setup_competition_screen, 
-            self.competition_screen, self.saved_competitions_screen
+            self.competition_screen, self.saved_competitions_screen,
+            self.competition_stats_screen # Thêm màn hình mới vào stack
         ]
         for widget in all_screens:
             self.stacked_widget.addWidget(widget)
@@ -88,9 +95,12 @@ class ApplicationController(QMainWindow):
         self.practice_screen.back_to_main_menu.connect(self.show_main_menu)
         self.manage_screen.back_to_main_menu.connect(self.show_main_menu)
         
+        # === BẮT ĐẦU VÙNG THAY ĐỔI ===
         self.competition_menu.start_button.clicked.connect(self.show_setup_competition_screen)
+        self.competition_menu.saved_button.clicked.connect(self.show_saved_competitions_screen)
+        self.competition_menu.stats_button.clicked.connect(self.show_competition_stats_screen) # Kết nối nút Thống kê
         self.competition_menu.back_button.clicked.connect(self.show_main_menu)
-        self.competition_menu.ui.saved_button.clicked.connect(self.show_saved_competitions_screen)
+        # === KẾT THÚC VÙNG THAY ĐỔI ===
 
         self.setup_competition_screen.start_competition_signal.connect(self.start_new_competition)
         self.setup_competition_screen.ui.back_button.clicked.connect(self.show_competition_menu)
@@ -99,6 +109,10 @@ class ApplicationController(QMainWindow):
 
         self.saved_competitions_screen.back_to_menu_signal.connect(self.show_competition_menu)
         self.saved_competitions_screen.resume_competition_signal.connect(self.resume_competition)
+
+        # === BẮT ĐẦU VÙNG THAY ĐỔI ===
+        self.competition_stats_screen.back_to_menu_signal.connect(self.show_competition_menu)
+        # === KẾT THÚC VÙNG THAY ĐỔI ===
 
         self.practice_screen.request_processing.connect(self.processing_worker.process_image)
         self.competition_screen.request_processing.connect(self.processing_worker.process_image)
@@ -152,17 +166,20 @@ class ApplicationController(QMainWindow):
         self._switch_screen(self.manage_screen)
         self.manage_screen.load_soldiers()
 
-    # === BẮT ĐẦU VÙNG THAY ĐỔI ===
     def show_setup_competition_screen(self): 
-        # Luôn reset form mỗi khi vào màn hình này
         self.setup_competition_screen.reset_form()
         self._switch_screen(self.setup_competition_screen)
         self.setup_competition_screen.load_soldiers()
-    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def show_saved_competitions_screen(self):
         self._switch_screen(self.saved_competitions_screen)
         self.saved_competitions_screen.enter_view()
+
+    # === BẮT ĐẦU VÙNG THAY ĐỔI ===
+    def show_competition_stats_screen(self):
+        self._switch_screen(self.competition_stats_screen)
+        self.competition_stats_screen.enter_view()
+    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def closeEvent(self, event): self.cleanup_before_exit(); super().closeEvent(event)
 

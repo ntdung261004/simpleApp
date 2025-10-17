@@ -78,19 +78,87 @@ class TurnResultDialog(QDialog):
 
         buttons = QDialogButtonBox(); save_button = buttons.addButton("Lưu & Tiếp tục", QDialogButtonBox.AcceptRole); retry_button = buttons.addButton("Bắn lại", QDialogButtonBox.RejectRole); retry_button.setObjectName("retryButton"); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); main_layout.addWidget(buttons)
 
+# === BẮT ĐẦU VÙNG THAY ĐỔI ===
 class CompetitionRankingDialog(QDialog):
-    def __init__(self, competition_name: str, participants_data: list, parent=None):
-        super().__init__(parent); self.setWindowTitle("Bảng Xếp Hạng Chung Cuộc"); self.setMinimumSize(600, 500)
-        self.setStyleSheet(""" QDialog { background-color: #2c3e50; } QLabel#title { font-size: 22px; font-weight: bold; color: #1abc9c; padding-bottom: 10px; } QTableWidget { background-color: #34495e; border: 1px solid #4a6278; gridline-color: #4a6278; font-size: 14px; } QHeaderView::section { background-color: #415a72; color: white; padding: 8px; font-weight: bold; border: none; } QTableWidget::item { padding: 10px; border-bottom: 1px solid #4a6278; } QPushButton { background-color: #3498db; color: white; font-size: 14px; font-weight: bold; border: none; padding: 10px 20px; border-radius: 8px; } QPushButton:hover { background-color: #2980b9; } QPushButton[objectName="exitButton"] { background-color: #e74c3c; } QPushButton[objectName="exitButton"]:hover { background-color: #c0392b; } """)
-        main_layout = QVBoxLayout(self); main_layout.setSpacing(15); title = QLabel(f"Kết quả: {competition_name}"); title.setObjectName("title"); title.setAlignment(Qt.AlignCenter); main_layout.addWidget(title); self.table = QTableWidget(); self.table.setColumnCount(4); self.table.setHorizontalHeaderLabels(["Hạng", "Tên Xạ thủ", "Đơn vị", "Tổng Điểm"]); self.table.verticalHeader().setVisible(False); self.table.setEditTriggers(QAbstractItemView.NoEditTriggers); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch); self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents); main_layout.addWidget(self.table)
-        sorted_participants = sorted(participants_data, key=lambda p: sum(p.get('shots', [])), reverse=True); self._populate_table(sorted_participants)
-        buttons = QDialogButtonBox(); save_button = QPushButton("Lưu Cuộc thi"); save_button.setEnabled(False); exit_button = QPushButton("Thoát"); exit_button.setObjectName("exitButton"); buttons.addButton(save_button, QDialogButtonBox.ActionRole); buttons.addButton(exit_button, QDialogButtonBox.RejectRole); buttons.rejected.connect(self.reject); main_layout.addWidget(buttons)
+    def __init__(self, competition_id: int, competition_name: str, participants_data: list, db: DatabaseManager, parent=None):
+        super().__init__(parent)
+        self.competition_id = competition_id
+        self.db = db
+        self.setWindowTitle("Bảng Xếp Hạng Chung Cuộc")
+        self.setMinimumSize(600, 500)
+        self.setStyleSheet(""" 
+            QDialog { background-color: #2c3e50; } 
+            QLabel#title { font-size: 22px; font-weight: bold; color: #1abc9c; padding-bottom: 10px; } 
+            QTableWidget { background-color: #34495e; border: 1px solid #4a6278; gridline-color: #4a6278; font-size: 14px; } 
+            QHeaderView::section { background-color: #415a72; color: white; padding: 8px; font-weight: bold; border: none; } 
+            QTableWidget::item { padding: 10px; border-bottom: 1px solid #4a6278; } 
+            QPushButton { background-color: #1abc9c; color: white; font-size: 14px; font-weight: bold; border: none; padding: 10px 20px; border-radius: 8px; } 
+            QPushButton:hover { background-color: #16a085; } 
+            QPushButton[objectName="exitButton"] { background-color: #e74c3c; } 
+            QPushButton[objectName="exitButton"]:hover { background-color: #c0392b; } 
+        """)
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(15)
+        title = QLabel(f"Kết quả: {competition_name}")
+        title.setObjectName("title")
+        title.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(title)
+        
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Hạng", "Tên Xạ thủ", "Đơn vị", "Tổng Điểm"])
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        main_layout.addWidget(self.table)
+        
+        sorted_participants = sorted(participants_data, key=lambda p: sum(p.get('shots', [])), reverse=True)
+        self._populate_table(sorted_participants)
+        
+        buttons = QDialogButtonBox()
+        save_button = QPushButton("Lưu & Thoát")
+        exit_button = QPushButton("Thoát không lưu")
+        exit_button.setObjectName("exitButton")
+        
+        buttons.addButton(save_button, QDialogButtonBox.AcceptRole)
+        buttons.addButton(exit_button, QDialogButtonBox.RejectRole)
+        
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        main_layout.addWidget(buttons)
+
+    def accept(self):
+        logger.info(f"Người dùng chọn LƯU kết quả cuộc thi ID: {self.competition_id}")
+        self.db.update_competition_status(self.competition_id, 'completed')
+        super().accept()
+
+    def reject(self):
+        logger.info(f"Người dùng chọn KHÔNG LƯU kết quả cuộc thi ID: {self.competition_id}. Dữ liệu sẽ bị xóa.")
+        self.db.delete_competition(self.competition_id)
+        super().reject()
+# === KẾT THÚC VÙNG THAY ĐỔI ===
+
     def _populate_table(self, participants):
         rank_icons = {1: "🥇", 2: "🥈", 3: "🥉"}
         for i, p in enumerate(participants):
-            rank = i + 1; self.table.insertRow(i); rank_text = rank_icons.get(rank, f"{rank}"); rank_item = QTableWidgetItem(rank_text); rank_item.setTextAlignment(Qt.AlignCenter);
+            rank = i + 1
+            self.table.insertRow(i)
+            rank_text = rank_icons.get(rank, f"{rank}")
+            rank_item = QTableWidgetItem(rank_text)
+            rank_item.setTextAlignment(Qt.AlignCenter)
             if rank <= 3: rank_item.setFont(QFont("Segoe UI", 16))
-            self.table.setItem(i, 0, rank_item); self.table.setItem(i, 1, QTableWidgetItem(p['name'])); self.table.setItem(i, 2, QTableWidgetItem(p['class_name'])); total_score = sum(p.get('shots', [])); score_item = QTableWidgetItem(str(total_score)); score_item.setTextAlignment(Qt.AlignCenter); score_item.setFont(QFont("Segoe UI", 14, QFont.Bold)); score_item.setForeground(QColor("#f1c40f")); self.table.setItem(i, 3, score_item)
+            self.table.setItem(i, 0, rank_item)
+            self.table.setItem(i, 1, QTableWidgetItem(p['name']))
+            self.table.setItem(i, 2, QTableWidgetItem(p['class_name']))
+            total_score = sum(p.get('shots', []))
+            score_item = QTableWidgetItem(str(total_score))
+            score_item.setTextAlignment(Qt.AlignCenter)
+            score_item.setFont(QFont("Segoe UI", 14, QFont.Bold))
+            score_item.setForeground(QColor("#f1c40f"))
+            self.table.setItem(i, 3, score_item)
 
 class ParticipantItemWidget(QWidget):
     def __init__(self, name: str, class_name: str, parent=None):
@@ -148,33 +216,23 @@ class CompetitionWindow(QMainWindow):
             display_aim_point = (int(transformed_x * self.zoom_level), int(transformed_y * self.zoom_level))
         cv2.drawMarker(frame_with_effects, display_aim_point, (0, 0, 255), cv2.MARKER_CROSS, 20, 2); self.gui.display_frame(frame_with_effects)
 
-    # === BẮT ĐẦU VÙNG SỬA LỖI: LOGIC MỚI ===
     def setup_competition(self, competition_id: int, competition_name: str, participants: list):
-        """Hàm chính để bắt đầu một cuộc thi MỚI."""
         logger.info(f"Bắt đầu thiết lập cuộc thi MỚI: '{competition_name}' (ID: {competition_id})")
-        # 1. Luôn dọn dẹp trạng thái cũ trước khi bắt đầu một phiên mới.
         self._reset_state()
-        
-        # 2. Nạp dữ liệu mới
         self.setWindowTitle(f"Thi Đấu - {competition_name}")
         self.competition_data = {
             'id': competition_id, 
             'name': competition_name, 
             'participants': [{'id': p['id'], 'name': p['name'], 'class_name': p['class_name'], 'shots': [], 'status': 'waiting'} for p in participants]
         }
-        
-        # 3. Cập nhật giao diện với dữ liệu mới
         self._update_participant_list()
         self.gui.participants_list.setEnabled(True)
 
     def load_from_state(self, state_data: dict):
-        """Hàm chính để tiếp tục một cuộc thi ĐÃ LƯU."""
         try:
             logger.info(f"Bắt đầu khôi phục cuộc thi đã lưu ID: {state_data.get('competition_id')}")
-            # 1. Dọn dẹp trạng thái cũ
             self._reset_state()
             
-            # 2. Nạp dữ liệu từ state
             competition_info = self.db.get_competition(state_data['competition_id'])
             if not competition_info: raise ValueError("Không tìm thấy ID cuộc thi trong database.")
 
@@ -187,7 +245,6 @@ class CompetitionWindow(QMainWindow):
             self.current_shot_count = state_data['current_shot_count']
             self.setWindowTitle(f"Thi Đấu - {self.competition_data['name']}")
             
-            # 3. Cập nhật giao diện
             self._update_participant_list()
             is_shooting = (self.current_shooter_index != -1 and
                            self.competition_data['participants'][self.current_shooter_index]['status'] == 'shooting')
@@ -207,7 +264,6 @@ class CompetitionWindow(QMainWindow):
             QMessageBox.critical(self, "Lỗi Dữ liệu", "Không thể khôi phục phiên thi đấu từ dữ liệu đã lưu.")
             self._reset_state()
             self.back_to_menu_signal.emit()
-    # === KẾT THÚC VÙNG SỬA LỖI ===
 
     def _rebuild_scoreboard(self):
         self._reset_scoreboard()
@@ -319,7 +375,6 @@ class CompetitionWindow(QMainWindow):
         self.gui.clear_video_feed(message)
 
     def _update_participant_list(self):
-        """Hàm này CHỈ có nhiệm vụ hiển thị dữ liệu từ self.competition_data lên list."""
         self.gui.participants_list.clear()
         if not self.competition_data: return
         for p in self.competition_data['participants']:
@@ -327,7 +382,6 @@ class CompetitionWindow(QMainWindow):
             item.setSizeHint(widget.sizeHint()); self.gui.participants_list.addItem(item); self.gui.participants_list.setItemWidget(item, widget)
     
     def _reset_competition_ui(self):
-        """Reset các thành phần giao diện về trạng thái ban đầu."""
         self.gui.score_stack.setCurrentIndex(0)
         self.gui.start_turn_button.setEnabled(False)
         self.gui.shooter_name_label.setText("Tên: --")
@@ -383,11 +437,24 @@ class CompetitionWindow(QMainWindow):
         shooter['shots'] = []; shooter['status'] = 'waiting'; self._update_participant_list(); self.gui.participants_list.setEnabled(True)
         self.gui.participants_list.setCurrentRow(self.current_shooter_index); self.on_participant_selected(self.gui.participants_list.item(self.current_shooter_index)); self.gui.score_stack.setCurrentIndex(0)
 
+    # === BẮT ĐẦU VÙNG THAY ĐỔI ===
     def end_competition(self):
-        if self.competition_data: self.db.update_competition_status(self.competition_data['id'], 'completed')
-        dialog = CompetitionRankingDialog(self.competition_data['name'], self.competition_data['participants'], self); dialog.exec()
+        if not self.competition_data: return
+
+        # Tạo dialog với các tham số mới
+        dialog = CompetitionRankingDialog(
+            competition_id=self.competition_data['id'],
+            competition_name=self.competition_data['name'], 
+            participants_data=self.competition_data['participants'],
+            db=self.db,
+            parent=self
+        )
+        dialog.exec()  # Hàm exec() sẽ block cho đến khi dialog đóng
+        
+        # Sau khi dialog đóng, dọn dẹp và quay về menu
         self._reset_state()
         self.back_to_menu_signal.emit()
+    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def shutdown_components(self): self.trigger.deactivate(); self.disconnect_camera()
 
@@ -428,19 +495,13 @@ class CompetitionWindow(QMainWindow):
             else: QMessageBox.critical(self, "Lỗi Database", "Không thể lưu trạng thái cuộc thi.")
         except TypeError as e: logger.error(f"Lỗi khi chuyển trạng thái sang JSON: {e}"); QMessageBox.critical(self, "Lỗi Dữ liệu", "Không thể chuyển đổi dữ liệu trạng thái để lưu.")
 
-    # === BẮT ĐẦU VÙNG SỬA LỖI: LOGIC MỚI ===
     def _reset_state(self):
-        """Dọn dẹp sạch sẽ trạng thái của phiên thi đấu hiện tại."""
         logger.info("Dọn dẹp trạng thái cửa sổ thi đấu...")
         self.competition_data = None
         self.current_shooter_index = -1
         self.current_shot_count = 0
-        
-        # Xóa sạch danh sách và bỏ chọn item hiện tại
         self.gui.participants_list.setCurrentRow(-1)
         self.gui.participants_list.clear()
-        
-        # Reset các thành phần UI khác
         self._reset_competition_ui()
 
     def _prompt_exit(self):
@@ -479,4 +540,3 @@ class CompetitionWindow(QMainWindow):
             
         elif clicked_button == cancel_button:
             pass
-    # === KẾT THÚC VÙNG SỬA LỖI ===
