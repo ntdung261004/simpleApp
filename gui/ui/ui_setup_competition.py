@@ -2,7 +2,7 @@
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QGroupBox, QListWidget, QListWidgetItem, QTextEdit,
-    QFrame, QSizePolicy, QAbstractItemView, QCheckBox
+    QFrame, QSizePolicy, QAbstractItemView, QCheckBox, QLineEdit
 )
 from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
@@ -11,14 +11,10 @@ class Ui_SetupCompetitionWindow(object):
     def setupUi(self, SetupCompetitionWindow):
         SetupCompetitionWindow.setObjectName("SetupCompetitionWindow")
 
-        # === BẮT ĐẦU VÙNG SỬA LỖI ===
-        # 1. Tạo một widget trung tâm để chứa toàn bộ layout và các thành phần khác.
-        # Đây là bước quan trọng bị thiếu, gây ra lỗi màn hình trắng.
         self.centralwidget = QWidget(SetupCompetitionWindow)
         self.centralwidget.setObjectName("centralwidget")
-        # === KẾT THÚC VÙNG SỬA LỖI ===
 
-        # Style chung (Giữ nguyên)
+        # Style chung
         SetupCompetitionWindow.setStyleSheet("""
             #centralwidget { background-color: #2c3e50; }
             QGroupBox {
@@ -50,6 +46,9 @@ class Ui_SetupCompetitionWindow(object):
                 border-radius: 8px;
                 padding: 5px;
             }
+            QListWidget::item {
+                border-bottom: 1px solid #4a6278;
+            }
             QTextEdit {
                 background-color: #34495e;
                 color: #bdc3c7;
@@ -66,13 +65,22 @@ class Ui_SetupCompetitionWindow(object):
                 color: #ecf0f1;
                 font-size: 14px;
             }
+            /* === BẮT ĐẦU VÙNG THÊM MỚI === */
+            QLineEdit {
+                background-color: #34495e;
+                border: 1px solid #4a6278;
+                border-radius: 6px;
+                padding: 8px;
+                color: #ecf0f1;
+                font-size: 14px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #1abc9c;
+            }
+            /* === KẾT THÚC VÙNG THÊM MỚI === */
         """)
 
-        # === BẮT ĐẦU VÙNG SỬA LỖI ===
-        # 2. Áp dụng layout chính vào `centralwidget` thay vì `SetupCompetitionWindow`
         main_layout = QHBoxLayout(self.centralwidget)
-        # === KẾT THÚC VÙNG SỬA LỖI ===
-        
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(20)
 
@@ -103,11 +111,30 @@ class Ui_SetupCompetitionWindow(object):
         soldiers_layout.addWidget(self.soldier_list)
         left_layout.addWidget(soldiers_box)
 
-        # Cột phải: Quy tắc và nút bấm (Giữ nguyên)
+        # Cột phải: Thông tin thi đấu và nút bấm
         right_layout = QVBoxLayout()
         
-        rules_box = QGroupBox("Quy Tắc Thi Đấu")
-        rules_layout = QVBoxLayout(rules_box)
+        # === BẮT ĐẦU VÙNG THAY ĐỔI LAYOUT ===
+        competition_info_box = QGroupBox("Thông Tin và Quy Tắc")
+        info_layout = QVBoxLayout(competition_info_box)
+        info_layout.setSpacing(10) # Thêm khoảng cách giữa các phần tử
+
+        # Thêm label và LineEdit cho tên cuộc thi
+        self.competition_name_label = QLabel("Tên cuộc thi:")
+        self.competition_name_input = QLineEdit()
+        self.competition_name_input.setPlaceholderText("Nhập tên cuộc thi (ví dụ: Hội thao 2024)")
+        
+        info_layout.addWidget(self.competition_name_label)
+        info_layout.addWidget(self.competition_name_input)
+        
+        # Thêm đường kẻ ngang để phân tách
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setStyleSheet("border: 1px solid #4a6278;")
+        info_layout.addWidget(separator)
+
+        # Thêm phần quy tắc
         self.rules_text = QTextEdit()
         self.rules_text.setReadOnly(True)
         self.rules_text.setText(
@@ -122,8 +149,10 @@ class Ui_SetupCompetitionWindow(object):
             "- Giữ súng hướng về phía mục tiêu.\n"
             "- Ngón tay chỉ đặt vào cò khi đã sẵn sàng bắn."
         )
-        rules_layout.addWidget(self.rules_text)
-        right_layout.addWidget(rules_box, 1)
+        info_layout.addWidget(self.rules_text)
+        
+        right_layout.addWidget(competition_info_box, 1)
+        # === KẾT THÚC VÙNG THAY ĐỔI LAYOUT ===
 
         buttons_layout = QHBoxLayout()
         self.start_competition_button = QPushButton("BẮT ĐẦU THI ĐẤU")
@@ -137,7 +166,4 @@ class Ui_SetupCompetitionWindow(object):
         main_layout.addLayout(left_layout, 1)
         main_layout.addLayout(right_layout, 1)
 
-        # === BẮT ĐẦU VÙNG SỬA LỖI ===
-        # 3. Đặt `centralwidget` làm widget trung tâm cho cửa sổ chính
         SetupCompetitionWindow.setCentralWidget(self.centralwidget)
-        # === KẾT THÚC VÙNG SỬA LỖI ===
