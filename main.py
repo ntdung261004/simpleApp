@@ -60,6 +60,7 @@ def check_or_request_license() -> bool:
 class ApplicationController(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setStyleSheet("background-color: #2c3e50;")
         self.setWindowTitle("Phần Mềm Kiểm Tra Đường Ngắm Súng Tiểu Liên STV")
 
         # --- BẮT ĐẦU THAY ĐỔI ---

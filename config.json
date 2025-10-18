@@ -1,5 +1,14 @@
 {
     "camera_index": 0,
     "yolo_confidence_threshold": 0.75,
-    "manage_image_height": 350
+    "labels": {
+        "trainee": "Người học",
+        "trainee_class": "Đơn vị",
+        "trainee_list_title": "Danh sách Người học",
+        "add_trainee_dialog_title": "Thêm Người học Mới",
+        "edit_trainee_dialog_title": "Chỉnh sửa thông tin Người học",
+        "trainee_name_prompt": "Họ và Tên:",
+        "trainee_class_prompt": "Đơn vị:",
+        "history_title_prefix": "Lịch sử bắn của"
+    }
 }
