@@ -44,7 +44,7 @@ def check_or_request_license() -> bool:
 class ApplicationController(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Phần Mềm Luyện Tập và Thi Đấu Bắn Súng K54")
+        self.setWindowTitle("Phần Mềm Luyện Tập và Kiểm Tra Bắn Súng K54")
         self.config = self._load_config()
         
         self.processing_thread = QThread()

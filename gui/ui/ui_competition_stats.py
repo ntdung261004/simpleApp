@@ -34,7 +34,7 @@ class CompetitionStatsGui(QWidget):
         root_layout.setContentsMargins(20, 10, 20, 20)
         root_layout.setSpacing(15)
 
-        title_label = QLabel("THỐNG KÊ KẾT QUẢ THI ĐẤU")
+        title_label = QLabel("THỐNG KÊ KẾT QUẢ KIỂM TRA")
         title_label.setObjectName("title")
         title_label.setAlignment(Qt.AlignCenter)
         root_layout.addWidget(title_label)
@@ -49,7 +49,7 @@ class CompetitionStatsGui(QWidget):
         
         bottom_layout = QHBoxLayout()
         bottom_layout.addStretch(1)
-        self.back_button = QPushButton("Về Menu Thi đấu")
+        self.back_button = QPushButton("Về Menu Kiểm tra")
         bottom_layout.addWidget(self.back_button)
         root_layout.addLayout(bottom_layout)
 
@@ -76,7 +76,7 @@ class CompetitionStatsGui(QWidget):
         table_layout.setContentsMargins(0,0,0,0)
         self.ranking_table = QTableWidget()
         self.ranking_table.setColumnCount(4)
-        self.ranking_table.setHorizontalHeaderLabels(["Hạng", "Tên Xạ thủ", "Đơn vị", "Tổng Điểm"])
+        self.ranking_table.setHorizontalHeaderLabels(["Hạng", "Tên Người bắn", "Đơn vị", "Tổng Điểm"])
         self.ranking_table.verticalHeader().setVisible(False)
         self.ranking_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.ranking_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -88,7 +88,7 @@ class CompetitionStatsGui(QWidget):
         # Trang hiển thị thông báo
         message_page = QWidget()
         message_layout = QVBoxLayout(message_page)
-        message_label = QLabel("◀ Vui lòng chọn một phiên thi đấu để xem kết quả")
+        message_label = QLabel("◀ Vui lòng chọn một phiên kiểm tra để xem kết quả")
         message_label.setAlignment(Qt.AlignCenter)
         message_label.setProperty("class", "message-label")
         message_layout.addWidget(message_label)
@@ -99,7 +99,7 @@ class CompetitionStatsGui(QWidget):
         return panel
 
     def _create_right_column(self) -> QWidget:
-        panel = QGroupBox("Chi tiết Xạ thủ")
+        panel = QGroupBox("Chi tiết Người bắn")
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(15, 25, 15, 15)
 
@@ -123,7 +123,7 @@ class CompetitionStatsGui(QWidget):
         # Trang hiển thị thông báo
         message_page = QWidget()
         message_layout = QVBoxLayout(message_page)
-        message_label = QLabel("◀ Vui lòng chọn một xạ thủ từ bảng xếp hạng")
+        message_label = QLabel("◀ Vui lòng chọn một người bắn từ bảng xếp hạng")
         message_label.setAlignment(Qt.AlignCenter)
         message_label.setProperty("class", "message-label")
         message_layout.addWidget(message_label)

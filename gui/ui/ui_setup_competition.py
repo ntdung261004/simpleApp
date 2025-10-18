@@ -120,9 +120,9 @@ class Ui_SetupCompetitionWindow(object):
         info_layout.setSpacing(10) # Thêm khoảng cách giữa các phần tử
 
         # Thêm label và LineEdit cho tên cuộc thi
-        self.competition_name_label = QLabel("Tên cuộc thi:")
+        self.competition_name_label = QLabel("Tên buổi kiểm tra:")
         self.competition_name_input = QLineEdit()
-        self.competition_name_input.setPlaceholderText("Nhập tên cuộc thi (ví dụ: Hội thao 2024)")
+        self.competition_name_input.setPlaceholderText("Nhập tên kiểm tra (ví dụ: kiểm tra bắn súng ngắn k54 sĩ quan 2024)")
         
         info_layout.addWidget(self.competition_name_label)
         info_layout.addWidget(self.competition_name_input)
@@ -138,24 +138,25 @@ class Ui_SetupCompetitionWindow(object):
         self.rules_text = QTextEdit()
         self.rules_text.setReadOnly(True)
         self.rules_text.setText(
-            "QUY TẮC BẮN SÚNG NGẮN K54 - BÀI 1\n\n"
-            "1. Cự ly bắn: 25 mét.\n"
-            "2. Mục tiêu: Bia 4b (thân người) và 4c (vòng tròn).\n"
-            "3. Tư thế bắn: Đứng bắn có tỳ tay hoặc không tỳ tay.\n"
-            "4. Thời gian: Theo quy định của trọng tài.\n"
-            "5. Số lượng đạn: 10 viên.\n\n"
-            "YÊU CẦU AN TOÀN:\n"
-            "- Luôn tuân thủ mệnh lệnh của người chỉ huy.\n"
-            "- Giữ súng hướng về phía mục tiêu.\n"
-            "- Ngón tay chỉ đặt vào cò khi đã sẵn sàng bắn."
-        )
+            "QUY TẮC KIỂM TRA - BÀI BẮN SÚNG NGẮN K54 (MÔ PHỎNG)\n\n"
+                "I.QUY ĐỊNH BÀI BẮN:\n"
+                "  • Số lượng đạn: Tổng 12 viên.\n"
+                "  • Thứ tự bia:\n"
+                "      - Bia 1 & 2 (06 viên): Bắn vào Bia số 4c.\n"
+                "      - Bia 3 & 4 (06 viên): Bắn vào Bia số 4b.\n"
+                "  • Cự ly: Mô phỏng 25 mét.\n"
+                "  • Tư thế bắn: Đứng bắn 1 tay và đứng bắn 2 tay.\n\n"
+                "II. YÊU CẦU VỀ KỸ THUẬT & TÍNH ĐIỂM HỢP LỆ:\n"
+                "  1. TUÂN THỦ ĐÚNG THỨ TỰ BIA (QUAN TRỌNG): Để kết quả được tính là hợp lệ, người kiểm tra BẮT BUỘC phải bắn đúng loại bia cho từng giai đoạn.\n"
+                "  2. KIỂM TRA KẾT NỐI PHẦN CỨNG: Đảm bảo rằng tất cả các kết nối phần cứng (camera, cò súng) đều hoạt động bình thường trước khi bắt đầu kiểm tra.\n"
+            )
         info_layout.addWidget(self.rules_text)
         
         right_layout.addWidget(competition_info_box, 1)
         # === KẾT THÚC VÙNG THAY ĐỔI LAYOUT ===
 
         buttons_layout = QHBoxLayout()
-        self.start_competition_button = QPushButton("BẮT ĐẦU THI ĐẤU")
+        self.start_competition_button = QPushButton("BẮT ĐẦU KIỂM TRA")
         self.back_button = QPushButton("Quay Lại")
         self.back_button.setObjectName("back_button")
         buttons_layout.addStretch()

@@ -32,7 +32,7 @@ class Ui_MainMenuWindow(object):
         font.setPointSize(28)
         font.setBold(True)
         self.title_label.setFont(font)
-        self.title_label.setText("PHẦN MỀM TẬP LUYỆN ĐƯỜNG NGẮM\nSÚNG NGẮN K54")
+        self.title_label.setText("PHẦN MỀM TẬP LUYỆN VÀ KIỂM TRA\nĐƯỜNG NGẮM SÚNG NGẮN K54")
         self.title_label.setStyleSheet("color: #ecf0f1;")
         self.verticalLayout.addWidget(self.title_label)
         
@@ -60,7 +60,7 @@ class Ui_MainMenuWindow(object):
             }
         """
 
-        self.competition_button = QPushButton("THI ĐẤU", self.centralwidget)
+        self.competition_button = QPushButton("KIỂM TRA", self.centralwidget)
         self.competition_button.setMinimumSize(QSize(300, 75))
         self.competition_button.setStyleSheet(button_style)
         self.verticalLayout.addWidget(self.competition_button, 0, Qt.AlignHCenter)

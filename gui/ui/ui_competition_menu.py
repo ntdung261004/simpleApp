@@ -33,7 +33,7 @@ class Ui_CompetitionMenuWindow(object):
         font.setPointSize(28)
         font.setBold(True)
         self.title_label.setFont(font)
-        self.title_label.setText("CHỨC NĂNG THI ĐẤU")
+        self.title_label.setText("CHỨC NĂNG KIỂM TRA")
         self.title_label.setStyleSheet("color: #ecf0f1; padding-bottom: 20px;")
         self.verticalLayout.addWidget(self.title_label)
         
@@ -57,25 +57,22 @@ class Ui_CompetitionMenuWindow(object):
         """
 
         # Start Competition Button
-        self.start_button = QPushButton("BẮT ĐẦU THI ĐẤU MỚI", self.centralwidget)
+        self.start_button = QPushButton("BẮT ĐẦU KIỂM TRA MỚI", self.centralwidget)
         self.start_button.setMinimumSize(QSize(350, 75))
         self.start_button.setStyleSheet(button_style)
         self.verticalLayout.addWidget(self.start_button, 0, Qt.AlignHCenter)
 
         # Saved Competitions Button
-        self.saved_button = QPushButton("CÁC ĐỢT THI ĐẤU ĐÃ LƯU", self.centralwidget)
+        self.saved_button = QPushButton("CÁC ĐỢT KIỂM TRA ĐÃ LƯU", self.centralwidget)
         self.saved_button.setMinimumSize(QSize(350, 75))
         self.saved_button.setStyleSheet(button_style)
         self.verticalLayout.addWidget(self.saved_button, 0, Qt.AlignHCenter)
 
         # Statistics Button
-        self.stats_button = QPushButton("THỐNG KÊ KẾT QUẢ", self.centralwidget)
+        self.stats_button = QPushButton("THỐNG KÊ KẾT QUẢ KIỂM TRA", self.centralwidget)
         self.stats_button.setMinimumSize(QSize(350, 75))
         self.stats_button.setStyleSheet(button_style)
         self.verticalLayout.addWidget(self.stats_button, 0, Qt.AlignHCenter)
-
-        # Spacer
-        self.verticalLayout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
         # Back Button
         back_button_style = """
@@ -83,9 +80,9 @@ class Ui_CompetitionMenuWindow(object):
                 background-color: #e74c3c;
                 color: white;
                 border: none;
-                border-radius: 8px;
-                padding: 10px;
-                font-size: 16px;
+                border-radius: 10px;
+                padding: 15px;
+                font-size: 20px;
                 font-weight: bold;
             }
             QPushButton:hover {
@@ -96,5 +93,6 @@ class Ui_CompetitionMenuWindow(object):
         self.back_button.setMinimumSize(QSize(350, 70))
         self.back_button.setStyleSheet(back_button_style)
         self.verticalLayout.addWidget(self.back_button, 0, Qt.AlignHCenter)
+        self.verticalLayout.addStretch(2)
         
         CompetitionMenuWindow.setCentralWidget(self.centralwidget)

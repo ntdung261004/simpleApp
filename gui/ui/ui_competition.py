@@ -94,7 +94,8 @@ class CompetitionGui(QWidget):
             VideoLabel { background-color: #212f3d; border: 1px solid #4a6278; border-radius: 8px; color: #95a5a6; font-size: 24px; }
         """)
         root_layout = QVBoxLayout(self); root_layout.setContentsMargins(20, 10, 20, 20)
-        title_label = QLabel("MÀN HÌNH THI ĐẤU"); title_label.setAlignment(Qt.AlignCenter); title_label.setFont(QFont('Segoe UI', 18, QFont.Bold)); title_label.setStyleSheet("padding: 10px;"); root_layout.addWidget(title_label)
+        title_label = QLabel("MÀN HÌNH KIỂM TRA"); title_label.setObjectName("title"); title_label.setAlignment(Qt.AlignCenter)
+        title_label.setFont(QFont('Segoe UI', 18, QFont.Bold)); root_layout.addWidget(title_label)
         columns_layout = QHBoxLayout(); columns_layout.setSpacing(20)
         columns_layout.addWidget(self._create_participants_column(), 3)
         columns_layout.addWidget(self._create_camera_column(), 4)
@@ -102,7 +103,7 @@ class CompetitionGui(QWidget):
         root_layout.addLayout(columns_layout)
 
     def _create_participants_column(self) -> QWidget:
-        panel = QGroupBox("Danh sách Xạ thủ"); layout = QVBoxLayout(panel); layout.setContentsMargins(15, 25, 15, 15); layout.setSpacing(10)
+        panel = QGroupBox("Danh sách Người bắn"); layout = QVBoxLayout(panel); layout.setContentsMargins(15, 25, 15, 15); layout.setSpacing(10)
         self.participants_list = QListWidget(); self.participants_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.participants_list.setStyleSheet("font-size: 14px; border: 1px solid #4a6278;"); layout.addWidget(self.participants_list, 1)
 
@@ -114,7 +115,7 @@ class CompetitionGui(QWidget):
         self.save_button = QPushButton("Lưu Phiên")
         
         # Thêm nút Về Menu
-        self.back_button = QPushButton("Về Menu Thi đấu")
+        self.back_button = QPushButton("Về Menu Kiểm tra")
         self.back_button.setObjectName("danger")
         
         buttons_layout.addWidget(self.save_button)
@@ -141,7 +142,7 @@ class CompetitionGui(QWidget):
         panel = QGroupBox("Bảng điểm"); panel_layout = QVBoxLayout(panel); panel_layout.setContentsMargins(15, 25, 15, 15)
         self.score_stack = QStackedWidget(); panel_layout.addWidget(self.score_stack); start_turn_page = QWidget(); start_turn_layout = QVBoxLayout(start_turn_page)
         start_turn_layout.setAlignment(Qt.AlignCenter); self.start_turn_button = QPushButton("BẮT ĐẦU LƯỢT"); self.start_turn_button.setMinimumSize(200, 60); self.start_turn_button.setStyleSheet("font-size: 16px;"); start_turn_layout.addWidget(self.start_turn_button); scoreboard_page = QWidget()
-        scoreboard_layout = QVBoxLayout(scoreboard_page); scoreboard_layout.setSpacing(10); shooter_info_box = QGroupBox("Thông tin Xạ thủ"); shooter_info_layout = QVBoxLayout(shooter_info_box); self.shooter_name_label = QLabel("Tên: --"); self.shooter_class_label = QLabel("Đơn vị: --")
+        scoreboard_layout = QVBoxLayout(scoreboard_page); scoreboard_layout.setSpacing(10); shooter_info_box = QGroupBox("Thông tin Người bắn"); shooter_info_layout = QVBoxLayout(shooter_info_box); self.shooter_name_label = QLabel("Tên: --"); self.shooter_class_label = QLabel("Đơn vị: --")
         shooter_info_layout.addWidget(self.shooter_name_label); shooter_info_layout.addWidget(self.shooter_class_label); targets_grid_layout = QGridLayout(); targets_grid_layout.setSpacing(10)
         self.target_1_widget, self.target_1_score_label, self.target_1_image_label = self._create_target_widget("Bia số 1 (3 viên)", resource_path("assets/images/original/bia_4b.png"))
         self.target_2_widget, self.target_2_score_label, self.target_2_image_label = self._create_target_widget("Bia số 2 (3 viên)", resource_path("assets/images/original/bia_4b.png"))

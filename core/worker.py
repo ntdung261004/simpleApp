@@ -23,7 +23,9 @@ class ProcessingWorker(QObject):
         self.is_initialized = False
         try:
             logger.info("Worker: Bắt đầu khởi tạo...")
-            model_path = resource_path("assets/models/K54v2.pt")
+            model_relative_path = config.get("yolo_model_path", "assets/models/K54v2.pt")
+            model_path = resource_path(model_relative_path)
+            
             if not os.path.exists(model_path):
                 raise FileNotFoundError(f"Không tìm thấy file model AI tại: {model_path}")
 

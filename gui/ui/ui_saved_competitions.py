@@ -72,7 +72,7 @@ class SavedCompetitionsGui(QWidget):
         root_layout.setContentsMargins(20, 10, 20, 20)
         root_layout.setSpacing(15)
 
-        title_label = QLabel("CÁC PHIÊN THI ĐẤU ĐÃ LƯU")
+        title_label = QLabel("CÁC PHIÊN KIỂM TRA ĐÃ LƯU")
         title_label.setObjectName("title")
         title_label.setAlignment(Qt.AlignCenter)
         root_layout.addWidget(title_label)
@@ -85,7 +85,7 @@ class SavedCompetitionsGui(QWidget):
         columns_layout.addWidget(self._create_right_column(), 1)
 
     def _create_left_column(self) -> QWidget:
-        panel = QGroupBox("Danh sách Phiên thi đấu")
+        panel = QGroupBox("Danh sách Phiên kiểm tra")
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(15, 25, 15, 15)
 
@@ -102,7 +102,7 @@ class SavedCompetitionsGui(QWidget):
         layout.setSpacing(15)
         layout.setAlignment(Qt.AlignTop)
 
-        self.continue_button = QPushButton("Tiếp tục Thi đấu")
+        self.continue_button = QPushButton("Tiếp tục Kiểm tra")
         self.delete_button = QPushButton("Xóa Phiên")
         self.delete_button.setObjectName("danger")
         self.back_button = QPushButton("Về Menu")

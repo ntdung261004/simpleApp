@@ -26,10 +26,10 @@ class PracticeWindow(QMainWindow):
     def __init__(self, worker: ProcessingWorker, trigger: BluetoothTrigger, config: dict):
         super().__init__()
         self.setStyleSheet("background-color: #2c3e50;")
-        self.setWindowTitle("Phần Mềm Luyện Tập Đường Ngắm")
+        self.setWindowTitle("Phần Mềm Luyện Tập và Kiểm Tra Đường Ngắm")
         screen = QScreen.availableGeometry(QApplication.primaryScreen())
         self.setGeometry(screen)
-        self.configured_camera_index = config.get('camera_index', 0)
+        self.configured_camera_index = config.get('camera_index', 1)
         self.db = DatabaseManager()
         self.audio_manager = AudioManager()
         self.trigger = trigger
@@ -99,19 +99,14 @@ class PracticeWindow(QMainWindow):
             image_path = os.path.join(image_dir, f"shot_{timestamp}.jpg")
             metadata = {'aim_point': final_aim_point}
             
-            # === BẮT ĐẦU VÙNG SỬA LỖI: Đảo ngược thứ tự ===
-            # 1. Gửi tín hiệu xử lý đi TRƯỚC để tránh bị block.
             self.request_processing.emit(frame_to_send, image_path, 'practice', metadata)
-            
-            # 2. Phát âm thanh SAU.
             self.audio_manager.play_sound('shot')
-            # === KẾT THÚC VÙNG SỬA LỖI ===
 
     def update_frame(self):
         if not self.is_camera_connected or self.cam is None: return
         ret, frame = self.cam.read()
-        if not ret or frame is None: self.disconnect_camera("Mất kết nối camera.")
-        
+        if not ret or frame is None: self.disconnect_camera("Mất kết nối camera.\nVui lòng kết nối lại và nhấn làm mới.")
+
         frame_cropped = self._crop_frame_to_3_4(frame)
         frame_resized = cv2.resize(frame_cropped, (self.final_size[1], self.final_size[0]))
         
@@ -133,7 +128,6 @@ class PracticeWindow(QMainWindow):
         self.gui.display_frame(frame_with_effects)
         
     def setup_connections(self):
-        # Việc kết nối cò súng được quản lý tập trung tại main.py
         self.gui.soldier_selector.currentIndexChanged.connect(self.on_soldier_selected)
         self.gui.session_button.clicked.connect(self.toggle_session_state)
         self.gui.gamma_slider.valueChanged.connect(self.on_gamma_slider_changed)
@@ -226,13 +220,21 @@ class PracticeWindow(QMainWindow):
         self.trigger.deactivate()
         self.disconnect_camera()
 
+    # === BẮT ĐẦU VÙNG THAY ĐỔI: LOGIC KẾT NỐI CAMERA MỚI ===
     def start_camera(self):
-        self.disconnect_camera()
+        self.disconnect_camera() 
         num_cameras = count_available_cameras()
-        if num_cameras <= self.configured_camera_index:
-            self.disconnect_camera(f"Lỗi: Không tìm thấy camera index {self.configured_camera_index}.")
+        
+        # Nếu có 1 camera hoặc không có, giả định đó là camera tích hợp và yêu cầu cắm USB camera
+        if num_cameras < 2:
+            self.disconnect_camera("Vui lòng kết nối USB camera và nhấn 'Làm mới'")
         else:
-            self.connect_camera(self.configured_camera_index)
+            # Nếu có từ 2 camera trở lên, kết nối vào index đã cấu hình
+            if self.configured_camera_index < num_cameras:
+                self.connect_camera(self.configured_camera_index)
+            else:
+                self.disconnect_camera(f"Lỗi: Index ({self.configured_camera_index}) không hợp lệ. Tìm thấy {num_cameras} camera.")
+    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def refresh_camera_connection(self):
         self.start_camera()

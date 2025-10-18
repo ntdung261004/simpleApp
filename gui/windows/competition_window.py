@@ -109,7 +109,7 @@ class CompetitionWindow(QMainWindow):
         self.gui = CompetitionGui()
         self.setCentralWidget(self.gui)
         self.setStyleSheet("background-color: #2c3e50;")
-        self.setWindowTitle("Chế Độ Thi Đấu")
+        self.setWindowTitle("Chế Độ Kiểm Tra")
         self.configured_camera_index = config.get('camera_index', 0)
         self.db = DatabaseManager()
         self.trigger = trigger
@@ -161,7 +161,7 @@ class CompetitionWindow(QMainWindow):
     def update_frame(self):
         if not self.is_camera_connected or self.cam is None: return
         ret, frame = self.cam.read()
-        if not ret: self.disconnect_camera("Mất kết nối camera."); return
+        if not ret: self.disconnect_camera("Mất kết nối camera\nVui lòng kết nối lại và nhấn làm mới."); return
         frame_resized = cv2.resize(self._crop_frame_to_3_4(frame), (self.final_size[1], self.final_size[0]))
         frame_with_effects = self._apply_effects_to_frame(frame_resized)
         h, w, _ = frame_resized.shape
@@ -177,19 +177,19 @@ class CompetitionWindow(QMainWindow):
         self.gui.display_frame(frame_with_effects)
 
     def setup_competition(self, competition_id: int, competition_name: str, participants: list):
-        logger.info(f"Bắt đầu thiết lập cuộc thi MỚI: '{competition_name}' (ID: {competition_id})")
-        self._reset_state(); self.setWindowTitle(f"Thi Đấu - {competition_name}"); self.competition_data = {'id': competition_id, 'name': competition_name, 'participants': [{'id': p['id'], 'name': p['name'], 'class_name': p['class_name'], 'shots': [], 'status': 'waiting'} for p in participants]}; self._update_participant_list(); self.gui.participants_list.setEnabled(True)
+        logger.info(f"Bắt đầu thiết lập kiểm tra MỚI: '{competition_name}' (ID: {competition_id})")
+        self._reset_state(); self.setWindowTitle(f"Kiểm tra - {competition_name}"); self.competition_data = {'id': competition_id, 'name': competition_name, 'participants': [{'id': p['id'], 'name': p['name'], 'class_name': p['class_name'], 'shots': [], 'status': 'waiting'} for p in participants]}; self._update_participant_list(); self.gui.participants_list.setEnabled(True)
 
     def load_from_state(self, state_data: dict):
         try:
-            logger.info(f"Bắt đầu khôi phục cuộc thi đã lưu ID: {state_data.get('competition_id')}")
+            logger.info(f"Bắt đầu khôi phục kiểm tra đã lưu ID: {state_data.get('competition_id')}")
             self._reset_state(); competition_info = self.db.get_competition(state_data['competition_id'])
-            if not competition_info: raise ValueError("Không tìm thấy ID cuộc thi trong database.")
-            self.competition_data = {'id': state_data['competition_id'], 'name': competition_info['name'], 'participants': state_data['participants']}; self.current_shooter_index = state_data['current_shooter_index']; self.current_shot_count = state_data['current_shot_count']; self.setWindowTitle(f"Thi Đấu - {self.competition_data['name']}"); self._update_participant_list()
+            if not competition_info: raise ValueError("Không tìm thấy ID kiểm tra trong database.")
+            self.competition_data = {'id': state_data['competition_id'], 'name': competition_info['name'], 'participants': state_data['participants']}; self.current_shooter_index = state_data['current_shooter_index']; self.current_shot_count = state_data['current_shot_count']; self.setWindowTitle(f"Kiểm tra - {self.competition_data['name']}"); self._update_participant_list()
             is_shooting = (self.current_shooter_index != -1 and self.competition_data['participants'][self.current_shooter_index]['status'] == 'shooting')
             if is_shooting: self.gui.score_stack.setCurrentIndex(1); self.gui.participants_list.setEnabled(False); self.gui.start_turn_button.setEnabled(False); self._rebuild_scoreboard()
             else: self.gui.score_stack.setCurrentIndex(0); self.gui.participants_list.setEnabled(True); self.gui.start_turn_button.setEnabled(False)
-        except (KeyError, IndexError, TypeError, ValueError) as e: logger.error(f"Lỗi nghiêm trọng khi khôi phục trạng thái: {e}"); QMessageBox.critical(self, "Lỗi Dữ liệu", "Không thể khôi phục phiên thi đấu từ dữ liệu đã lưu."); self._reset_state(); self.back_to_menu_signal.emit()
+        except (KeyError, IndexError, TypeError, ValueError) as e: logger.error(f"Lỗi nghiêm trọng khi khôi phục trạng thái: {e}"); QMessageBox.critical(self, "Lỗi Dữ liệu", "Không thể khôi phục phiên kiểm tra từ dữ liệu đã lưu."); self._reset_state(); self.back_to_menu_signal.emit()
 
     def _rebuild_scoreboard(self):
         self._reset_scoreboard()
@@ -209,12 +209,19 @@ class CompetitionWindow(QMainWindow):
         if not self.competition_data or shooter_data['id'] != current_shooter['id']: return
         self.current_shot_count += 1
         score = result.get('score', 0)
-        self.audio_manager.play_score(score)
+        
+        # === BẮT ĐẦU VÙNG THAY ĐỔI: THÊM ÂM THANH KHI BẮN TRƯỢT ===
+        if score == 0:
+            self.audio_manager.play_sound('miss')
+        else:
+            self.audio_manager.play_score(score)
+        # === KẾT THÚC VÙNG THAY ĐỔI ===
+
         current_shooter['shots'].append(score)
         self._update_scoreboard_and_markers(self.current_shot_count, score, result)
         self.db.add_competition_shot(competition_id=self.competition_data['id'], soldier_id=shooter_data['id'], score=score, coords=result.get('coords'), image_path=result.get('image_path'), target_name=result.get('target_detected_raw', 'N/A'))
         if self.current_shot_count >= self.TOTAL_SHOTS: self.show_turn_result_popup()
-
+        
     @Slot()
     def handle_shot(self):
         if not self.is_camera_connected or self.current_shot_count >= self.TOTAL_SHOTS or not self.trigger.is_active: return
@@ -258,12 +265,18 @@ class CompetitionWindow(QMainWindow):
         for label in self.target_image_labels.values(): label.clear_hit_markers()
 
     def start_camera(self):
-        self.disconnect_camera()
+        self.disconnect_camera() 
         num_cameras = count_available_cameras()
-        if num_cameras <= self.configured_camera_index:
-            self.disconnect_camera(f"Lỗi: Không tìm thấy camera index {self.configured_camera_index}.")
+        
+        # Nếu có 1 camera hoặc không có, giả định đó là camera tích hợp và yêu cầu cắm USB camera
+        if num_cameras < 2:
+            self.disconnect_camera("Vui lòng kết nối USB camera và nhấn 'Làm mới'")
         else:
-            self.connect_camera(self.configured_camera_index)
+            # Nếu có từ 2 camera trở lên, kết nối vào index đã cấu hình
+            if self.configured_camera_index < num_cameras:
+                self.connect_camera(self.configured_camera_index)
+            else:
+                self.disconnect_camera(f"Lỗi: Index ({self.configured_camera_index}) không hợp lệ. Tìm thấy {num_cameras} camera.")
 
     def refresh_camera_connection(self):
         self.start_camera()
