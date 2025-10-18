@@ -78,6 +78,7 @@ class ManageWindow(QMainWindow):
     
     def __init__(self, config: dict):
         super().__init__()
+        self.setStyleSheet("background-color: #2c3e50;")
         self.setWindowTitle("Quản lý và Thống kê")
         
         # === SỬA LỖI: Khởi tạo ManageGui không cần tham số ===

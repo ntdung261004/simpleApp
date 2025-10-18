@@ -4,7 +4,6 @@ from PySide6.QtWidgets import QMainWindow, QApplication, QInputDialog, QLineEdit
 from PySide6.QtCore import QTimer, Signal, Slot, QPoint, Qt
 import cv2
 import numpy as np
-import json
 import os
 from datetime import datetime
 from PySide6.QtGui import QScreen
@@ -26,25 +25,34 @@ class PracticeWindow(QMainWindow):
 
     def __init__(self, worker: ProcessingWorker, trigger: BluetoothTrigger, config: dict):
         super().__init__()
+        self.setStyleSheet("background-color: #2c3e50;")
         self.setWindowTitle("Phần Mềm Luyện Tập Đường Ngắm")
         screen = QScreen.availableGeometry(QApplication.primaryScreen())
         self.setGeometry(screen)
         self.configured_camera_index = config.get('camera_index', 0)
-        self.db = DatabaseManager(); self.audio_manager = AudioManager()
-        self.trigger = trigger; self.worker = worker
-        self.gui = MainGui(); self.setCentralWidget(self.gui)
-        self.active_session_id = None; self.cam = None; self.is_camera_connected = False
-        self.final_size = (640, 480); self.zoom_level = 1.0; self.current_gamma = 1.0
+        self.db = DatabaseManager()
+        self.audio_manager = AudioManager()
+        self.trigger = trigger
+        self.worker = worker
+        self.gui = MainGui()
+        self.setCentralWidget(self.gui)
+        self.active_session_id = None
+        self.cam = None
+        self.is_camera_connected = False
+        self.final_size = (640, 480)
+        self.zoom_level = 1.0
+        self.current_gamma = 1.0
         self.calibrated_center = None
-        
-        # === SỬA LỖI 1: Thêm cờ "khóa an toàn" để chống xử lý 2 lần ===
-        self.is_processing = False
 
-        self.video_timer = QTimer(self); self.video_timer.timeout.connect(self.update_frame)
-        self.setup_connections(); self.load_soldiers(); self.set_ui_state('INITIAL')
+        self.video_timer = QTimer(self)
+        self.video_timer.timeout.connect(self.update_frame)
+        self.setup_connections()
+        self.load_soldiers()
+        self.set_ui_state('INITIAL')
 
     def _crop_frame_to_3_4(self, frame: np.ndarray) -> np.ndarray:
-        h, w = frame.shape[:2]; target_aspect = 3.0 / 4.0
+        h, w = frame.shape[:2]
+        target_aspect = 3.0 / 4.0
         new_w = int(h * target_aspect)
         if new_w > w: return frame 
         start_x = (w - new_w) // 2
@@ -54,7 +62,8 @@ class PracticeWindow(QMainWindow):
         processed_frame = frame.copy()
         if self.current_gamma != 1.0: processed_frame = apply_gamma_correction(processed_frame, self.current_gamma)
         if self.zoom_level > 1.0:
-            h, w, _ = processed_frame.shape; new_w, new_h = int(w / self.zoom_level), int(h / self.zoom_level)
+            h, w, _ = processed_frame.shape
+            new_w, new_h = int(w / self.zoom_level), int(h / self.zoom_level)
             start_x, start_y = (w - new_w) // 2, (h - new_h) // 2
             processed_frame = processed_frame[start_y : start_y + new_h, start_x : start_x + new_w]
             processed_frame = cv2.resize(processed_frame, (w, h))
@@ -62,15 +71,11 @@ class PracticeWindow(QMainWindow):
 
     @Slot()
     def capture_photo(self):
-        # === SỬA LỖI 1: Kích hoạt "khóa an toàn" ===
-        if self.is_processing or not self.is_camera_connected:
+        if not self.is_camera_connected or not self.trigger.is_active:
             return
-        self.is_processing = True # Khóa lại
-        # ============================================
 
         ret, frame = self.cam.read()
         if ret and frame is not None:
-            self.audio_manager.play_sound('shot')
             frame_cropped = self._crop_frame_to_3_4(frame)
             frame_resized = cv2.resize(frame_cropped, (self.final_size[1], self.final_size[0]))
             
@@ -88,19 +93,24 @@ class PracticeWindow(QMainWindow):
             else:
                 final_aim_point = original_aim_point
 
-            image_dir = os.path.join(APP_DATA_DIR, 'history_images'); os.makedirs(image_dir, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f"); image_path = os.path.join(image_dir, f"shot_{timestamp}.jpg")
+            image_dir = os.path.join(APP_DATA_DIR, 'history_images')
+            os.makedirs(image_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            image_path = os.path.join(image_dir, f"shot_{timestamp}.jpg")
             metadata = {'aim_point': final_aim_point}
             
+            # === BẮT ĐẦU VÙNG SỬA LỖI: Đảo ngược thứ tự ===
+            # 1. Gửi tín hiệu xử lý đi TRƯỚC để tránh bị block.
             self.request_processing.emit(frame_to_send, image_path, 'practice', metadata)
-        else:
-            # Nếu không đọc được frame, mở khóa ngay lập tức
-            self.is_processing = False
+            
+            # 2. Phát âm thanh SAU.
+            self.audio_manager.play_sound('shot')
+            # === KẾT THÚC VÙNG SỬA LỖI ===
 
     def update_frame(self):
         if not self.is_camera_connected or self.cam is None: return
         ret, frame = self.cam.read()
-        if not ret or frame is None: self.disconnect_camera("Mất kết nối camera."); return
+        if not ret or frame is None: self.disconnect_camera("Mất kết nối camera.")
         
         frame_cropped = self._crop_frame_to_3_4(frame)
         frame_resized = cv2.resize(frame_cropped, (self.final_size[1], self.final_size[0]))
@@ -123,13 +133,7 @@ class PracticeWindow(QMainWindow):
         self.gui.display_frame(frame_with_effects)
         
     def setup_connections(self):
-        # Đảm bảo chỉ kết nối 1 lần duy nhất
-        try:
-            self.trigger.triggered.disconnect(self.capture_photo)
-        except (TypeError, RuntimeError): # Bỏ qua lỗi nếu chưa được kết nối
-            pass
-        self.trigger.triggered.connect(self.capture_photo)
-
+        # Việc kết nối cò súng được quản lý tập trung tại main.py
         self.gui.soldier_selector.currentIndexChanged.connect(self.on_soldier_selected)
         self.gui.session_button.clicked.connect(self.toggle_session_state)
         self.gui.gamma_slider.valueChanged.connect(self.on_gamma_slider_changed)
@@ -142,40 +146,34 @@ class PracticeWindow(QMainWindow):
 
     @Slot(dict)
     def on_processing_finished(self, result: dict):
-        try:
-            result_image = result.get('result_frame'); score = result.get('score', 0)
-            
-            # === SỬA LỖI 2: Khôi phục logic vẽ tâm ngắm khi bắn trượt ===
-            if score == 0:
-                aim_point_used = result.get('aim_point_used')
-                if result_image is not None and aim_point_used is not None:
-                    # Ảnh trả về khi trượt chính là ảnh đã qua hiệu ứng,
-                    # và aim_point_used là tọa độ trên ảnh đó, nên có thể vẽ trực tiếp.
-                    cv2.drawMarker(result_image, aim_point_used, (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
-            # ==========================================================
-
-            image_path = result.get('image_path')
-            if image_path and result_image is not None:
-                try: cv2.imwrite(image_path, result_image)
-                except Exception as e: logger.error(f"Lỗi khi ghi ảnh kết quả: {e}")
-
-            self.gui.update_results(time_str=result.get('time_str'), target_name=result.get('target_name'), score=score, result_frame=result_image)
-            
-            if score == 0: self.audio_manager.play_sound('miss')
-            else: self.audio_manager.play_score(score)
-
-            if self.active_session_id:
-                shot_number = self.db.get_shot_count_for_session(self.active_session_id) + 1
-                self.db.add_shot(session_id=self.active_session_id, shot_number=shot_number, score=score, target_detected=result.get('target_detected_raw', 'N/A'), coords=result.get('coords'), image_path=image_path)
+        result_image = result.get('result_frame')
+        score = result.get('score', 0)
         
-        finally:
-            # === SỬA LỖI 1: Mở "khóa an toàn" sau khi đã xử lý xong ===
-            self.is_processing = False
+        if score == 0:
+            aim_point_used = result.get('aim_point_used')
+            if result_image is not None and aim_point_used is not None:
+                cv2.drawMarker(result_image, aim_point_used, (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
 
-    # --- Các hàm logic còn lại không thay đổi ---
+        image_path = result.get('image_path')
+        if image_path and result_image is not None:
+            try: cv2.imwrite(image_path, result_image)
+            except Exception as e: logger.error(f"Lỗi khi ghi ảnh kết quả: {e}")
+
+        self.gui.update_results(time_str=result.get('time_str'), target_name=result.get('target_name'), score=score, result_frame=result_image)
+        
+        if score == 0: self.audio_manager.play_sound('miss')
+        else: self.audio_manager.play_score(score)
+
+        if self.active_session_id:
+            shot_number = self.db.get_shot_count_for_session(self.active_session_id) + 1
+            self.db.add_shot(session_id=self.active_session_id, shot_number=shot_number, score=score, target_detected=result.get('target_detected_raw', 'N/A'), coords=result.get('coords'), image_path=image_path)
+
     def set_ui_state(self, state: str):
-        self.trigger.deactivate(); self.gui.back_button.setEnabled(True)
-        GREEN_STYLE = "background-color: #1abc9c;"; RED_STYLE = "background-color: #e74c3c;"; GRAY_STYLE = "background-color: #7f8c8d;"
+        self.trigger.deactivate()
+        self.gui.back_button.setEnabled(True)
+        GREEN_STYLE = "background-color: #1abc9c;"
+        RED_STYLE = "background-color: #e74c3c;"
+        GRAY_STYLE = "background-color: #7f8c8d;"
         if state == 'INITIAL': self.gui.session_button.setText("Bắt đầu Lưu"); self.gui.session_button.setEnabled(False); self.gui.session_button.setStyleSheet(GRAY_STYLE)
         elif state == 'SOLDIER_SELECTED': self.gui.session_button.setText("Bắt đầu Lưu"); self.gui.session_button.setEnabled(True); self.gui.session_button.setStyleSheet(GREEN_STYLE)
         elif state == 'SESSION_ACTIVE':
@@ -207,10 +205,13 @@ class PracticeWindow(QMainWindow):
             if reply == QMessageBox.No: return
             else: self.db.delete_session(self.active_session_id)
         else: self.db.end_session(self.active_session_id)
-        self.active_session_id = None; self.gui.soldier_selector.setEnabled(True); self.on_soldier_selected(self.gui.soldier_selector.currentIndex())
+        self.active_session_id = None
+        self.gui.soldier_selector.setEnabled(True)
+        self.on_soldier_selected(self.gui.soldier_selector.currentIndex())
 
     def load_soldiers(self):
-        self.gui.soldier_selector.clear(); self.gui.soldier_selector.addItem("-- Chọn Người tập --", -1)
+        self.gui.soldier_selector.clear()
+        self.gui.soldier_selector.addItem("-- Chọn Người tập --", -1)
         soldiers = self.db.get_all_soldiers()
         if soldiers:
             for soldier in soldiers: self.gui.soldier_selector.addItem(f"{soldier['name']} - {soldier['class_name']}", soldier['id'])
@@ -221,26 +222,36 @@ class PracticeWindow(QMainWindow):
         if soldier_id != -1: self.set_ui_state('SOLDIER_SELECTED')
         else: self.set_ui_state('INITIAL')
 
-    def shutdown_components(self): self.trigger.deactivate(); self.disconnect_camera()
+    def shutdown_components(self):
+        self.trigger.deactivate()
+        self.disconnect_camera()
 
     def start_camera(self):
+        self.disconnect_camera()
         num_cameras = count_available_cameras()
-        if num_cameras < 2: self.disconnect_camera("Vui lòng kết nối USB camera và nhấn 'Làm mới'")
-        else: self.connect_camera(self.configured_camera_index)
+        if num_cameras <= self.configured_camera_index:
+            self.disconnect_camera(f"Lỗi: Không tìm thấy camera index {self.configured_camera_index}.")
+        else:
+            self.connect_camera(self.configured_camera_index)
 
-    def refresh_camera_connection(self): self.start_camera()
+    def refresh_camera_connection(self):
+        self.start_camera()
 
     def connect_camera(self, index: int):
-        self.disconnect_camera(); self.cam = Camera(index)
+        self.disconnect_camera()
+        self.cam = Camera(index)
         if not self.cam.isOpened(): self.disconnect_camera(f"Lỗi: Không thể mở Camera index {index}"); return
         is_ok, _ = self.cam.read()
         if is_ok: self.video_timer.start(30); self.is_camera_connected = True; self.trigger.activate()
         else: self.disconnect_camera(f"Lỗi: Không đọc được ảnh từ camera index {index}")
 
     def disconnect_camera(self, message="Vui lòng kết nối USB camera và nhấn 'Làm mới'"):
-        self.video_timer.stop(); self.trigger.deactivate()
+        self.video_timer.stop()
+        self.trigger.deactivate()
         if self.cam: self.cam.release()
-        self.cam = None; self.is_camera_connected = False; self.gui.clear_video_feed(message)
+        self.cam = None
+        self.is_camera_connected = False
+        self.gui.clear_video_feed(message)
 
     def toggle_calibration_mode(self, force_off=False):
         new_state_is_on = not self.gui.camera_view_label._is_calibrating
@@ -253,9 +264,7 @@ class PracticeWindow(QMainWindow):
     def on_camera_view_clicked(self, point: QPoint):
         if not self.gui.camera_view_label._is_calibrating: return
         pixmap = self.gui.camera_view_label._pixmap
-        if not pixmap or pixmap.isNull():
-            logger.warning("Không thể hiệu chỉnh vì không có ảnh hiển thị.")
-            return
+        if not pixmap or pixmap.isNull(): return
         frame_h, frame_w = self.final_size
         scaled_pixmap = pixmap.scaled(self.gui.camera_view_label.size(), Qt.KeepAspectRatio)
         offset_x = (self.gui.camera_view_label.width() - scaled_pixmap.width()) // 2
@@ -263,10 +272,14 @@ class PracticeWindow(QMainWindow):
         if not (offset_x <= point.x() < offset_x + scaled_pixmap.width()): return
         relative_x = (point.x() - offset_x) / scaled_pixmap.width()
         relative_y = (point.y() - offset_y) / scaled_pixmap.height()
-        unzoomed_crop_w = frame_w / self.zoom_level; unzoomed_crop_h = frame_h / self.zoom_level
-        x_in_zoomed_crop = relative_x * unzoomed_crop_w; y_in_zoomed_crop = relative_y * unzoomed_crop_h
-        start_x = (frame_w - unzoomed_crop_w) / 2; start_y = (frame_h - unzoomed_crop_h) / 2
-        final_x = start_x + x_in_zoomed_crop; final_y = start_y + y_in_zoomed_crop
+        unzoomed_crop_w = frame_w / self.zoom_level
+        unzoomed_crop_h = frame_h / self.zoom_level
+        x_in_zoomed_crop = relative_x * unzoomed_crop_w
+        y_in_zoomed_crop = relative_y * unzoomed_crop_h
+        start_x = (frame_w - unzoomed_crop_w) / 2
+        start_y = (frame_h - unzoomed_crop_h) / 2
+        final_x = start_x + x_in_zoomed_crop
+        final_y = start_y + y_in_zoomed_crop
         self.calibrated_center = (int(final_x), int(final_y))
         logger.info(f"Hiệu chỉnh tâm thành công. Tọa độ mới trên ảnh gốc: {self.calibrated_center}")
         self.toggle_calibration_mode(force_off=True)

@@ -16,6 +16,7 @@ class SavedCompetitionsWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        self.setStyleSheet("background-color: #2c3e50;")
         self.ui = SavedCompetitionsGui()
         self.setCentralWidget(self.ui)
         self.setWindowTitle("Các Phiên Thi Đấu Đã Lưu")

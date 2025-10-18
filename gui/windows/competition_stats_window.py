@@ -67,6 +67,7 @@ class CompetitionStatsWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        self.setStyleSheet("background-color: #2c3e50;")
         self.ui = CompetitionStatsGui()
         self.setCentralWidget(self.ui)
         self.setWindowTitle("Thống kê Kết quả Thi đấu")

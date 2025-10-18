@@ -4,7 +4,7 @@ import sys
 import logging
 import json
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QMessageBox
-from PySide6.QtCore import QThread, Slot
+from PySide6.QtCore import QThread, Slot, QTimer
 from datetime import datetime
 
 from gui.windows.main_menu_window import MainMenuWindow
@@ -14,9 +14,7 @@ from gui.windows.competition_menu_window import CompetitionMenuWindow
 from gui.windows.competition_window import CompetitionWindow
 from gui.windows.setup_competition_window import SetupCompetitionWindow
 from gui.windows.saved_competitions_window import SavedCompetitionsWindow
-# === BẮT ĐẦU VÙNG THAY ĐỔI ===
 from gui.windows.competition_stats_window import CompetitionStatsWindow
-# === KẾT THÚC VÙNG THAY ĐỔI ===
 
 from core.worker import ProcessingWorker
 from core.triggers import BluetoothTrigger
@@ -49,9 +47,16 @@ class ApplicationController(QMainWindow):
         self.setWindowTitle("Phần Mềm Luyện Tập và Thi Đấu Bắn Súng K54")
         self.config = self._load_config()
         
-        self.processing_thread = QThread(); self.processing_worker = ProcessingWorker(self.config)
-        self.bt_trigger = BluetoothTrigger(); self.processing_worker.moveToThread(self.processing_thread)
+        self.processing_thread = QThread()
+        self.processing_worker = ProcessingWorker(self.config)
+        self.bt_trigger = BluetoothTrigger()
+        self.processing_worker.moveToThread(self.processing_thread)
         
+        self.is_on_cooldown = False
+        self.trigger_cooldown_timer = QTimer(self)
+        self.trigger_cooldown_timer.setSingleShot(True)
+        self.trigger_cooldown_timer.timeout.connect(self._reset_cooldown)
+
         self.main_menu = MainMenuWindow()
         self.practice_screen = PracticeWindow(self.processing_worker, self.bt_trigger, self.config)
         self.manage_screen = ManageWindow(self.config)
@@ -59,9 +64,7 @@ class ApplicationController(QMainWindow):
         self.setup_competition_screen = SetupCompetitionWindow()
         self.competition_screen = CompetitionWindow(self.processing_worker, self.bt_trigger, self.config)
         self.saved_competitions_screen = SavedCompetitionsWindow()
-        # === BẮT ĐẦU VÙNG THAY ĐỔI ===
         self.competition_stats_screen = CompetitionStatsWindow()
-        # === KẾT THÚC VÙNG THAY ĐỔI ===
         
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
@@ -69,17 +72,18 @@ class ApplicationController(QMainWindow):
             self.main_menu, self.practice_screen, self.manage_screen, 
             self.competition_menu, self.setup_competition_screen, 
             self.competition_screen, self.saved_competitions_screen,
-            self.competition_stats_screen # Thêm màn hình mới vào stack
+            self.competition_stats_screen
         ]
         for widget in all_screens:
             self.stacked_widget.addWidget(widget)
         
         self._connect_signals()
-        self.processing_thread.start(); self.bt_trigger.start_global_listener()
+        self.processing_thread.start()
+        self.bt_trigger.start_global_listener()
 
     def _load_config(self) -> dict:
         config_path = os.path.join(APP_DATA_DIR, "config.json")
-        defaults = {"camera_index": 1, "yolo_confidence_threshold": 0.45}
+        defaults = {"camera_index": 0, "yolo_confidence_threshold": 0.45}
         if not os.path.exists(config_path): return defaults
         try:
             with open(config_path, "r") as f: loaded = json.load(f)
@@ -87,53 +91,57 @@ class ApplicationController(QMainWindow):
         except (json.JSONDecodeError, IOError): return defaults
 
     def _connect_signals(self):
+        # Navigation
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)
         self.main_menu.stats_button.clicked.connect(self.show_manage_screen)
         self.main_menu.competition_button.clicked.connect(self.show_competition_menu)
         self.main_menu.exit_button.clicked.connect(self.close)
-        
         self.practice_screen.back_to_main_menu.connect(self.show_main_menu)
         self.manage_screen.back_to_main_menu.connect(self.show_main_menu)
-        
-        # === BẮT ĐẦU VÙNG THAY ĐỔI ===
         self.competition_menu.start_button.clicked.connect(self.show_setup_competition_screen)
         self.competition_menu.saved_button.clicked.connect(self.show_saved_competitions_screen)
-        self.competition_menu.stats_button.clicked.connect(self.show_competition_stats_screen) # Kết nối nút Thống kê
+        self.competition_menu.stats_button.clicked.connect(self.show_competition_stats_screen)
         self.competition_menu.back_button.clicked.connect(self.show_main_menu)
-        # === KẾT THÚC VÙNG THAY ĐỔI ===
-
         self.setup_competition_screen.start_competition_signal.connect(self.start_new_competition)
         self.setup_competition_screen.ui.back_button.clicked.connect(self.show_competition_menu)
-        
         self.competition_screen.back_to_menu_signal.connect(self.show_competition_menu)
-
         self.saved_competitions_screen.back_to_menu_signal.connect(self.show_competition_menu)
         self.saved_competitions_screen.resume_competition_signal.connect(self.resume_competition)
-
-        # === BẮT ĐẦU VÙNG THAY ĐỔI ===
         self.competition_stats_screen.back_to_menu_signal.connect(self.show_competition_menu)
-        # === KẾT THÚC VÙNG THAY ĐỔI ===
 
+        # Core processing logic
         self.practice_screen.request_processing.connect(self.processing_worker.process_image)
         self.competition_screen.request_processing.connect(self.processing_worker.process_image)
         self.processing_worker.practice_finished.connect(self.practice_screen.on_processing_finished)
         self.processing_worker.competition_finished.connect(self.competition_screen.handle_processing_result)
+        
+        # Trigger and Threading
         self.bt_trigger.triggered.connect(self.handle_global_trigger)
-
+    
+    @Slot()
+    def _reset_cooldown(self):
+        self.is_on_cooldown = False
+    
     @Slot()
     def handle_global_trigger(self):
+        if self.is_on_cooldown:
+            return
+
+        self.is_on_cooldown = True
+        self.trigger_cooldown_timer.start(500)
+        
         current_widget = self.stacked_widget.currentWidget()
-        if isinstance(current_widget, PracticeWindow): current_widget.capture_photo()
-        elif isinstance(current_widget, CompetitionWindow): current_widget.handle_shot()
+        if isinstance(current_widget, PracticeWindow):
+            current_widget.capture_photo()
+        elif isinstance(current_widget, CompetitionWindow):
+            current_widget.handle_shot()
 
     @Slot(str, list)
     def start_new_competition(self, competition_name: str, selected_soldier_ids: list):
         db_manager = self.setup_competition_screen.db
         all_soldiers = db_manager.get_all_soldiers()
         selected_participants = [s for s in all_soldiers if s['id'] in selected_soldier_ids]
-        
         competition_id = db_manager.create_competition(competition_name, [p['id'] for p in selected_participants])
-        
         if competition_id:
             self.competition_screen.setup_competition(competition_id, competition_name, selected_participants)
             self.show_competition_screen()
@@ -175,11 +183,9 @@ class ApplicationController(QMainWindow):
         self._switch_screen(self.saved_competitions_screen)
         self.saved_competitions_screen.enter_view()
 
-    # === BẮT ĐẦU VÙNG THAY ĐỔI ===
     def show_competition_stats_screen(self):
         self._switch_screen(self.competition_stats_screen)
         self.competition_stats_screen.enter_view()
-    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def closeEvent(self, event): self.cleanup_before_exit(); super().closeEvent(event)
 
