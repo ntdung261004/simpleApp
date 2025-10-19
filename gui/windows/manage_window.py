@@ -1,10 +1,11 @@
 # file: gui/windows/manage_window.py
+
 import logging
 import numpy as np
-import cv2 
-import os 
+import cv2
+import os
 from PySide6.QtWidgets import (
-    QMainWindow, QDialog, QFormLayout, QLineEdit, 
+    QMainWindow, QDialog, QFormLayout, QLineEdit,
     QDialogButtonBox, QMessageBox, QTableWidgetItem,
     QVBoxLayout, QListWidgetItem, QLabel, QSizePolicy,
     QMenu, QInputDialog
@@ -12,15 +13,25 @@ from PySide6.QtWidgets import (
 from datetime import datetime
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import Qt
-from gui.ui.ui_manage import ManageGui 
+from gui.ui.ui_manage import ManageGui
 from core.database import DatabaseManager
 from utils.resource_path import resource_path
 
-# Các lớp Dialog (AddSoldierDialog, GroupingDisplayDialog) giữ nguyên như cũ
+# =============================================================================
+# === LỚP DIALOG THÊM/SỬA NGƯỜI HỌC (ĐỊNH NGHĨA Ở CẤP CAO NHẤT) ===
+# =============================================================================
 class AddSoldierDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, config: dict, is_edit_mode: bool = False, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Thêm Người học Mới")
+        self.config = config
+        labels = self.config.get("labels", {})
+
+        if is_edit_mode:
+            title = labels.get("edit_trainee_dialog_title", "Chỉnh sửa thông tin")
+        else:
+            title = labels.get("add_trainee_dialog_title", "Thêm mới")
+        self.setWindowTitle(title)
+
         self.setMinimumWidth(400)
         self.setStyleSheet("""
             QDialog { background-color: #34495e; }
@@ -33,21 +44,25 @@ class AddSoldierDialog(QDialog):
             QPushButton[objectName="cancelButton"]:hover { background-color: #7f8c8d; }
         """)
         main_layout = QVBoxLayout(self)
-        title_label = QLabel("Nhập thông tin Người học")
+        title_label = QLabel(self.windowTitle())
         title_label.setAlignment(Qt.AlignCenter)
         title_label.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
         main_layout.addWidget(title_label)
-        
+
         form_layout = QFormLayout()
         form_layout.setRowWrapPolicy(QFormLayout.WrapAllRows)
         form_layout.setLabelAlignment(Qt.AlignRight)
         form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-        
+
         self.name_input = QLineEdit()
         self.class_name_input = QLineEdit()
         self.inputs = [self.name_input, self.class_name_input]
-        form_layout.addRow("Họ và Tên:", self.name_input)
-        form_layout.addRow("Lớp:", self.class_name_input)
+
+        name_prompt = labels.get("trainee_name_prompt", "Họ và Tên:")
+        class_prompt = labels.get("trainee_class_prompt", "Đơn vị:")
+
+        form_layout.addRow(name_prompt, self.name_input)
+        form_layout.addRow(class_prompt, self.class_name_input)
 
         main_layout.addLayout(form_layout)
         buttons = QDialogButtonBox()
@@ -61,38 +76,34 @@ class AddSoldierDialog(QDialog):
         self.error_style = "border: 2px solid #e74c3c;"
 
     def get_data(self):
-        return {
-            "name": self.name_input.text().strip(),
-            "class_name": self.class_name_input.text().strip()
-        }
-        
+        return {"name": self.name_input.text().strip(), "class_name": self.class_name_input.text().strip()}
+
     def validate_and_accept(self):
         for field in self.inputs:
             field.setStyleSheet(self.default_style)
         data = self.get_data()
-        is_valid = True
-        if not data["name"]:
-            self.inputs[0].setStyleSheet(self.error_style)
-            is_valid = False
-        
-        if is_valid:
+        if data["name"]:
             self.accept()
         else:
+            self.inputs[0].setStyleSheet(self.error_style)
             QMessageBox.warning(self, "Thiếu thông tin", "Vui lòng điền Họ và Tên.")
 
+
+# =============================================================================
+# === LỚP DIALOG HIỂN THỊ ĐỘ CHỤM (ĐỊNH NGHĨA Ở CẤP CAO NHẤT) ===
+# =============================================================================
 class GroupingDisplayDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Trực quan Độ chụm")
         self.setMinimumSize(600, 800)
         self.setStyleSheet("background-color: #34495e;")
-
         self.layout = QVBoxLayout(self)
         self.image_label = QLabel("Đang tải ảnh...")
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.layout.addWidget(self.image_label)
-        self._pixmap = QPixmap() # Lưu pixmap gốc để resize
+        self._pixmap = QPixmap()
 
     def update_display(self, image_np: np.ndarray):
         if image_np is None:
@@ -114,54 +125,41 @@ class GroupingDisplayDialog(QDialog):
         if not self._pixmap.isNull():
             self.image_label.setPixmap(self._pixmap.scaled(self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
+
+# =============================================================================
+# === LỚP CỬA SỔ QUẢN LÝ CHÍNH ===
+# =============================================================================
 class ManageWindow(QMainWindow):
     DATA_PAGE = 0
     MESSAGE_PAGE = 1
-    
-    # === BẮT ĐẦU VÙNG THAY ĐỔI ===
+
     def __init__(self, config: dict):
         super().__init__()
-        self.setWindowTitle("Quản lý và Thống kê")
-        
-        # Giao diện không còn cần config nữa
-        self.ui = ManageGui() 
-        self.config = config # Vẫn lưu config nếu cần dùng cho việc khác
-        
+        self.config = config
+        labels = self.config.get("labels", {})
+
+        app_title = labels.get("app_title", "Quản lý")
+        self.setWindowTitle(app_title)
+
+        self.ui = ManageGui(self.config)
         self.setCentralWidget(self.ui)
         self.db = DatabaseManager()
-    # === KẾT THÚC VÙNG THAY ĐỔI ===
-        
+
         self.current_soldier_id = None
         self.current_session_id = None
         self.current_shots = []
         self.current_shot_index = -1
         self.current_shot_coords = {}
-        
+
         self.setup_ui_styles()
         self.connect_signals()
         self.set_panels_state("NO_SOLDIER_SELECTED")
         self.ui.soldier_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ui.history_list.setContextMenuPolicy(Qt.CustomContextMenu)
 
-    # Các hàm còn lại giữ nguyên, không cần thay đổi
     def setup_ui_styles(self):
-        self.ui.history_list.setStyleSheet("""
-            QListWidget::item {
-                padding: 10px;
-                border-bottom: 1px solid #4a6278;
-            }
-            QListWidget::item:selected {
-                background-color: #1abc9c;
-                color: #2c3e50;
-                border-bottom: 1px solid #16a085;
-            }
-        """)
-        table_stylesheet = """
-            QTableWidget::item:selected {
-                background-color: #1abc9c;
-                color: white;
-            }
-        """
+        self.ui.history_list.setStyleSheet("QListWidget::item { padding: 10px; border-bottom: 1px solid #4a6278; } QListWidget::item:selected { background-color: #1abc9c; color: #2c3e50; border-bottom: 1px solid #16a085; }")
+        table_stylesheet = "QTableWidget::item:selected { background-color: #1abc9c; color: white; }"
         self.ui.soldier_table.setStyleSheet(table_stylesheet)
         self.ui.shot_table.setStyleSheet(table_stylesheet)
 
@@ -182,41 +180,39 @@ class ManageWindow(QMainWindow):
         if not coords:
             QMessageBox.information(self, "Thông báo", "Không có dữ liệu điểm bắn cho loại bia này.")
             return
-
         asset_path = resource_path("assets/images/original")
-        target_image_map = {
-            'bia_so_4': 'bia_so_4.png',
-            'bia_so_7_8': 'bia_so_7.png',
-            'bia_so_8': 'bia_so_8.png'
-        }
+        target_image_map = {'bia_so_4': 'bia_so_4.png', 'bia_so_7_8': 'bia_so_7.png', 'bia_so_8': 'bia_so_8.png'}
         image_file = target_image_map.get(target_key)
-        if not image_file: return
-
+        if not image_file:
+            return
         image_path = os.path.join(asset_path, image_file)
         if not os.path.exists(image_path):
             QMessageBox.warning(self, "Lỗi", f"Không tìm thấy ảnh bia gốc tại:\n{image_path}")
             return
-            
         target_image = cv2.imread(image_path)
         for (x, y) in coords:
-            cv2.drawMarker(target_image, (int(x), int(y)), (0, 0, 255), 
-                           markerType=cv2.MARKER_CROSS, markerSize=40, thickness=3)
-
+            cv2.drawMarker(target_image, (int(x), int(y)), (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=40, thickness=3)
         dialog = GroupingDisplayDialog(self)
         dialog.update_display(target_image)
         dialog.exec()
 
     def set_panels_state(self, state: str):
+        labels = self.config.get("labels", {})
+        trainee_term = labels.get("trainee", "Người học")
+        msg = ""
+
         if state == "NO_SOLDIER_SELECTED":
             self.ui.center_stack.setCurrentIndex(self.MESSAGE_PAGE)
             self.ui.right_stack.setCurrentIndex(self.MESSAGE_PAGE)
-            msg = "◀ Vui lòng chọn một người học từ danh sách"
+            prompt = labels.get("manage_select_trainee_prompt", "◀ Vui lòng chọn một {trainee} từ danh sách")
+            msg = prompt.format(trainee=trainee_term.lower())
             self.ui.center_message_label.setText(msg)
             self.ui.right_message_label.setText(msg)
         elif state == "NO_SESSIONS":
             self.ui.center_stack.setCurrentIndex(self.MESSAGE_PAGE)
             self.ui.right_stack.setCurrentIndex(self.MESSAGE_PAGE)
-            msg = "Người học này chưa thực hiện phiên tập nào"
+            prompt = labels.get("manage_no_sessions_prompt", "{trainee} này chưa thực hiện phiên tập nào")
+            msg = prompt.format(trainee=trainee_term.capitalize())
             self.ui.center_message_label.setText(msg)
             self.ui.right_message_label.setText(msg)
         elif state == "SOLDIER_SELECTED":
@@ -233,11 +229,16 @@ class ManageWindow(QMainWindow):
             self.current_soldier_id = None
             self.set_panels_state("NO_SOLDIER_SELECTED")
             return
-        # Lấy item ở cột đầu tiên (tên) để đảm bảo luôn có
+
         name_item = self.ui.soldier_table.item(selected_items[0].row(), 0)
         soldier_id = name_item.data(Qt.UserRole)
+        soldier_name = name_item.text()
+
         if soldier_id is not None and self.current_soldier_id != soldier_id:
             self.current_soldier_id = soldier_id
+            labels = self.config.get("labels", {})
+            title_prefix = labels.get("history_title_prefix", "Lịch sử của")
+            self.ui.history_box.setTitle(f"{title_prefix} {soldier_name}")
             self.load_shooting_history(self.current_soldier_id)
 
     def load_shooting_history(self, soldier_id):
@@ -247,7 +248,6 @@ class ManageWindow(QMainWindow):
             if not sessions:
                 self.set_panels_state("NO_SESSIONS")
                 return
-            
             self.set_panels_state("SOLDIER_SELECTED")
             for session in sessions:
                 session_name = session.get('exercise_name') or f"Phiên tập #{session['id']}"
@@ -263,19 +263,16 @@ class ManageWindow(QMainWindow):
             logging.info(f"Đã tải {len(sessions)} phiên tập cho chiến sĩ ID {soldier_id}.")
         except Exception as e:
             logging.error(f"Lỗi khi tải lịch sử bắn: {e}", exc_info=True)
-            
+
     def on_session_selected(self):
         selected_items = self.ui.history_list.selectedItems()
         if not selected_items:
             self.current_session_id = None
-            # Chỉ reset cột giữa, cột phải vẫn hiển thị danh sách phiên
             self.set_panels_state("SOLDIER_SELECTED")
             return
-            
         session_item = selected_items[0]
         session_id = session_item.data(Qt.UserRole)
         if session_id is not None:
-            # Không cần kiểm tra self.current_session_id, luôn tải lại khi click
             self.current_session_id = session_id
             self.set_panels_state("SHOW_DATA")
             self.load_session_details(self.current_session_id)
@@ -283,27 +280,17 @@ class ManageWindow(QMainWindow):
     def load_session_details(self, session_id):
         logging.info(f"Đang tải chi tiết cho phiên ID: {session_id}")
         self.current_shots = self.db.get_shots_for_session(session_id)
-        
         total_shots = len(self.current_shots)
         hit_shots = [s for s in self.current_shots if s.get('score') is not None and s['score'] > 0]
         total_hits = len(hit_shots)
         valid_scores = [s['score'] for s in hit_shots]
         total_score = sum(valid_scores)
-        
         hit_rate = (total_hits / total_shots * 100) if total_shots > 0 else 0
         avg_score = (total_score / total_hits) if total_hits > 0 else 0
-        summary_text = (
-            f"Tổng phát bắn: {total_shots}  |  "
-            f"Tỷ lệ trúng: {hit_rate:.1f}%  |  "
-            f"Điểm trung bình: {avg_score:.2f}"
-        )
+        summary_text = f"Tổng phát bắn: {total_shots}  |  Tỷ lệ trúng: {hit_rate:.1f}%  |  Điểm trung bình: {avg_score:.2f}"
         self.ui.analysis_summary_label.setText(summary_text)
 
-        stats_by_target = {
-            'bia_so_4': {'scores': [], 'coords': []},
-            'bia_so_7_8': {'scores': [], 'coords': []},
-            'bia_so_8': {'scores': [], 'coords': []}
-        }
+        stats_by_target = {'bia_so_4': {'scores': [], 'coords': []}, 'bia_so_7_8': {'scores': [], 'coords': []}, 'bia_so_8': {'scores': [], 'coords': []}}
         for shot in hit_shots:
             target_key = shot.get('target_detected')
             if target_key in stats_by_target:
@@ -311,10 +298,10 @@ class ManageWindow(QMainWindow):
                 if shot.get('hit_coordinate_x') is not None and shot.get('hit_coordinate_y') is not None:
                     coords = (shot['hit_coordinate_x'], shot['hit_coordinate_y'])
                     stats_by_target[target_key]['coords'].append(coords)
-        
-        self.current_shot_coords = {key: data['coords'] for key, data in stats_by_target.items()}
 
+        self.current_shot_coords = {key: data['coords'] for key, data in stats_by_target.items()}
         target_map_to_row = {'bia_so_4': 0, 'bia_so_7_8': 1, 'bia_so_8': 2}
+
         for target_key, row_index in target_map_to_row.items():
             data = stats_by_target.get(target_key, {'scores': [], 'coords': []})
             hit_count = len(data['scores'])
@@ -330,19 +317,13 @@ class ManageWindow(QMainWindow):
             elif target_raw == 'bia_so_7_8': target_display = 'Bia số 7'
             elif target_raw == 'bia_so_8': target_display = 'Bia số 8'
             else: target_display = 'Trượt'
-
             try:
                 ts_obj = datetime.strptime(shot['timestamp'], '%Y-%m-%d %H:%M:%S')
                 formatted_ts = ts_obj.strftime('%H:%M:%S')
             except (ValueError, TypeError):
                 formatted_ts = shot['timestamp']
 
-            items = [
-                QTableWidgetItem(str(shot['shot_number'])),
-                QTableWidgetItem(formatted_ts),
-                QTableWidgetItem(target_display),
-                QTableWidgetItem(str(shot['score']))
-            ]
+            items = [QTableWidgetItem(str(shot['shot_number'])), QTableWidgetItem(formatted_ts), QTableWidgetItem(target_display), QTableWidgetItem(str(shot['score']))]
             for col, item in enumerate(items):
                 item.setTextAlignment(Qt.AlignCenter)
                 self.ui.shot_table.setItem(row, col, item)
@@ -352,7 +333,7 @@ class ManageWindow(QMainWindow):
             self.current_shot_index = 0
         else:
             self.current_shot_index = -1
-        self.update_shot_display()
+            self.update_shot_display()
 
     def update_shot_display(self):
         total_shots = len(self.current_shots)
@@ -361,14 +342,13 @@ class ManageWindow(QMainWindow):
             self.ui.shot_index_label.setText(f"Phát {self.current_shot_index + 1}/{total_shots}")
             image_path = shot_data.get('image_path')
             if image_path and os.path.exists(image_path):
-                pixmap = QPixmap(image_path)
-                self.ui.result_image.setPixmap(pixmap)
+                self.ui.result_image.setPixmap(QPixmap(image_path))
             else:
-                self.ui.result_image.setPixmap(QPixmap()) # Xóa ảnh cũ
+                self.ui.result_image.setPixmap(QPixmap())
                 self.ui.result_image.setText("Không tìm thấy ảnh")
         else:
             self.ui.shot_index_label.setText("Phát 0/0")
-            self.ui.result_image.setPixmap(QPixmap()) # Xóa ảnh
+            self.ui.result_image.setPixmap(QPixmap())
             self.ui.result_image.setText("Chưa có phát bắn")
 
     def show_previous_shot(self):
@@ -380,17 +360,18 @@ class ManageWindow(QMainWindow):
         if self.current_shot_index < len(self.current_shots) - 1:
             self.current_shot_index += 1
             self.ui.shot_table.selectRow(self.current_shot_index)
-            
+
     def on_shot_table_selected(self):
         selected_rows = self.ui.shot_table.selectionModel().selectedRows()
-        if not selected_rows: return
+        if not selected_rows:
+            return
         selected_row_index = selected_rows[0].row()
         if self.current_shot_index != selected_row_index:
             self.current_shot_index = selected_row_index
             self.update_shot_display()
-            
+
     def open_add_soldier_dialog(self):
-        dialog = AddSoldierDialog(self)
+        dialog = AddSoldierDialog(self.config, parent=self)
         if dialog.exec() == QDialog.Accepted:
             data = dialog.get_data()
             try:
@@ -410,7 +391,6 @@ class ManageWindow(QMainWindow):
                 self.ui.soldier_table.setRowCount(0)
                 self.set_panels_state("NO_SOLDIER_SELECTED")
                 return
-
             self.ui.soldier_table.setRowCount(len(soldiers))
             for row, soldier_data in enumerate(soldiers):
                 name_item = QTableWidgetItem(soldier_data['name'])
@@ -425,13 +405,13 @@ class ManageWindow(QMainWindow):
 
     def show_soldier_context_menu(self, pos):
         item = self.ui.soldier_table.itemAt(pos)
-        if not item: return
-        
+        if not item:
+            return
         row = item.row()
         soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
         soldier_name = self.ui.soldier_table.item(row, 0).text()
-        if soldier_id is None: return
-
+        if soldier_id is None:
+            return
         menu = QMenu(self)
         edit_action = menu.addAction("Sửa thông tin")
         edit_action.triggered.connect(lambda: self.edit_soldier(row))
@@ -442,11 +422,10 @@ class ManageWindow(QMainWindow):
     def edit_soldier(self, row):
         soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
         current_data = {"name": self.ui.soldier_table.item(row, 0).text(), "class_name": self.ui.soldier_table.item(row, 1).text()}
-        dialog = AddSoldierDialog(self)
-        dialog.setWindowTitle("Chỉnh sửa thông tin Người học")
+        dialog = AddSoldierDialog(self.config, is_edit_mode=True, parent=self)
         dialog.name_input.setText(current_data["name"])
         dialog.class_name_input.setText(current_data["class_name"])
-        
+
         if dialog.exec() == QDialog.Accepted:
             new_data = dialog.get_data()
             if self.db.update_soldier(soldier_id, **new_data):
@@ -462,12 +441,7 @@ class ManageWindow(QMainWindow):
                 QMessageBox.critical(self, "Lỗi", "Không thể cập nhật thông tin.")
 
     def delete_soldier(self, soldier_id, soldier_name):
-        reply = QMessageBox.warning(
-            self, "Xác nhận Xóa",
-            f"Bạn có chắc chắn muốn xóa người học '{soldier_name}'?\n"
-            "TOÀN BỘ lịch sử bắn của người học này cũng sẽ bị xóa vĩnh viễn.",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
+        reply = QMessageBox.warning(self, "Xác nhận Xóa", f"Bạn có chắc chắn muốn xóa người học '{soldier_name}'?\nTOÀN BỘ lịch sử bắn của người học này cũng sẽ bị xóa vĩnh viễn.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
             if self.db.delete_soldier(soldier_id):
                 QMessageBox.information(self, "Thành công", f"Đã xóa người học '{soldier_name}'.")
@@ -478,7 +452,8 @@ class ManageWindow(QMainWindow):
 
     def show_session_context_menu(self, pos):
         item = self.ui.history_list.itemAt(pos)
-        if not item: return
+        if not item:
+            return
         session_id = item.data(Qt.UserRole)
         session_name = item.text().split('\n')[0]
         menu = QMenu(self)
@@ -490,35 +465,33 @@ class ManageWindow(QMainWindow):
 
     def edit_session_name(self, session_id):
         session_data = self.db.get_session_by_id(session_id)
-        if not session_data: return
+        if not session_data:
+            return
         current_name = session_data.get('exercise_name')
-
         while True:
             new_name, ok = QInputDialog.getText(self, "Đổi tên Phiên tập", "Nhập tên mới:", QLineEdit.Normal, current_name)
-            if not ok: break
+            if not ok:
+                break
             stripped_name = new_name.strip()
-            if not stripped_name: continue
-
+            if not stripped_name:
+                continue
             if self.db.session_name_exists(stripped_name, soldier_id=self.current_soldier_id, exclude_session_id=session_id):
                 QMessageBox.warning(self, "Tên bị trùng", f"Người học này đã có phiên tập tên '{stripped_name}'.\nVui lòng chọn một tên khác.")
-                current_name = stripped_name; continue
+                current_name = stripped_name
+                continue
             if self.db.update_session_name(session_id, stripped_name):
                 QMessageBox.information(self, "Thành công", "Đã đổi tên phiên tập.")
                 self.load_shooting_history(self.current_soldier_id)
                 for i in range(self.ui.history_list.count()):
                     if self.ui.history_list.item(i).data(Qt.UserRole) == session_id:
-                        self.ui.history_list.setCurrentRow(i); break
+                        self.ui.history_list.setCurrentRow(i)
+                        break
             else:
                 QMessageBox.critical(self, "Lỗi", "Không thể đổi tên phiên tập.")
             break
-         
+
     def delete_session(self, session_id, session_name):
-        reply = QMessageBox.warning(
-            self, "Xác nhận Xóa",
-            f"Bạn có chắc chắn muốn xóa phiên '{session_name}' không?\n"
-            "Toàn bộ dữ liệu của phiên này sẽ bị xóa vĩnh viễn.",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
+        reply = QMessageBox.warning(self, "Xác nhận Xóa", f"Bạn có chắc chắn muốn xóa phiên '{session_name}' không?\nToàn bộ dữ liệu của phiên này sẽ bị xóa vĩnh viễn.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
             if self.db.delete_session(session_id):
                 QMessageBox.information(self, "Thành công", f"Đã xóa phiên '{session_name}'.")
