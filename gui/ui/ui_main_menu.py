@@ -105,6 +105,6 @@ class Ui_MainMenuWindow(object):
         self.main_layout.addWidget(title_container)
         self.main_layout.addStretch(1)
         self.main_layout.addWidget(buttons_container)
-        self.main_layout.addStretch(1)
+        self.main_layout.addStretch(2)
         
         MainMenuWindow.setCentralWidget(self.centralwidget)

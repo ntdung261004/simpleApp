@@ -33,7 +33,7 @@ class MainMenuWindow(QMainWindow):
         labels = self.config.get("labels", {})
         
         # Lấy và đặt tiêu đề cho đơn vị khách hàng
-        customer_name = labels.get("customer_unit_name", "Tên đơn vị") # Dòng này vẫn đúng
+        customer_name = labels.get("customer_unit_name", "") # Dòng này vẫn đúng
         self.ui.customer_title_label.setText(customer_name.upper())
 
         # Lấy tiêu đề và phụ đề chính, nếu không có thì dùng giá trị mặc định

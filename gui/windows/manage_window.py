@@ -335,9 +335,16 @@ class ManageWindow(QMainWindow):
             self.current_shot_index = -1
             self.update_shot_display()
 
+    # --- BẮT ĐẦU VÙNG SỬA ĐỔI 1: Cập nhật hàm hiển thị ---
     def update_shot_display(self):
         total_shots = len(self.current_shots)
-        if 0 <= self.current_shot_index < total_shots:
+        has_shots = 0 <= self.current_shot_index < total_shots
+
+        # Cập nhật trạng thái các nút điều hướng
+        self.ui.prev_shot_button.setEnabled(has_shots and self.current_shot_index > 0)
+        self.ui.next_shot_button.setEnabled(has_shots and self.current_shot_index < total_shots - 1)
+
+        if has_shots:
             shot_data = self.current_shots[self.current_shot_index]
             self.ui.shot_index_label.setText(f"Phát {self.current_shot_index + 1}/{total_shots}")
             image_path = shot_data.get('image_path')
@@ -350,22 +357,27 @@ class ManageWindow(QMainWindow):
             self.ui.shot_index_label.setText("Phát 0/0")
             self.ui.result_image.setPixmap(QPixmap())
             self.ui.result_image.setText("Chưa có phát bắn")
+    # --- KẾT THÚC VÙNG SỬA ĐỔI 1 ---
 
+    # --- BẮT ĐẦU VÙNG SỬA ĐỔI 2: Sửa logic các nút ---
     def show_previous_shot(self):
+        # Chỉ yêu cầu bảng chọn dòng trước đó. Hàm on_shot_table_selected sẽ xử lý phần còn lại.
         if self.current_shot_index > 0:
-            self.current_shot_index -= 1
-            self.ui.shot_table.selectRow(self.current_shot_index)
+            self.ui.shot_table.selectRow(self.current_shot_index - 1)
 
     def show_next_shot(self):
+        # Chỉ yêu cầu bảng chọn dòng tiếp theo.
         if self.current_shot_index < len(self.current_shots) - 1:
-            self.current_shot_index += 1
-            self.ui.shot_table.selectRow(self.current_shot_index)
-
+            self.ui.shot_table.selectRow(self.current_shot_index + 1)
+    # --- KẾT THÚC VÙNG SỬA ĐỔI 2 ---
+            
     def on_shot_table_selected(self):
         selected_rows = self.ui.shot_table.selectionModel().selectedRows()
         if not selected_rows:
             return
         selected_row_index = selected_rows[0].row()
+        
+        # Logic này bây giờ sẽ hoạt động đúng
         if self.current_shot_index != selected_row_index:
             self.current_shot_index = selected_row_index
             self.update_shot_display()
@@ -376,11 +388,11 @@ class ManageWindow(QMainWindow):
             data = dialog.get_data()
             try:
                 self.db.add_soldier(**data)
-                QMessageBox.information(self, "Thành công", f"Đã thêm người học '{data['name']}'.")
+                QMessageBox.information(self, "Thành công", f"Đã thêm '{data['name']}'.")
                 self.load_soldiers()
             except Exception as e:
                 logging.error(f"Lỗi khi thêm người học mới: {e}")
-                QMessageBox.critical(self, "Lỗi", f"Không thể thêm người học.\nLỗi: {e}")
+                QMessageBox.critical(self, "Lỗi", f"Không thể thêm người này.\nLỗi: {e}")
 
     def load_soldiers(self):
         logging.info("Bắt đầu tải danh sách người học...")
@@ -415,7 +427,7 @@ class ManageWindow(QMainWindow):
         menu = QMenu(self)
         edit_action = menu.addAction("Sửa thông tin")
         edit_action.triggered.connect(lambda: self.edit_soldier(row))
-        delete_action = menu.addAction("Xóa người học")
+        delete_action = menu.addAction("Xóa người này")
         delete_action.triggered.connect(lambda: self.delete_soldier(soldier_id, soldier_name))
         menu.exec(self.ui.soldier_table.mapToGlobal(pos))
 
@@ -429,7 +441,7 @@ class ManageWindow(QMainWindow):
         if dialog.exec() == QDialog.Accepted:
             new_data = dialog.get_data()
             if self.db.update_soldier(soldier_id, **new_data):
-                QMessageBox.information(self, "Thành công", "Đã cập nhật thông tin người học.")
+                QMessageBox.information(self, "Thành công", "Đã cập nhật thông tin.")
                 selected_id = self.current_soldier_id
                 self.load_soldiers()
                 if selected_id is not None:
@@ -441,14 +453,14 @@ class ManageWindow(QMainWindow):
                 QMessageBox.critical(self, "Lỗi", "Không thể cập nhật thông tin.")
 
     def delete_soldier(self, soldier_id, soldier_name):
-        reply = QMessageBox.warning(self, "Xác nhận Xóa", f"Bạn có chắc chắn muốn xóa người học '{soldier_name}'?\nTOÀN BỘ lịch sử bắn của người học này cũng sẽ bị xóa vĩnh viễn.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        reply = QMessageBox.warning(self, "Xác nhận Xóa", f"Bạn có chắc chắn muốn xóa '{soldier_name}'?\nTOÀN BỘ lịch sử bắn của người này cũng sẽ bị xóa vĩnh viễn.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
             if self.db.delete_soldier(soldier_id):
-                QMessageBox.information(self, "Thành công", f"Đã xóa người học '{soldier_name}'.")
+                QMessageBox.information(self, "Thành công", f"Đã xóa '{soldier_name}'.")
                 self.load_soldiers()
                 self.set_panels_state("NO_SOLDIER_SELECTED")
             else:
-                QMessageBox.critical(self, "Lỗi", "Không thể xóa người học.")
+                QMessageBox.critical(self, "Lỗi", "Không thể xóa người này.")
 
     def show_session_context_menu(self, pos):
         item = self.ui.history_list.itemAt(pos)
@@ -476,7 +488,7 @@ class ManageWindow(QMainWindow):
             if not stripped_name:
                 continue
             if self.db.session_name_exists(stripped_name, soldier_id=self.current_soldier_id, exclude_session_id=session_id):
-                QMessageBox.warning(self, "Tên bị trùng", f"Người học này đã có phiên tập tên '{stripped_name}'.\nVui lòng chọn một tên khác.")
+                QMessageBox.warning(self, "Tên bị trùng", f"Người này đã có phiên tập tên '{stripped_name}'.\nVui lòng chọn một tên khác.")
                 current_name = stripped_name
                 continue
             if self.db.update_session_name(session_id, stripped_name):

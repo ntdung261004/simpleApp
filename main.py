@@ -3,12 +3,11 @@ import os
 import sys
 import logging
 import json
+import shutil # <<< THÊM MỚI
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QInputDialog, QLineEdit, QMessageBox
 from PySide6.QtCore import QThread
-# --- BẮT ĐẦU VÙNG THAY ĐỔI: IMPORT THÊM ---
 from PySide6.QtGui import QIcon
 from utils.resource_path import resource_path
-# --- KẾT THÚC VÙNG THAY ĐỔI ---
 
 # Import các lớp cửa sổ và các thành phần chạy ngầm
 from gui.windows.main_menu_window import MainMenuWindow
@@ -59,7 +58,7 @@ class ApplicationController(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.config = self._load_config()
+        self.config = self._load_config() # Sẽ gọi hàm đã được sửa đổi
         app_title = self.config.get("labels", {}).get("app_title", "Phần Mềm Bắn Súng")
         self.setWindowTitle(app_title)
         self.setStyleSheet("background-color: #2c3e50;")
@@ -91,44 +90,40 @@ class ApplicationController(QMainWindow):
         self.processing_thread.start()
         self.bt_trigger.start_global_listener()
     
+    # --- BẮT ĐẦU VÙNG SỬA ĐỔI: VIẾT LẠI HOÀN TOÀN HÀM _load_config ---
     def _load_config(self) -> dict:
-        config_path = os.path.join(APP_DATA_DIR, "config.json")
+        """
+        Tải file config.json. Luôn sao chép/ghi đè file từ thư mục gốc của dự án
+        vào AppData để đảm bảo cấu hình luôn được cập nhật.
+        """
+        config_filename = "config.json"
+        dest_path = os.path.join(APP_DATA_DIR, config_filename)
+
+        # 1. Xác định đường dẫn file config gốc (hoạt động cả khi dev và khi đã đóng gói)
+        source_path = resource_path(config_filename)
+
+        # 2. Luôn sao chép, ghi đè file config trong AppData
+        if os.path.exists(source_path):
+            try:
+                shutil.copyfile(source_path, dest_path)
+                logging.info(f"Đã cập nhật '{config_filename}' trong AppData từ file gốc.")
+            except (IOError, shutil.SameFileError) as e:
+                logging.warning(f"Không thể cập nhật file config từ file gốc: {e}. Sẽ thử dùng file cũ nếu có.")
+        else:
+            logging.error(f"Lỗi nghiêm trọng: Không tìm thấy file config gốc tại '{source_path}'.")
+
+        # 3. Đọc file config từ AppData (sau khi đã được cập nhật)
+        if os.path.exists(dest_path):
+            try:
+                with open(dest_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                logging.error(f"Lỗi khi đọc config từ AppData: {e}")
         
-        defaults = {
-            "camera_index": 0,
-            "yolo_confidence_threshold": 0.75,
-            "manage_image_height": 400,
-            "labels": {
-                "app_title": "PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM",
-                "app_subtitle": "SÚNG TIỂU LIÊN STV",
-                "trainee": "Người học",
-                "trainee_class": "Đơn vị",
-                "trainee_list_title": "Danh sách Người học",
-                "trainee_list_header_name": "Họ và Tên",
-                "trainee_list_header_class": "Đơn vị",
-                "add_trainee_dialog_title": "Thêm Người học Mới",
-                "edit_trainee_dialog_title": "Chỉnh sửa thông tin Người học",
-                "trainee_name_prompt": "Họ và Tên:",
-                "trainee_class_prompt": "Đơn vị:",
-                "history_title_prefix": "Lịch sử bắn của"
-            }
-        }
-
-        try:
-            if not os.path.exists(config_path):
-                logging.warning(f"File config.json không tồn tại. Tạo file mặc định tại: {config_path}")
-                with open(config_path, "w", encoding='utf-8') as f:
-                    json.dump(defaults, f, indent=4, ensure_ascii=False)
-                return defaults
-            
-            with open(config_path, "r", encoding='utf-8') as f:
-                loaded_config = json.load(f)
-                defaults.update(loaded_config)
-                return defaults
-
-        except (json.JSONDecodeError, IOError) as e:
-            logging.error(f"Lỗi khi đọc/tạo file config: {e}. Sử dụng cấu hình mặc định.")
-            return defaults
+        # Trường hợp xấu nhất: không có file nào, trả về dict rỗng để tránh crash
+        QMessageBox.critical(None, "Lỗi nghiêm trọng", "Không thể tải file cấu hình (config.json). Ứng dụng có thể không hoạt động đúng.")
+        return {}
+    # --- KẾT THÚC VÙNG SỬA ĐỔI ---
             
     def connect_signals(self):
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)       
@@ -170,16 +165,9 @@ class ApplicationController(QMainWindow):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
 
-    # --- BẮT ĐẦU VÙNG THAY ĐỔI: THIẾT LẬP ICON TOÀN CỤC ---
-    # 1. Xác định đường dẫn tới file icon bằng resource_path
     icon_path = resource_path("assets/app_icon.ico")
-    
-    # 2. Tạo đối tượng QIcon
     app_icon = QIcon(icon_path)
-    
-    # 3. Gán icon cho toàn bộ ứng dụng
     app.setWindowIcon(app_icon)
-    # --- KẾT THÚC VÙNG THAY ĐỔI ---
 
     if check_or_request_license():
         controller = ApplicationController()

@@ -29,6 +29,7 @@ class PracticeWindow(QMainWindow):
 
     def __init__(self, worker: ProcessingWorker, trigger: BluetoothTrigger, config: dict):
         super().__init__()
+        # self.config được truyền trực tiếp, không cần tải lại
         self.config = config
         labels = self.config.get("labels", {})
         app_title = labels.get("app_title", "Phần Mềm Bắn Súng")
@@ -44,12 +45,8 @@ class PracticeWindow(QMainWindow):
         self.is_camera_connected = False; self.shot_counter = 0; self.frame_read_failures = 0
         self.FRAME_FAILURE_THRESHOLD = 3
         
-        # --- BẮT ĐẦU VÙNG THAY ĐỔI 1 ---
-        # Biến mới để lưu frame "sạch" đã được zoom, dùng để xử lý
         self.clean_zoomed_frame_for_processing = None
-        # Biến mới để lưu tọa độ tâm bắn trên frame đã zoom
         self.shot_point_on_zoomed_frame = None
-        # --- KẾT THÚC VÙNG THAY ĐỔI 1 ---
         
         self.audio_manager = AudioManager(); self.video_timer = QTimer(self)
         self.db_manager = DatabaseManager()
@@ -61,12 +58,22 @@ class PracticeWindow(QMainWindow):
         self.gui.session_button.clicked.connect(self.toggle_session)
         self.gui.soldier_selector.currentIndexChanged.connect(self.reset_ui_state)
         self.populate_soldier_selector(); self.reset_ui_state()
-        self.load_config()
+
+        # --- BẮT ĐẦU VÙNG SỬA ĐỔI: LẤY CAMERA INDEX TỪ CONFIG ĐÃ TẢI ---
+        # Lấy camera index từ config đã được truyền vào, không đọc lại file
+        try:
+            self.configured_camera_index = int(self.config.get("camera_index", 0))
+            logger.info(f"PracticeWindow: Sử dụng camera index = {self.configured_camera_index} từ config.")
+        except (ValueError, TypeError):
+            logger.warning("Giá trị camera_index trong config không hợp lệ. Dùng mặc định là 0.")
+            self.configured_camera_index = 0
+        # --- KẾT THÚC VÙNG SỬA ĐỔI ---
+            
         self.save_dir = os.path.join(APP_DATA_DIR, "captured_images")
         os.makedirs(self.save_dir, exist_ok=True)
         logger.info(f"Thư mục lưu ảnh được thiết lập tại: {self.save_dir}")
 
-    # --- BẮT ĐẦU VÙNG THAY ĐỔI 2: Tái cấu trúc hàm update_frame ---
+    # ... (Các hàm update_frame, capture_photo, on_processing_finished giữ nguyên) ...
     def update_frame(self):
         if not (self.cam and self.cam.isOpened()):
             return
@@ -82,68 +89,51 @@ class PracticeWindow(QMainWindow):
         if not self.is_camera_connected:
             self.is_camera_connected = True
 
-        # 1. Xử lý frame gốc (cắt cúp, resize)
         processed_frame = self.crop_and_resize_frame(frame)
         if processed_frame is None: return
 
-        # 2. Áp dụng zoom và lưu lại frame "sạch đã zoom" để xử lý
         self.clean_zoomed_frame_for_processing = self.apply_digital_zoom(processed_frame, self.zoom_level)
 
-        # 3. Tính toán tọa độ tâm bắn trên frame đã zoom
         point_to_draw = None
-        # Lấy kích thước của frame gốc (1x) trước khi zoom
         h_orig, w_orig, _ = processed_frame.shape
-        # Lấy kích thước của frame đã zoom để vẽ
         h_zoom, w_zoom, _ = self.clean_zoomed_frame_for_processing.shape
 
         if self.calibrated_center:
-            # Chuyển đổi tọa độ tâm đã hiệu chỉnh (trên ảnh 1x) sang tọa độ trên ảnh đã zoom
             cx, cy = self.calibrated_center
             start_x_on_orig = (w_orig - int(w_orig / self.zoom_level)) // 2
             start_y_on_orig = (h_orig - int(h_orig / self.zoom_level)) // 2
             
-            # Chỉ tính toán nếu tâm hiệu chỉnh nằm trong vùng sẽ được zoom
             if cx >= start_x_on_orig and cy >= start_y_on_orig:
                 zoomed_cx = int((cx - start_x_on_orig) * self.zoom_level)
                 zoomed_cy = int((cy - start_y_on_orig) * self.zoom_level)
-                # Đảm bảo tọa độ sau khi chuyển đổi vẫn nằm trong ảnh
                 if zoomed_cx < w_zoom and zoomed_cy < h_zoom:
                     point_to_draw = (zoomed_cx, zoomed_cy)
         else:
-            # Nếu không hiệu chỉnh, tâm bắn là tâm của ảnh đã zoom
             point_to_draw = (w_zoom // 2, h_zoom // 2)
 
-        # Lưu lại tọa độ này để gửi đi xử lý
         self.shot_point_on_zoomed_frame = point_to_draw
 
-        # 4. Tạo bản sao để vẽ và hiển thị
         frame_to_display = self.clean_zoomed_frame_for_processing.copy()
         if self.shot_point_on_zoomed_frame:
             cv2.drawMarker(frame_to_display, self.shot_point_on_zoomed_frame, (0, 0, 255), cv2.MARKER_CROSS, 40, 2)
         
-        # 5. Hiển thị frame "bẩn" (đã vẽ tâm ngắm)
         self.gui.display_frame(frame_to_display)
 
-    # --- BẮT ĐẦU VÙNG THAY ĐỔI 3: Cập nhật hàm capture_photo ---
     def capture_photo(self):
         if not self.is_camera_connected:
             logger.warning("Shot blocked: Camera not connected.")
             return
 
-        # 1. Lấy frame SẠCH ĐÃ ZOOM để gửi đi xử lý
         frame_for_analysis = self.clean_zoomed_frame_for_processing
         if frame_for_analysis is None:
             logger.error("Không có frame đã zoom (sạch) để phân tích.")
             return
 
-        # 2. Lấy tọa độ tâm bắn trên frame đã zoom
         shot_center_for_analysis = self.shot_point_on_zoomed_frame
-        # Nếu chưa có (rất hiếm), worker sẽ tự lấy tâm ảnh
         
         self.audio_manager.play_sound('shot')
         
         try:
-            # Lưu lại ảnh đang hiển thị (có tâm ngắm) cho người dùng xem lại
             image_to_save = self.gui.camera_view_label._pixmap.toImage()
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
             filename = f"shot_{timestamp}.png"
@@ -151,21 +141,18 @@ class PracticeWindow(QMainWindow):
             image_to_save.save(save_path, "PNG")
             logger.info(f"Đã lưu ảnh tại: {save_path}")
 
-            # 3. GỬI ĐÚNG DỮ LIỆU: frame SẠCH ĐÃ ZOOM và TỌA ĐỘ TÂM trên frame đó
             self.request_processing.emit(frame_for_analysis, shot_center_for_analysis, save_path)
             logger.info("GUI: Đã gửi yêu cầu xử lý cho worker.")
             
         except Exception as e:
             logger.error(f"Lỗi khi đang lưu ảnh: {e}")
 
-    # --- BẮT ĐẦU VÙNG THAY ĐỔI 4: Cập nhật hàm on_processing_finished ---
     @Slot(dict)
     def on_processing_finished(self, result):
         logger.info("GUI: Nhận được kết quả đã xử lý từ worker.")
         display_target_name = result.get('target_name')
         score = result.get('score')
         
-        # Ảnh trả về từ worker đã dựa trên ảnh zoom, nên nó có kích thước đúng
         final_image_to_display = result.get('result_frame')
 
         if self.active_session_id is not None:
@@ -181,16 +168,16 @@ class PracticeWindow(QMainWindow):
         else:
             self.audio_manager.play_sound('miss')
 
-        # Không cần zoom lại, chỉ cần hiển thị
         self.gui.update_results(
             time_str=result.get('time_str'),
             target_name=display_target_name,
             score=score,
             result_frame=final_image_to_display
         )
-    # --- KẾT THÚC CÁC VÙNG THAY ĐỔI ---
-    
-    # ... (Tất cả các hàm còn lại giữ nguyên) ...
+
+    # --- HÀM load_config() ĐÃ BỊ XÓA HOÀN TOÀN ---
+
+    # ... (Tất cả các hàm còn lại từ toggle_session trở đi giữ nguyên) ...
     def toggle_session(self):
         labels = self.config.get("labels", {}); trainee_term = labels.get("trainee", "Chiến sĩ")
         if self.is_session_active:
@@ -278,7 +265,7 @@ class PracticeWindow(QMainWindow):
         if is_frame_read_successfully: self.video_timer.start(30); logger.info(f"PRACTICE: Kết nối và xác thực thành công camera index {index}.")
         else: logger.error(f"PRACTICE: Kết nối thất bại, không đọc được frame từ camera index {index} sau {max_attempts} lần thử."); self.disconnect_camera("Lỗi: Không thể lấy ảnh từ camera")
     def disconnect_camera(self, message="Vui lòng kết nối camera"):
-        self.video_timer.stop();
+        self.video_timer.stop()
         if self.cam: self.cam.release()
         self.cam = None; self.is_camera_connected = False; self.gui.clear_video_feed(message); logger.info(f"Đã ngắt kết nối camera. Lý do: {message}")
     def refresh_camera_connection(self):
@@ -296,18 +283,3 @@ class PracticeWindow(QMainWindow):
         self.is_session_active = False; self.active_session_id = None; self.shot_counter = 0
         self.gui.session_button.setText("BẮT ĐẦU"); self.gui.session_button.setObjectName("start_button"); self.gui.style().polish(self.gui.session_button)
         self.gui.back_button.setEnabled(True); self.gui.soldier_selector.setEnabled(True)
-    def load_config(self):
-        try:
-            config_filename = "config.json"; os.makedirs(APP_DATA_DIR, exist_ok=True); dest_path = os.path.join(APP_DATA_DIR, config_filename)
-            if not os.path.exists(dest_path):
-                logger.info(f"Không tìm thấy config.json trong AppData. Sao chép file mặc định.")
-                if getattr(sys, 'frozen', False): source_path = os.path.join(sys._MEIPASS, config_filename)
-                else: source_path = os.path.join(os.path.abspath("."), config_filename)
-                if os.path.exists(source_path): shutil.copyfile(source_path, dest_path)
-                else:
-                    logger.warning(f"Không tìm thấy file config gốc, tạo file mới tại {dest_path}")
-                    with open(dest_path, "w") as f: json.dump({"camera_index": 0}, f, indent=4)
-            with open(dest_path, "r") as f:
-                config = json.load(f); self.configured_camera_index = int(config.get("camera_index", 0))
-                logger.info(f"Đã đọc cấu hình từ AppData: sử dụng camera index = {self.configured_camera_index}")
-        except Exception as e: logger.error(f"Lỗi nghiêm trọng khi đọc hoặc tạo file config: {e}"); self.configured_camera_index = 0
