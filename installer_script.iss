@@ -5,7 +5,7 @@
 #define MyAppPublisher "MinhLuan"
 #define MyAppExeName "TrainingK54.exe"
 #define MyAppIconName "assets\app_icon.ico" 
-#define MyOutputFolder "dist\TapLuyenK54"
+#define MyOutputFolder "dist\TrainingK54"
 
 [Setup]
 ; AppId là một mã định danh duy nhất cho ứng dụng của bạn. 
