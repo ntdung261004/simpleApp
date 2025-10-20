@@ -106,7 +106,8 @@ class CompetitionWindow(QMainWindow):
 
     def __init__(self, worker: ProcessingWorker, trigger: BluetoothTrigger, config: dict):
         super().__init__()
-        self.gui = CompetitionGui()
+        # Sửa lỗi: Khởi tạo GUI trong __init__
+        self.gui = CompetitionGui(self) 
         self.setCentralWidget(self.gui)
         self.setStyleSheet("background-color: #2c3e50;")
         self.setWindowTitle("Chế Độ Kiểm Tra")
@@ -126,7 +127,13 @@ class CompetitionWindow(QMainWindow):
         self.current_shot_count = 0
         self.is_camera_connected = False
         self.calibrated_center = None
-        self.target_image_labels = {1: self.gui.target_1_image_label, 2: self.gui.target_2_image_label, 3: self.gui.target_3_image_label, 4: self.gui.target_4_image_label}
+        # Cập nhật thứ tự bia theo yêu cầu
+        self.target_image_labels = {
+            1: self.gui.target_1_image_label, # Bia 4b
+            2: self.gui.target_2_image_label, # Bia 4b
+            3: self.gui.target_3_image_label, # Bia 4c
+            4: self.gui.target_4_image_label  # Bia 4c
+        }
         self._setup_connections()
 
     def _setup_connections(self):
@@ -210,12 +217,10 @@ class CompetitionWindow(QMainWindow):
         self.current_shot_count += 1
         score = result.get('score', 0)
         
-        # === BẮT ĐẦU VÙNG THAY ĐỔI: THÊM ÂM THANH KHI BẮN TRƯỢT ===
         if score == 0:
             self.audio_manager.play_sound('miss')
         else:
             self.audio_manager.play_score(score)
-        # === KẾT THÚC VÙNG THAY ĐỔI ===
 
         current_shooter['shots'].append(score)
         self._update_scoreboard_and_markers(self.current_shot_count, score, result)
@@ -248,15 +253,37 @@ class CompetitionWindow(QMainWindow):
             self.audio_manager.play_sound('shot')
 
     def _update_scoreboard_and_markers(self, shot_number, score, result: dict):
-        target_scores_labels = {1: self.gui.target_1_score_label, 2: self.gui.target_2_score_label, 3: self.gui.target_3_score_label, 4: self.gui.target_4_score_label}; target_index = ((shot_number - 1) // 3) + 1; shot_in_target = ((shot_number - 1) % 3) + 1
+        target_scores_labels = {1: self.gui.target_1_score_label, 2: self.gui.target_2_score_label, 3: self.gui.target_3_score_label, 4: self.gui.target_4_score_label}; 
+        target_index = ((shot_number - 1) // 3) + 1
+        shot_in_target = ((shot_number - 1) % 3)
+        
         if target_index in target_scores_labels:
-            current_text = target_scores_labels[target_index].text().replace("Điểm: ", "").replace("--", ""); new_text = f"{score}" if shot_in_target == 1 else f"{current_text} - {score}" if current_text else f"{score}"; target_scores_labels[target_index].setText(f"Điểm: {new_text}")
-        coords = result.get('coords'); target_name = result.get('target_detected_raw')
+            score_label = target_scores_labels[target_index]
+            current_text = score_label.text().replace("Điểm: ", "").replace("--", "").strip()
+            scores = current_text.split(" - ") if current_text else []
+            
+            # Đảm bảo đủ chỗ cho điểm mới
+            while len(scores) < shot_in_target:
+                scores.append("0")
+            scores.append(str(score))
+            
+            new_text = " - ".join(scores)
+            score_label.setText(f"Điểm: {new_text}")
+
+        coords = result.get('coords')
+        target_name = result.get('target_detected_raw')
+        
         if coords and isinstance(coords, (list, tuple)) and len(coords) == 2 and target_name in self.TARGET_DIMENSIONS:
             orig_w, orig_h = self.TARGET_DIMENSIONS[target_name]
-            if orig_w > 0 and orig_h > 0: relative_coords = (coords[0] / orig_w, coords[1] / orig_h); target_image_label = self.target_image_labels.get(target_index); 
-            if target_image_label: target_image_label.add_hit_marker(relative_coords)
-        if self.competition_data and 0 <= self.current_shooter_index < len(self.competition_data['participants']): total_score = sum(self.competition_data['participants'][self.current_shooter_index]['shots']); self.gui.total_score_label.setText(f"Tổng điểm: {total_score}")
+            if orig_w > 0 and orig_h > 0: 
+                relative_coords = (coords[0] / orig_w, coords[1] / orig_h)
+                target_image_label = self.target_image_labels.get(target_index)
+                if target_image_label: 
+                    target_image_label.add_hit_marker(relative_coords)
+
+        if self.competition_data and 0 <= self.current_shooter_index < len(self.competition_data['participants']): 
+            total_score = sum(self.competition_data['participants'][self.current_shooter_index]['shots'])
+            self.gui.total_score_label.setText(f"Tổng điểm: {total_score}")
         self.gui.ammo_count_label.setText(f"Số đạn còn lại: {self.TOTAL_SHOTS - shot_number}/{self.TOTAL_SHOTS}")
 
     def _reset_scoreboard(self):
@@ -268,11 +295,9 @@ class CompetitionWindow(QMainWindow):
         self.disconnect_camera() 
         num_cameras = count_available_cameras()
         
-        # Nếu có 1 camera hoặc không có, giả định đó là camera tích hợp và yêu cầu cắm USB camera
         if num_cameras < 2:
             self.disconnect_camera("Vui lòng kết nối USB camera và nhấn 'Làm mới'")
         else:
-            # Nếu có từ 2 camera trở lên, kết nối vào index đã cấu hình
             if self.configured_camera_index < num_cameras:
                 self.connect_camera(self.configured_camera_index)
             else:

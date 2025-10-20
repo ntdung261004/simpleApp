@@ -13,11 +13,23 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 def convert_numpy_types(obj):
-    if isinstance(obj, (np.integer, np.int_)): return int(obj)
-    elif isinstance(obj, (np.floating, np.float_)): return float(obj)
-    elif isinstance(obj, np.ndarray): return obj.tolist()
-    elif isinstance(obj, (list, tuple)): return [convert_numpy_types(x) for x in obj]
-    elif isinstance(obj, dict): return {k: convert_numpy_types(v) for k, v in obj.items()}
+    """
+    Hàm đệ quy để chuyển đổi tất cả các kiểu dữ liệu của numpy thành
+    kiểu dữ liệu gốc của Python (int, float, list, dict).
+    Điều này cực kỳ quan trọng để đảm bảo tương thích với JSON sau khi build.
+    """
+    if isinstance(obj, (np.integer, np.int_, np.intc, np.intp, np.int8,
+                        np.int16, np.int32, np.int64, np.uint8,
+                        np.uint16, np.uint32, np.uint64)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float_, np.float16, np.float32, np.float64)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (list, tuple)):
+        return [convert_numpy_types(x) for x in obj]
+    elif isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
     return obj
 
 def get_app_data_path(file_name: str) -> str:
@@ -55,14 +67,14 @@ class DatabaseManager:
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS soldiers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, class_name TEXT) """)
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY, soldier_id INTEGER NOT NULL, exercise_name TEXT, start_time TEXT NOT NULL, end_time TEXT, FOREIGN KEY (soldier_id) REFERENCES soldiers (id) ON DELETE CASCADE) """)
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS shots (id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL, shot_number INTEGER NOT NULL, score INTEGER, target_detected TEXT, coords TEXT, image_path TEXT, timestamp TEXT NOT NULL, FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE) """)
-            self.cursor.execute(""" 
+            self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS competitions (
-                    id INTEGER PRIMARY KEY, 
-                    name TEXT NOT NULL UNIQUE, 
-                    status TEXT NOT NULL DEFAULT 'in_progress', 
-                    state TEXT, 
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL DEFAULT 'in_progress',
+                    state TEXT,
                     created_at TEXT NOT NULL
-                ) 
+                )
             """)
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS competition_participants (id INTEGER PRIMARY KEY, competition_id INTEGER NOT NULL, soldier_id INTEGER NOT NULL, FOREIGN KEY (competition_id) REFERENCES competitions (id) ON DELETE CASCADE, FOREIGN KEY (soldier_id) REFERENCES soldiers (id) ON DELETE CASCADE) """)
             self.cursor.execute(""" CREATE TABLE IF NOT EXISTS competition_shots (id INTEGER PRIMARY KEY, competition_id INTEGER NOT NULL, participant_id INTEGER NOT NULL, shot_number INTEGER NOT NULL, score INTEGER, target_detected TEXT, coords TEXT, image_path TEXT, timestamp TEXT NOT NULL, FOREIGN KEY (competition_id) REFERENCES competitions (id) ON DELETE CASCADE, FOREIGN KEY (participant_id) REFERENCES soldiers (id) ON DELETE CASCADE) """)
@@ -122,11 +134,12 @@ class DatabaseManager:
     def add_shot(self, session_id: int, shot_number: int, score: int, target_detected: str, coords: Optional[tuple], image_path: str):
         if not self.conn: return
         try:
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S'); safe_coords = convert_numpy_types(coords)
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            safe_coords = convert_numpy_types(coords)
             coords_str = json.dumps(safe_coords) if safe_coords is not None else None
             sql = "INSERT INTO shots (session_id, shot_number, score, target_detected, coords, image_path, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)"
             self.cursor.execute(sql, (session_id, shot_number, score, target_detected, coords_str, image_path, timestamp)); self.conn.commit()
-        except sqlite3.Error as e: logger.error(f"Lỗi khi lưu phát bắn: {e}")
+        except (sqlite3.Error, TypeError) as e: logger.error(f"Lỗi khi lưu phát bắn (tập luyện): {e}")
 
     def update_session_name(self, session_id: int, new_name: str) -> bool:
         if not self.conn: return False
@@ -192,11 +205,12 @@ class DatabaseManager:
             self.cursor.execute("SELECT COUNT(id) FROM competition_shots WHERE competition_id = ? AND participant_id = ?", (competition_id, soldier_id))
             shot_count = self.cursor.fetchone()[0]; shot_number = shot_count + 1
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            safe_coords = convert_numpy_types(coords); coords_str = json.dumps(safe_coords) if safe_coords is not None else None
+            safe_coords = convert_numpy_types(coords)
+            coords_str = json.dumps(safe_coords) if safe_coords is not None else None
             sql = "INSERT INTO competition_shots (competition_id, participant_id, shot_number, score, target_detected, coords, image_path, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             params = (competition_id, soldier_id, shot_number, score, target_name, coords_str, image_path, timestamp)
             self.cursor.execute(sql, params); self.conn.commit()
-        except sqlite3.Error as e: logger.error(f"Lỗi khi thêm phát bắn: {e}"); self.conn.rollback()
+        except (sqlite3.Error, TypeError) as e: logger.error(f"Lỗi khi thêm phát bắn (kiểm tra): {e}"); self.conn.rollback()
 
     def delete_shots_for_turn(self, competition_id: int, soldier_id: int, num_shots_to_delete: int) -> bool:
         if not self.conn: return False
@@ -265,12 +279,7 @@ class DatabaseManager:
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi lấy bảng xếp hạng: {e}"); return []
 
-    # === BẮT ĐẦU VÙNG THAY ĐỔI ===
     def get_shots_for_competition(self, competition_id: int, participant_id: int = None) -> list:
-        """
-        Lấy chi tiết các phát bắn của một cuộc thi.
-        Nếu có participant_id, chỉ lấy của người đó.
-        """
         if not self.conn: return []
         try:
             if participant_id:
@@ -279,13 +288,11 @@ class DatabaseManager:
             else:
                 sql = "SELECT * FROM competition_shots WHERE competition_id = ? ORDER BY participant_id, shot_number ASC"
                 params = (competition_id,)
-            
             self.cursor.execute(sql, params)
             return [dict(row) for row in self.cursor.fetchall()]
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi lấy chi tiết phát bắn cuộc thi: {e}")
             return []
-    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def update_competition_status(self, competition_id: int, status: str) -> bool:
         if not self.conn: return False

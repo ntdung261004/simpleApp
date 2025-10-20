@@ -2,7 +2,7 @@
 import logging
 import json
 from PySide6.QtWidgets import (
-    QMainWindow, QListWidgetItem, QTableWidgetItem, QGroupBox, 
+    QMainWindow, QListWidgetItem, QTableWidgetItem, QGroupBox,
     QLabel, QGridLayout, QVBoxLayout
 )
 from PySide6.QtCore import Signal, Slot, Qt, QPoint
@@ -16,7 +16,6 @@ from utils.resource_path import resource_path
 
 logger = logging.getLogger(__name__)
 
-# === BẮT ĐẦU VÙNG THAY ĐỔI: THÊM WIDGET VẼ VỆT ĐẠN ===
 class ShotMarkerLabel(QLabel):
     """Một QLabel tùy chỉnh để hiển thị ảnh bia và vẽ các vệt đạn lên trên."""
     def __init__(self, parent=None):
@@ -51,15 +50,13 @@ class ShotMarkerLabel(QLabel):
         pen = QPen(QColor("#e74c3c"))
         pen.setWidth(2)
         painter.setPen(pen)
-        
+
         for rel_x, rel_y in self.hit_points_relative:
             draw_x = offset_x + (rel_x * scaled_pixmap.width())
             draw_y = offset_y + (rel_y * scaled_pixmap.height())
             marker_size = 5
             painter.drawLine(int(draw_x - marker_size), int(draw_y), int(draw_x + marker_size), int(draw_y))
             painter.drawLine(int(draw_x), int(draw_y - marker_size), int(draw_x), int(draw_y + marker_size))
-# === KẾT THÚC VÙNG THAY ĐỔI ===
-
 
 class CompetitionStatsWindow(QMainWindow):
     back_to_menu_signal = Signal()
@@ -80,9 +77,7 @@ class CompetitionStatsWindow(QMainWindow):
     def _connect_signals(self):
         self.ui.back_button.clicked.connect(self.back_to_menu_signal.emit)
         self.ui.completed_list.itemSelectionChanged.connect(self._on_competition_selected)
-        # === BẮT ĐẦU VÙNG THAY ĐỔI ===
         self.ui.ranking_table.itemSelectionChanged.connect(self._on_shooter_selected)
-        # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def enter_view(self):
         self.load_completed_competitions()
@@ -111,7 +106,7 @@ class CompetitionStatsWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Lỗi khi tải DS cuộc thi đã hoàn thành: {e}")
             self.ui.completed_list.addItem("Lỗi khi tải dữ liệu.")
-            
+
     def set_panels_state(self, state: str):
         if state == "INITIAL":
             self.ui.center_stack.setCurrentIndex(0)
@@ -130,10 +125,10 @@ class CompetitionStatsWindow(QMainWindow):
             self.set_panels_state("INITIAL")
             self.current_competition_id = None
             return
-        
+
         item = selected_items[0]
         self.current_competition_id = item.data(Qt.UserRole)
-        
+
         if self.current_competition_id:
             ranking_data = self.db.get_competition_ranking(self.current_competition_id)
             self._populate_ranking_table(ranking_data)
@@ -150,6 +145,7 @@ class CompetitionStatsWindow(QMainWindow):
             rank_item = QTableWidgetItem(rank_text)
             rank_item.setTextAlignment(Qt.AlignCenter)
             if rank <= 3: rank_item.setFont(QFont("Segoe UI", 16))
+            # Lưu ID của người bắn vào item đầu tiên của hàng để truy xuất sau
             rank_item.setData(Qt.UserRole, participant['soldier_id'])
             self.ui.ranking_table.setItem(i, 0, rank_item)
             self.ui.ranking_table.setItem(i, 1, QTableWidgetItem(participant['name']))
@@ -160,8 +156,7 @@ class CompetitionStatsWindow(QMainWindow):
             score_item.setFont(QFont("Segoe UI", 14, QFont.Bold))
             score_item.setForeground(QColor("#f1c40f"))
             self.ui.ranking_table.setItem(i, 3, score_item)
-    
-    # === BẮT ĐẦU VÙNG THAY ĐỔI: LOGIC HIỂN THỊ CHI TIẾT ===
+
     @Slot()
     def _on_shooter_selected(self):
         """Xử lý khi người dùng chọn một xạ thủ từ bảng xếp hạng."""
@@ -169,14 +164,16 @@ class CompetitionStatsWindow(QMainWindow):
         if not selected_items or self.current_competition_id is None:
             self.set_panels_state("COMPETITION_SELECTED")
             return
-            
+
         row = self.ui.ranking_table.row(selected_items[0])
         shooter_id = self.ui.ranking_table.item(row, 0).data(Qt.UserRole)
         shooter_name = self.ui.ranking_table.item(row, 1).text()
-        
+
         if shooter_id:
-            shooter_shots = self.db.get_shots_for_competition(self.current_competition_id, shooter_id)
-            self._populate_shooter_details(shooter_name, shooter_shots)
+            all_shooter_shots = self.db.get_shots_for_competition(self.current_competition_id, shooter_id)
+            # Sắp xếp lại để chắc chắn thứ tự là đúng
+            all_shooter_shots.sort(key=lambda s: s.get('shot_number', 0))
+            self._populate_shooter_details(shooter_name, all_shooter_shots)
             self.set_panels_state("SHOOTER_SELECTED")
 
     def _clear_grid_layout(self, layout):
@@ -187,52 +184,57 @@ class CompetitionStatsWindow(QMainWindow):
             if widget is not None:
                 widget.deleteLater()
 
-    def _populate_shooter_details(self, shooter_name: str, shots: list):
-        """Điền dữ liệu chi tiết của xạ thủ vào cột bên phải."""
+    def _populate_shooter_details(self, shooter_name: str, all_shots: list):
+        """
+        Điền dữ liệu chi tiết của xạ thủ, phân chia 12 phát bắn vào 4 bia
+        và vẽ lại các vệt đạn từ CSDL, theo đúng thứ tự yêu cầu.
+        """
         self._clear_grid_layout(self.ui.target_details_grid)
         self.ui.shooter_name_label.setText(f"Tên: {shooter_name}")
-        
-        # Nhóm 12 phát bắn vào 4 bia
-        targets = [shots[i:i + 3] for i in range(0, len(shots), 3)]
-        
-        for i, target_shots in enumerate(targets):
-            target_num = i + 1
-            is_4c = target_num > 2
-            
-            target_box = QGroupBox(f"Bia số {target_num}")
+
+        # === BẮT ĐẦU VÙNG SỬA LỖI: LOGIC PHÂN CHIA BIA MỚI ===
+        # Định nghĩa rõ ràng thứ tự bia theo yêu cầu
+        target_definitions = [
+            {'title': "Bia 1 (Bia 4b)", 'shots': all_shots[0:3], 'type': '4b'},
+            {'title': "Bia 2 (Bia 4b)", 'shots': all_shots[3:6], 'type': '4b'},
+            {'title': "Bia 3 (Bia 4c)", 'shots': all_shots[6:9], 'type': '4c'},
+            {'title': "Bia 4 (Bia 4c)", 'shots': all_shots[9:12], 'type': '4c'},
+        ]
+        # === KẾT THÚC VÙNG SỬA LỖI ===
+
+        for i, target_info in enumerate(target_definitions):
+            target_box = QGroupBox(target_info['title'])
             target_box.setAlignment(Qt.AlignCenter)
             box_layout = QVBoxLayout(target_box)
-            
-            # Label ảnh bia
+
             img_label = ShotMarkerLabel()
-            img_path = resource_path(f"assets/images/original/bia_{'4c' if is_4c else '4b'}.png")
+            img_path = resource_path(f"assets/images/original/bia_{target_info['type']}.png")
             img_label.setPixmap(QPixmap(img_path))
 
             scores = []
-            for shot in target_shots:
-                scores.append(shot['score'])
+            for shot in target_info['shots']:
+                scores.append(shot.get('score', 0))
                 coords_str = shot.get('coords')
+                
                 if coords_str:
                     try:
                         coords = json.loads(coords_str)
-                        target_name_raw = shot.get('target_detected', 'bia_4b' if not is_4c else 'bia_4c')
+                        target_name_raw = shot.get('target_detected', f"bia_{target_info['type']}")
                         orig_w, orig_h = self.TARGET_DIMENSIONS.get(target_name_raw, (500, 500))
+
                         if coords and orig_w > 0 and orig_h > 0:
                             relative_coords = (coords[0] / orig_w, coords[1] / orig_h)
                             img_label.add_hit_marker(relative_coords)
                     except (json.JSONDecodeError, TypeError):
-                        logger.warning(f"Không thể parse tọa độ cho phát bắn: {shot['id']}")
+                        logger.warning(f"Không thể parse tọa độ cho phát bắn ID: {shot.get('id')}")
 
-            # Label điểm
             score_text = " - ".join(map(str, scores))
             score_label = QLabel(f"Điểm: {score_text} (Tổng: {sum(scores)})")
             score_label.setAlignment(Qt.AlignCenter)
             score_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #f1c40f;")
-            
+
             box_layout.addWidget(img_label, 1)
             box_layout.addWidget(score_label)
-            
-            # Thêm vào grid layout
+
             row, col = divmod(i, 2)
             self.ui.target_details_grid.addWidget(target_box, row, col)
-    # === KẾT THÚC VÙNG THAY ĐỔI ===

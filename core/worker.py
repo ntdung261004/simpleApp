@@ -11,7 +11,7 @@ from module.detection_module import ObjectDetector
 from utils.processing import check_object_center
 from utils.handles import handle_hit_bia_4b, handle_hit_bia_4c, handle_miss
 from utils.resource_path import resource_path
-from config import APP_DATA_DIR # <<< THÊM MỚI
+from config import APP_DATA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +24,9 @@ class ProcessingWorker(QObject):
         self.is_initialized = False
         try:
             logger.info("Worker: Bắt đầu khởi tạo...")
-            
-            # === BẮT ĐẦU VÙNG THAY ĐỔI: Tải model từ thư mục dữ liệu người dùng ===
-            # Lấy đường dẫn tương đối từ config
             model_relative_path = config.get("yolo_model_path", "assets/models/K54v2.pt")
-            # Tạo đường dẫn tuyệt đối đến file model trong thư mục dữ liệu người dùng
             model_path = os.path.join(APP_DATA_DIR, model_relative_path)
             logging.info(f"Worker: Đang tải model từ: {model_path}")
-            # === KẾT THÚC VÙNG THAY ĐỔI ===
 
             if not os.path.exists(model_path):
                 raise FileNotFoundError(f"Không tìm thấy file model AI tại: {model_path}. Vui lòng kiểm tra lại file config.json và sự tồn tại của file.")
@@ -119,12 +114,25 @@ class ProcessingWorker(QObject):
             try: cv2.imwrite(image_path, photo_frame)
             except Exception as e: logger.error(f"Worker: Lỗi khi lưu ảnh gốc: {e}")
 
+        # === BẮT ĐẦU VÙNG SỬA LỖI QUAN TRỌNG NHẤT ===
+        # Chuyển đổi tường minh tọa độ sang kiểu Python gốc trước khi gửi tín hiệu.
+        # Đây là bước sửa lỗi cốt lõi để tương thích sau khi build.
+        safe_coords = None
+        raw_coords = result_data.get('coords')
+        if raw_coords is not None and isinstance(raw_coords, (tuple, list)) and len(raw_coords) == 2:
+            try:
+                safe_coords = (int(raw_coords[0]), int(raw_coords[1]))
+            except (ValueError, TypeError):
+                logger.warning(f"Không thể chuyển đổi tọa độ {raw_coords} sang kiểu int.")
+                safe_coords = None
+        # === KẾT THÚC VÙNG SỬA LỖI QUAN TRỌNG NHẤT ===
+
         final_package = {
             'time_str': datetime.now().strftime('%H:%M:%S'),
             'target_name': result_data.get('target', 'Trượt'),
             'score': result_data.get('score', 0),
             'result_frame': result_data.get('image'),
-            'coords': result_data.get('coords'),
+            'coords': safe_coords, # Sử dụng tọa độ đã được làm sạch
             'image_path': image_path,
             'target_detected_raw': target_detected_raw,
             'aim_point_used': aim_point
