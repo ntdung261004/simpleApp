@@ -3,6 +3,7 @@ import os
 import sys
 import logging
 import json
+import shutil # <<< THÊM MỚI
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QMessageBox
 from PySide6.QtCore import QThread, Slot, QTimer
 from datetime import datetime
@@ -20,6 +21,7 @@ from core.worker import ProcessingWorker
 from core.triggers import BluetoothTrigger
 from config import APP_DATA_DIR
 from utils.license_manager import verify_key
+from utils.resource_path import resource_path # <<< THÊM MỚI
 
 os.makedirs(APP_DATA_DIR, exist_ok=True)
 log_file_path = os.path.join(APP_DATA_DIR, "app_log.txt")
@@ -81,14 +83,49 @@ class ApplicationController(QMainWindow):
         self.processing_thread.start()
         self.bt_trigger.start_global_listener()
 
+    # === BẮT ĐẦU VÙNG THAY ĐỔI: LOGIC TẢI CONFIG VÀ SAO CHÉP TÀI NGUYÊN ===
     def _load_config(self) -> dict:
-        config_path = os.path.join(APP_DATA_DIR, "config.json")
-        defaults = {"camera_index": 0, "yolo_confidence_threshold": 0.45}
-        if not os.path.exists(config_path): return defaults
+        dest_config_path = os.path.join(APP_DATA_DIR, "config.json")
+        defaults = {"camera_index": 1, "yolo_confidence_threshold": 0.35, "yolo_model_path": "assets/models/K54v2.pt"}
+
+        # 1. Sao chép file config nếu chưa tồn tại trong thư mục dữ liệu người dùng
+        if not os.path.exists(dest_config_path):
+            try:
+                source_config_path = resource_path("config.json")
+                if os.path.exists(source_config_path):
+                    shutil.copyfile(source_config_path, dest_config_path)
+                    logging.info(f"Đã sao chép config.json mặc định vào {APP_DATA_DIR}")
+            except Exception as e:
+                logging.error(f"Không thể sao chép config.json: {e}")
+
+        # 2. Luôn đọc file config từ thư mục dữ liệu người dùng
         try:
-            with open(config_path, "r") as f: loaded = json.load(f)
-            defaults.update(loaded); return defaults
-        except (json.JSONDecodeError, IOError): return defaults
+            with open(dest_config_path, "r") as f:
+                loaded_config = json.load(f)
+            defaults.update(loaded_config)
+        except (IOError, json.JSONDecodeError):
+            logging.warning(f"Không thể đọc {dest_config_path}. Sử dụng cấu hình mặc định.")
+        
+        config = defaults
+
+        # 3. Sao chép file model AI nếu chưa tồn tại
+        model_relative_path = config.get("yolo_model_path")
+        if model_relative_path:
+            dest_model_path = os.path.join(APP_DATA_DIR, model_relative_path)
+            # Tạo thư mục nếu cần (ví dụ: assets/models)
+            os.makedirs(os.path.dirname(dest_model_path), exist_ok=True)
+
+            if not os.path.exists(dest_model_path):
+                try:
+                    source_model_path = resource_path(model_relative_path)
+                    if os.path.exists(source_model_path):
+                        shutil.copyfile(source_model_path, dest_model_path)
+                        logging.info(f"Đã sao chép model mặc định vào {os.path.dirname(dest_model_path)}")
+                except Exception as e:
+                    logging.error(f"Không thể sao chép file model: {e}")
+        
+        return config
+    # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def _connect_signals(self):
         # Navigation

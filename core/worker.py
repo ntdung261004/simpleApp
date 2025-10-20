@@ -11,6 +11,7 @@ from module.detection_module import ObjectDetector
 from utils.processing import check_object_center
 from utils.handles import handle_hit_bia_4b, handle_hit_bia_4c, handle_miss
 from utils.resource_path import resource_path
+from config import APP_DATA_DIR # <<< THÊM MỚI
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +24,17 @@ class ProcessingWorker(QObject):
         self.is_initialized = False
         try:
             logger.info("Worker: Bắt đầu khởi tạo...")
-            model_relative_path = config.get("yolo_model_path", "assets/models/K54v2.pt")
-            model_path = resource_path(model_relative_path)
             
+            # === BẮT ĐẦU VÙNG THAY ĐỔI: Tải model từ thư mục dữ liệu người dùng ===
+            # Lấy đường dẫn tương đối từ config
+            model_relative_path = config.get("yolo_model_path", "assets/models/K54v2.pt")
+            # Tạo đường dẫn tuyệt đối đến file model trong thư mục dữ liệu người dùng
+            model_path = os.path.join(APP_DATA_DIR, model_relative_path)
+            logging.info(f"Worker: Đang tải model từ: {model_path}")
+            # === KẾT THÚC VÙNG THAY ĐỔI ===
+
             if not os.path.exists(model_path):
-                raise FileNotFoundError(f"Không tìm thấy file model AI tại: {model_path}")
+                raise FileNotFoundError(f"Không tìm thấy file model AI tại: {model_path}. Vui lòng kiểm tra lại file config.json và sự tồn tại của file.")
 
             self.detector = ObjectDetector(model_path=model_path)
             if self.detector.model is None:
