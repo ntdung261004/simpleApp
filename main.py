@@ -93,26 +93,26 @@ class ApplicationController(QMainWindow):
     # --- BẮT ĐẦU VÙNG SỬA ĐỔI: VIẾT LẠI HOÀN TOÀN HÀM _load_config ---
     def _load_config(self) -> dict:
         """
-        Tải file config.json. Luôn sao chép/ghi đè file từ thư mục gốc của dự án
-        vào AppData để đảm bảo cấu hình luôn được cập nhật.
+        Tải file config.json. Chỉ sao chép file gốc vào AppData nếu nó chưa tồn tại.
+        Điều này giúp bảo toàn các thay đổi của người dùng.
         """
         config_filename = "config.json"
         dest_path = os.path.join(APP_DATA_DIR, config_filename)
 
-        # 1. Xác định đường dẫn file config gốc (hoạt động cả khi dev và khi đã đóng gói)
-        source_path = resource_path(config_filename)
+        # Chỉ sao chép file config gốc nếu file trong AppData chưa tồn tại
+        if not os.path.exists(dest_path):
+            logging.info(f"'{config_filename}' không tìm thấy trong AppData. Sao chép file mặc định.")
+            source_path = resource_path(config_filename)
+            if os.path.exists(source_path):
+                try:
+                    shutil.copyfile(source_path, dest_path)
+                    logging.info(f"Đã sao chép thành công config mặc định vào AppData.")
+                except (IOError, shutil.SameFileError) as e:
+                    logging.error(f"Không thể sao chép file config mặc định: {e}")
+            else:
+                logging.error(f"Lỗi nghiêm trọng: Không tìm thấy file config gốc tại '{source_path}'.")
 
-        # 2. Luôn sao chép, ghi đè file config trong AppData
-        if os.path.exists(source_path):
-            try:
-                shutil.copyfile(source_path, dest_path)
-                logging.info(f"Đã cập nhật '{config_filename}' trong AppData từ file gốc.")
-            except (IOError, shutil.SameFileError) as e:
-                logging.warning(f"Không thể cập nhật file config từ file gốc: {e}. Sẽ thử dùng file cũ nếu có.")
-        else:
-            logging.error(f"Lỗi nghiêm trọng: Không tìm thấy file config gốc tại '{source_path}'.")
-
-        # 3. Đọc file config từ AppData (sau khi đã được cập nhật)
+        # Bây giờ, tiến hành đọc file config từ AppData (dù nó vừa được tạo hay đã có sẵn)
         if os.path.exists(dest_path):
             try:
                 with open(dest_path, 'r', encoding='utf-8') as f:
@@ -120,11 +120,9 @@ class ApplicationController(QMainWindow):
             except (json.JSONDecodeError, IOError) as e:
                 logging.error(f"Lỗi khi đọc config từ AppData: {e}")
         
-        # Trường hợp xấu nhất: không có file nào, trả về dict rỗng để tránh crash
         QMessageBox.critical(None, "Lỗi nghiêm trọng", "Không thể tải file cấu hình (config.json). Ứng dụng có thể không hoạt động đúng.")
         return {}
-    # --- KẾT THÚC VÙNG SỬA ĐỔI ---
-            
+     
     def connect_signals(self):
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)       
         self.main_menu.stats_button.clicked.connect(self.show_manage_screen)

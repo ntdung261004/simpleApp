@@ -28,17 +28,70 @@ class ManageGui(QWidget):
         self.config = config
         self.setObjectName("ManageWidget")
         self.setStyleSheet("""
-            #ManageWidget { background-color: #2c3e50; color: #ecf0f1; font-family: 'Segoe UI'; }
-            QFrame#panel { background-color: #34495e; border-radius: 12px; border: 1px solid #4a6278; }
-            QLabel#title { color: #ecf0f1; padding: 10px; }
-            QGroupBox { font-size: 14px; font-weight: bold; border: 1px solid #4a6278; border-radius: 8px; margin-top: 10px; }
-            QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top center; padding: 2px 8px; background-color: #415a72; border-radius: 4px; }
-            QPushButton { background-color: #1abc9c; color: white; font-size: 14px; font-weight: bold; border: none; padding: 8px 18px; border-radius: 8px; }
-            QPushButton:hover { background-color: #16a085; }
-            QPushButton#danger { background-color: #e74c3c; }
-            QPushButton#danger:hover { background-color: #c0392b; }
-            QListWidget, QTableWidget { background-color: #2c3e50; border: 1px solid #4a6278; border-radius: 6px; gridline-color: #4a6278; }
-            QHeaderView::section { background-color: #415a72; color: #ecf0f1; padding: 4px; border: 1px solid #4a6278; }
+            #ManageWidget { 
+                background-color: #2c3e50; 
+                color: #ecf0f1; 
+                font-family: 'Segoe UI'; 
+            }
+            QFrame#panel { 
+                background-color: #34495e; 
+                border-radius: 12px; 
+                border: 1px solid #4a6278; 
+            }
+            QLabel#title { 
+                color: #ecf0f1; 
+                padding: 10px; 
+            }
+            QGroupBox { 
+                font-size: 14px; 
+                font-weight: bold; 
+                border: 1px solid #4a6278; 
+                border-radius: 8px; 
+                margin-top: 10px;
+                color: #ecf0f1; /* Sửa màu chữ cho GroupBox */
+            }
+            QGroupBox::title { 
+                subcontrol-origin: margin; 
+                subcontrol-position: top center; 
+                padding: 2px 8px; 
+                background-color: #415a72; 
+                border-radius: 4px; 
+            }
+            QPushButton { 
+                background-color: #1abc9c; 
+                color: white; 
+                font-size: 14px; 
+                font-weight: bold; 
+                border: none; 
+                padding: 8px 18px; 
+                border-radius: 8px; 
+            }
+            QPushButton:hover { 
+                background-color: #16a085; 
+            }
+            QPushButton#danger { 
+                background-color: #e74c3c; 
+            }
+            QPushButton#danger:hover { 
+                background-color: #c0392b; 
+            }
+            QListWidget, QTableWidget { 
+                background-color: #2c3e50; 
+                border: 1px solid #4a6278; 
+                border-radius: 6px; 
+                gridline-color: #4a6278;
+                color: #ecf0f1; /* Thêm màu chữ cho Bảng và Danh sách */
+            }
+            QListWidget::item:selected, QTableWidget::item:selected {
+                background-color: #1abc9c;
+                color: #ffffff; /* Đảm bảo chữ trắng khi được chọn */
+            }
+            QHeaderView::section { 
+                background-color: #415a72; 
+                color: #ecf0f1; 
+                padding: 4px; 
+                border: 1px solid #4a6278; 
+            }
         """)
         self.setupUi()
         self._apply_labels() # Gọi hàm áp dụng nhãn
