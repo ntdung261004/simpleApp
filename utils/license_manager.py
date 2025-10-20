@@ -1,39 +1,56 @@
+# file: utils/license_manager.py
 import hashlib
-from getmac import get_mac_address as gma # <<< THAY THẾ uuid BẰNG getmac
+import logging
+import subprocess # <<< THÊM MỚI
 
+logger = logging.getLogger(__name__)
 SECRET_SALT = "0986534710" # Giữ nguyên chuỗi bí mật của bạn
 
-def get_mac_address():
+# --- BẮT ĐẦU VÙNG SỬA ĐỔI: CHUYỂN HOÀN TOÀN SANG DÙNG UUID ---
+def get_system_uuid() -> str:
     """
-    Lấy địa chỉ MAC chính của máy tính một cách đáng tin cậy hơn.
-    Hàm này sẽ ưu tiên lấy MAC của card mạng đang hoạt động.
+    Lấy UUID của bo mạch chủ. Đây là định danh ổn định và đáng tin cậy nhất.
     """
     try:
-        # gma() sẽ trả về địa chỉ MAC dạng 'XX:XX:XX:XX:XX:XX'
-        mac = gma()
-        if mac:
-            # Chuẩn hóa về dạng chuỗi liền không phân cách, viết hoa
-            return mac.replace(':', '').upper()
-        # Nếu không tìm thấy, trả về một giá trị mặc định để tránh crash
-        return "MAC_NOT_FOUND" 
-    except Exception:
-        return "MAC_ERROR"
+        # Chạy lệnh của Windows để lấy UUID
+        command = "wmic csproduct get uuid"
+        uuid = subprocess.check_output(command, shell=True, text=True, stderr=subprocess.DEVNULL)
+        
+        # Kết quả trả về có chứa tiêu đề và các dòng trống, cần làm sạch
+        clean_uuid = uuid.strip().split('\n')[-1].strip()
+        
+        if clean_uuid and len(clean_uuid) > 5:
+             logger.info(f"Lấy được System UUID: {clean_uuid}")
+             return clean_uuid
+        else:
+            logger.error("Lệnh wmic không trả về UUID hợp lệ.")
+            return "UUID_NOT_FOUND"
+            
+    except Exception as e:
+        logger.error(f"Lỗi nghiêm trọng khi lấy System UUID: {e}")
+        return "UUID_ERROR"
 
-def generate_key(mac_address: str) -> str:
-    """Tạo license key từ địa chỉ MAC và chuỗi bí mật."""
-    # Luôn xóa các dấu phân cách khỏi MAC address đầu vào
-    clean_mac = mac_address.upper().replace(':', '').replace('-', '')
-    
+
+def generate_key(system_id: str) -> str:
+    """Tạo license key từ một định danh hệ thống (UUID) và chuỗi bí mật."""
     s = hashlib.sha256()
-    data = f"{clean_mac}-{SECRET_SALT}"
+    data = f"{system_id.strip().upper()}-{SECRET_SALT}"
     s.update(data.encode('utf-8'))
     return s.hexdigest()[:24].upper()
 
 def verify_key(license_key: str) -> bool:
     """Kiểm tra xem license key có hợp lệ với máy tính hiện tại không."""
-    current_mac = get_mac_address()
-    if "MAC_" in current_mac: # Xử lý trường hợp không lấy được MAC
+    current_uuid = get_system_uuid()
+    
+    if "UUID_" in current_uuid:
+        logger.error(f"Không thể xác thực key vì không lấy được UUID. Mã lỗi: {current_uuid}")
         return False
         
-    expected_key = generate_key(current_mac)
-    return license_key.upper() == expected_key
+    expected_key = generate_key(current_uuid)
+    is_valid = (license_key.strip().upper() == expected_key)
+    
+    if not is_valid:
+        logger.warning(f"Xác thực thất bại. Key cung cấp: {license_key}, Key mong đợi cho UUID ({current_uuid}): {expected_key}")
+        
+    return is_valid
+# --- KẾT THÚC VÙNG SỬA ĐỔI ---

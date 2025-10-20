@@ -1,16 +1,30 @@
+# file: generate_license.py
 from utils.license_manager import generate_key
+import os
 
-customer_mac_input = input("Nhập địa chỉ MAC của khách hàng: ").strip()
+# Hướng dẫn rõ ràng cho người dùng
+print("=====================================================================")
+print(" CÔNG CỤ TẠO LICENSE KEY DỰA TRÊN UUID CỦA MÁY KHÁCH HÀNG")
+print("---------------------------------------------------------------------")
+print(" Hướng dẫn khách hàng:")
+print(" 1. Mở Command Prompt (CMD) trên máy tính của họ.")
+print(" 2. Gõ chính xác lệnh sau rồi nhấn Enter:")
+print("    wmic csproduct get uuid")
+print(" 3. Sao chép và gửi lại cho bạn chuỗi ký tự UUID hiển thị.")
+print("=====================================================================")
 
-if customer_mac_input:
-    # <<< THAY ĐỔI: Chuẩn hóa MAC address trước khi tạo key
-    clean_mac = customer_mac_input.upper().replace(':', '').replace('-', '')
-    license_key = generate_key(clean_mac)
+customer_uuid_input = input("\nNhập System UUID của khách hàng: ").strip()
 
-    print("\n======================================")
-    print(f"  Địa chỉ MAC: {clean_mac}")
+if customer_uuid_input:
+    license_key = generate_key(customer_uuid_input)
+
+    print("\n--------------------------------------")
+    print(f"  System UUID: {customer_uuid_input.upper()}")
     print(f"  LICENSE KEY: {license_key}")
-    print("======================================")
+    print("--------------------------------------")
     print("\n>> Gửi LICENSE KEY này cho khách hàng.")
 else:
-    print("Địa chỉ MAC không được để trống.")
+    print("\nLỗi: System UUID không được để trống.")
+
+# Giữ cửa sổ console mở để người dùng có thể copy key
+os.system("pause")
