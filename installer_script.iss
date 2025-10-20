@@ -1,6 +1,6 @@
 ; === Shooting App Installer Script ===
 
-#define MyAppName "Tap luyen K54"
+#define MyAppName "Tập Luyện K54 - Bản dùng thử"
 #define MyAppVersion "1.0"
 #define MyAppPublisher "MinhLuan"
 #define MyAppExeName "TrainingK54.exe"
