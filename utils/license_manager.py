@@ -1,35 +1,48 @@
 # file: utils/license_manager.py
 import hashlib
 import logging
-import subprocess # <<< THÊM MỚI
+import subprocess
+import sys # <<< THÊM MỚI để kiểm tra hệ điều hành
 
 logger = logging.getLogger(__name__)
 SECRET_SALT = "0986534710" # Giữ nguyên chuỗi bí mật của bạn
 
-# --- BẮT ĐẦU VÙNG SỬA ĐỔI: CHUYỂN HOÀN TOÀN SANG DÙNG UUID ---
+# --- BẮT ĐẦU VÙNG SỬA ĐỔI: HỖ TRỢ ĐA NỀN TẢNG (WINDOWS & MACOS) ---
 def get_system_uuid() -> str:
     """
-    Lấy UUID của bo mạch chủ. Đây là định danh ổn định và đáng tin cậy nhất.
+    Lấy UUID của bo mạch chủ, hoạt động trên cả Windows và macOS.
+    Đây là định danh ổn định và đáng tin cậy.
     """
-    try:
-        # Chạy lệnh của Windows để lấy UUID
+    platform = sys.platform
+    command = ""
+    
+    if platform == "win32":
+        # Lệnh cho Windows
         command = "wmic csproduct get uuid"
-        uuid = subprocess.check_output(command, shell=True, text=True, stderr=subprocess.DEVNULL)
+    elif platform == "darwin":
+        # Lệnh cho macOS
+        command = "ioreg -d2 -c IOPlatformExpertDevice | awk -F\\\" '/IOPlatformUUID/{print $(NF-1)}'"
+    else:
+        logger.error(f"Hệ điều hành không được hỗ trợ: {platform}")
+        return "UUID_UNSUPPORTED_OS"
+
+    try:
+        # Chạy lệnh tương ứng với hệ điều hành
+        uuid_raw = subprocess.check_output(command, shell=True, text=True, stderr=subprocess.DEVNULL)
         
-        # Kết quả trả về có chứa tiêu đề và các dòng trống, cần làm sạch
-        clean_uuid = uuid.strip().split('\n')[-1].strip()
+        # Làm sạch kết quả trả về
+        clean_uuid = uuid_raw.strip().split('\n')[-1].strip()
         
         if clean_uuid and len(clean_uuid) > 5:
-             logger.info(f"Lấy được System UUID: {clean_uuid}")
+             logger.info(f"Lấy được System UUID ({platform}): {clean_uuid}")
              return clean_uuid
         else:
-            logger.error("Lệnh wmic không trả về UUID hợp lệ.")
+            logger.error(f"Lệnh ({command}) không trả về UUID hợp lệ.")
             return "UUID_NOT_FOUND"
             
     except Exception as e:
-        logger.error(f"Lỗi nghiêm trọng khi lấy System UUID: {e}")
+        logger.error(f"Lỗi nghiêm trọng khi lấy System UUID trên {platform}: {e}")
         return "UUID_ERROR"
-
 
 def generate_key(system_id: str) -> str:
     """Tạo license key từ một định danh hệ thống (UUID) và chuỗi bí mật."""

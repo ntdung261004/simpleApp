@@ -107,7 +107,7 @@ class CompetitionWindow(QMainWindow):
     def __init__(self, worker: ProcessingWorker, trigger: BluetoothTrigger, config: dict):
         super().__init__()
         # Sửa lỗi: Khởi tạo GUI trong __init__
-        self.gui = CompetitionGui(self) 
+        self.gui = CompetitionGui() 
         self.setCentralWidget(self.gui)
         self.setStyleSheet("background-color: #2c3e50;")
         self.setWindowTitle("Chế Độ Kiểm Tra")
