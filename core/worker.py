@@ -17,7 +17,12 @@ logger = logging.getLogger(__name__)
 
 class ProcessingWorker(QObject):
     practice_finished = Signal(dict)
-    competition_finished = Signal(dict, object)
+    
+    # === BẮT ĐẦU VÙNG SỬA LỖI 1: ĐỊNH NGHĨA TÍN HIỆU CHÍNH XÁC ===
+    # Khai báo tường minh cả hai tham số đều là 'dict' để đảm bảo
+    # việc truyền dữ liệu ổn định sau khi build.
+    competition_finished = Signal(dict, dict)
+    # === KẾT THÚC VÙNG SỬA LỖI 1 ===
 
     def __init__(self, config: dict):
         super().__init__()
@@ -79,13 +84,10 @@ class ProcessingWorker(QObject):
 
     @Slot(np.ndarray, str, str, object)
     def process_image(self, photo_frame, image_path, mode, metadata):
-        """Slot này sẽ thực hiện toàn bộ công việc xử lý ảnh."""
         if not self.is_initialized or photo_frame is None:
             logger.warning("Worker chưa sẵn sàng hoặc không có ảnh, bỏ qua xử lý.")
             return
 
-        logger.info(f"Worker: Đã nhận ảnh cho chế độ '{mode}'. Bắt đầu xử lý...")
-        
         aim_point = metadata.get('aim_point') if isinstance(metadata, dict) else None
         detections = self.detector.detect(photo_frame, conf=self.confidence_threshold)
         status, hit_info = check_object_center(detections, photo_frame, aim_point)
@@ -125,16 +127,20 @@ class ProcessingWorker(QObject):
                 safe_coords = None
         
         if mode == 'practice':
+            # === BẮT ĐẦU VÙNG SỬA LỖI 2: KHÔI PHỤC DỮ LIỆU TÂM NGẮM ===
+            # Thêm lại 'aim_point_used' vào gói dữ liệu để giao diện có thể
+            # vẽ lại tâm đỏ lên ảnh kết quả.
             practice_package = {
-                'time_str': datetime.now().strftime('%H%M:%S'),
+                'time_str': datetime.now().strftime('%H:%M:%S'),
                 'target_name': result_data.get('target', 'Trượt'),
                 'score': result_data.get('score', 0),
                 'result_frame': result_data.get('image'),
                 'coords': safe_coords,
                 'image_path': image_path,
                 'target_detected_raw': target_detected_raw,
+                'aim_point_used': aim_point # <<< DÒNG NÀY ĐÃ ĐƯỢC THÊM LẠI
             }
-            logger.info(f"LOG WORKER (PRACTICE): Chuẩn bị gửi đi - Coords: {practice_package.get('coords')}")
+            # === KẾT THÚC VÙNG SỬA LỖI 2 ===
             self.practice_finished.emit(practice_package)
             
         elif mode == 'competition':
@@ -144,7 +150,4 @@ class ProcessingWorker(QObject):
                 'image_path': image_path,
                 'target_detected_raw': target_detected_raw
             }
-            # === BẮT ĐẦU VÙNG THÊM MỚI: GHI LOG CHI TIẾT ===
-            logger.info(f"LOG WORKER (COMPETITION): Chuẩn bị gửi đi - Gói dữ liệu: {competition_package}")
-            # === KẾT THÚC VÙNG THÊM MỚI ===
             self.competition_finished.emit(competition_package, metadata)
