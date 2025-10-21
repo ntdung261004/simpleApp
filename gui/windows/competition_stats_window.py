@@ -3,7 +3,7 @@ import logging
 import json
 from PySide6.QtWidgets import (
     QMainWindow, QListWidgetItem, QTableWidgetItem, QGroupBox,
-    QLabel, QGridLayout, QVBoxLayout
+    QLabel, QGridLayout, QVBoxLayout, QMessageBox
 )
 from PySide6.QtCore import Signal, Slot, Qt, QPoint
 from PySide6.QtGui import QFont, QColor, QPixmap, QPainter, QPen
@@ -17,7 +17,6 @@ from utils.resource_path import resource_path
 logger = logging.getLogger(__name__)
 
 class ShotMarkerLabel(QLabel):
-    """Một QLabel tùy chỉnh để hiển thị ảnh bia và vẽ các vệt đạn lên trên."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAlignment(Qt.AlignCenter)
@@ -73,11 +72,16 @@ class CompetitionStatsWindow(QMainWindow):
 
         self._connect_signals()
         self.set_panels_state("INITIAL")
+        self.ui.delete_button.setEnabled(False) # Vô hiệu hóa nút xóa ban đầu
 
     def _connect_signals(self):
         self.ui.back_button.clicked.connect(self.back_to_menu_signal.emit)
         self.ui.completed_list.itemSelectionChanged.connect(self._on_competition_selected)
         self.ui.ranking_table.itemSelectionChanged.connect(self._on_shooter_selected)
+        
+        # === BẮT ĐẦU VÙNG THÊM MỚI: KẾT NỐI NÚT XÓA ===
+        self.ui.delete_button.clicked.connect(self._delete_competition)
+        # === KẾT THÚC VÙNG THÊM MỚI ===
 
     def enter_view(self):
         self.load_completed_competitions()
@@ -86,6 +90,7 @@ class CompetitionStatsWindow(QMainWindow):
     def load_completed_competitions(self):
         self.ui.completed_list.clear()
         self.current_competition_id = None
+        self.ui.delete_button.setEnabled(False) # Đảm bảo nút xóa bị vô hiệu hóa
         try:
             completed_competitions = self.db.get_completed_competitions()
             if not completed_competitions:
@@ -124,15 +129,50 @@ class CompetitionStatsWindow(QMainWindow):
         if not selected_items:
             self.set_panels_state("INITIAL")
             self.current_competition_id = None
+            self.ui.delete_button.setEnabled(False) # Vô hiệu hóa nút xóa
             return
 
         item = selected_items[0]
         self.current_competition_id = item.data(Qt.UserRole)
+        self.ui.delete_button.setEnabled(True) # Kích hoạt nút xóa
 
         if self.current_competition_id:
             ranking_data = self.db.get_competition_ranking(self.current_competition_id)
             self._populate_ranking_table(ranking_data)
             self.set_panels_state("COMPETITION_SELECTED")
+
+    # === BẮT ĐẦU VÙNG THÊM MỚI: LOGIC XÓA PHIÊN ===
+    @Slot()
+    def _delete_competition(self):
+        """Xử lý sự kiện khi nhấn nút xóa phiên kiểm tra."""
+        if self.current_competition_id is None:
+            return
+            
+        selected_items = self.ui.completed_list.selectedItems()
+        if not selected_items:
+            return
+        
+        # Lấy tên phiên để hiển thị trong hộp thoại xác nhận
+        item_widget = self.ui.completed_list.itemWidget(selected_items[0])
+        competition_name = item_widget.findChild(QLabel, "name_label").text()
+
+        reply = QMessageBox.warning(
+            self,
+            "Xác nhận Xóa",
+            f"Bạn có chắc chắn muốn xóa vĩnh viễn phiên kiểm tra:\n\n'{competition_name}'\n\nToàn bộ dữ liệu liên quan sẽ bị mất.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            success = self.db.delete_competition(self.current_competition_id)
+            if success:
+                QMessageBox.information(self, "Thành công", "Đã xóa phiên kiểm tra thành công.")
+                self.load_completed_competitions() # Tải lại danh sách
+                self.set_panels_state("INITIAL") # Reset giao diện về trạng thái ban đầu
+            else:
+                QMessageBox.critical(self, "Lỗi", "Không thể xóa phiên kiểm tra khỏi cơ sở dữ liệu.")
+    # === KẾT THÚC VÙNG THÊM MỚI ===
 
     def _populate_ranking_table(self, ranking_data: list):
         self.ui.ranking_table.setRowCount(0)
@@ -145,7 +185,6 @@ class CompetitionStatsWindow(QMainWindow):
             rank_item = QTableWidgetItem(rank_text)
             rank_item.setTextAlignment(Qt.AlignCenter)
             if rank <= 3: rank_item.setFont(QFont("Segoe UI", 16))
-            # Lưu ID của người bắn vào item đầu tiên của hàng để truy xuất sau
             rank_item.setData(Qt.UserRole, participant['soldier_id'])
             self.ui.ranking_table.setItem(i, 0, rank_item)
             self.ui.ranking_table.setItem(i, 1, QTableWidgetItem(participant['name']))
@@ -159,7 +198,6 @@ class CompetitionStatsWindow(QMainWindow):
 
     @Slot()
     def _on_shooter_selected(self):
-        """Xử lý khi người dùng chọn một xạ thủ từ bảng xếp hạng."""
         selected_items = self.ui.ranking_table.selectedItems()
         if not selected_items or self.current_competition_id is None:
             self.set_panels_state("COMPETITION_SELECTED")
@@ -171,13 +209,11 @@ class CompetitionStatsWindow(QMainWindow):
 
         if shooter_id:
             all_shooter_shots = self.db.get_shots_for_competition(self.current_competition_id, shooter_id)
-            # Sắp xếp lại để chắc chắn thứ tự là đúng
             all_shooter_shots.sort(key=lambda s: s.get('shot_number', 0))
             self._populate_shooter_details(shooter_name, all_shooter_shots)
             self.set_panels_state("SHOOTER_SELECTED")
 
     def _clear_grid_layout(self, layout):
-        """Xóa tất cả widget khỏi một QGridLayout."""
         while layout.count():
             item = layout.takeAt(0)
             widget = item.widget()
@@ -185,22 +221,15 @@ class CompetitionStatsWindow(QMainWindow):
                 widget.deleteLater()
 
     def _populate_shooter_details(self, shooter_name: str, all_shots: list):
-        """
-        Điền dữ liệu chi tiết của xạ thủ, phân chia 12 phát bắn vào 4 bia
-        và vẽ lại các vệt đạn từ CSDL, theo đúng thứ tự yêu cầu.
-        """
         self._clear_grid_layout(self.ui.target_details_grid)
         self.ui.shooter_name_label.setText(f"Tên: {shooter_name}")
-
-        # === BẮT ĐẦU VÙNG SỬA LỖI: LOGIC PHÂN CHIA BIA MỚI ===
-        # Định nghĩa rõ ràng thứ tự bia theo yêu cầu
+        
         target_definitions = [
             {'title': "Bia 1 (Bia 4b)", 'shots': all_shots[0:3], 'type': '4b'},
             {'title': "Bia 2 (Bia 4b)", 'shots': all_shots[3:6], 'type': '4b'},
             {'title': "Bia 3 (Bia 4c)", 'shots': all_shots[6:9], 'type': '4c'},
             {'title': "Bia 4 (Bia 4c)", 'shots': all_shots[9:12], 'type': '4c'},
         ]
-        # === KẾT THÚC VÙNG SỬA LỖI ===
 
         for i, target_info in enumerate(target_definitions):
             target_box = QGroupBox(target_info['title'])

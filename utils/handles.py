@@ -10,15 +10,12 @@ def handle_miss(hit_info: dict, original_frame):
     Xử lý khi bắn trượt.
     """
     logger.info("Xử lý kết quả: TRƯỢT")
-    # === BẮT ĐẦU VÙNG SỬA LỖI ===
-    # Khi trượt, không bao giờ trả về tọa độ để tránh vẽ nhầm.
     return {
         'target': "Trượt",
         'score': 0,
         'image': original_frame,
         'coords': None
     }
-    # === KẾT THÚC VÙNG SỬA LỖI ===
 
 def _handle_hit_logic(hit_info, original_frame, original_img, mask, calculate_score_func, target_name_str, original_img_alt=None):
     """
@@ -34,7 +31,6 @@ def _handle_hit_logic(hit_info, original_frame, original_img, mask, calculate_sc
     
     _, transformed_point = warp_via_bounding_rect(original_img, obj_crop, shot_point_relative)
 
-    # Fallback (phần này giữ nguyên)
     if transformed_point is None:
         logger.warning("Warp bằng Bounding Rectangle thất bại. Chuyển sang phương pháp dự phòng.")
         h_orig, w_orig = original_img.shape[:2]
@@ -51,13 +47,10 @@ def _handle_hit_logic(hit_info, original_frame, original_img, mask, calculate_sc
 
     score = calculate_score_func(transformed_point, original_img, mask)
     
-    # === BẮT ĐẦU VÙNG SỬA LỖI ===
-    # Nếu điểm là 0 (bắn ra ngoài vòng bia), không lưu lại tọa độ.
-    # Điều này ngăn việc vẽ vết đạn "ma" lên bia trong màn hình thống kê.
-    if score == 0:
-        transformed_point = None
-    # === KẾT THÚC VÙNG SỬA LỖI ===
-    
+    # === BẮT ĐẦU VÙNG THÊM MỚI: GHI LOG CHI TIẾT ===
+    logger.info(f"LOG HANDLES: Điểm tính được: {score}, Tọa độ gốc: {transformed_point}")
+    # === KẾT THÚC VÙNG THÊM MỚI ===
+
     if transformed_point:
         cv2.drawMarker(processed_image, (int(transformed_point[0]), int(transformed_point[1])), (0, 0, 255), cv2.MARKER_CROSS, 40, 3)
 

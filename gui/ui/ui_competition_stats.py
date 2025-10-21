@@ -17,8 +17,11 @@ class CompetitionStatsGui(QWidget):
             QLabel#title { font-size: 20px; font-weight: bold; color: #ecf0f1; padding: 10px; }
             QGroupBox { font-size: 16px; font-weight: bold; border: 1px solid #4a6278; border-radius: 8px; margin-top: 10px; }
             QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top center; padding: 2px 12px; background-color: #415a72; border-radius: 4px; }
-            QPushButton { background-color: #e74c3c; color: white; font-size: 14px; font-weight: bold; border: none; padding: 10px 20px; border-radius: 8px; }
-            QPushButton:hover { background-color: #c0392b; }
+            QPushButton { background-color: #95a5a6; color: white; font-size: 14px; font-weight: bold; border: none; padding: 10px 20px; border-radius: 8px; }
+            QPushButton:hover { background-color: #7f8c8d; }
+            QPushButton#danger_button { background-color: #e74c3c; }
+            QPushButton#danger_button:hover { background-color: #c0392b; }
+            QPushButton:disabled { background-color: #566573; color: #95a5a6; }
             QListWidget { background-color: #2c3e50; border: 1px solid #4a6278; border-radius: 8px; padding: 5px; }
             QListWidget::item { border-bottom: 1px solid #4a6278; }
             QListWidget::item:selected { background-color: #1abc9c; border-radius: 6px; }
@@ -47,11 +50,16 @@ class CompetitionStatsGui(QWidget):
         columns_layout.addWidget(self._create_center_column(), 45)
         columns_layout.addWidget(self._create_right_column(), 30)
         
+        # === BẮT ĐẦU VÙNG THAY ĐỔI: THÊM NÚT XÓA ===
         bottom_layout = QHBoxLayout()
+        self.delete_button = QPushButton("Xóa Phiên đã chọn")
+        self.delete_button.setObjectName("danger_button")
+        bottom_layout.addWidget(self.delete_button)
         bottom_layout.addStretch(1)
         self.back_button = QPushButton("Về Menu Kiểm tra")
         bottom_layout.addWidget(self.back_button)
         root_layout.addLayout(bottom_layout)
+        # === KẾT THÚC VÙNG THAY ĐỔI ===
 
     def _create_left_column(self) -> QWidget:
         panel = QGroupBox("Phiên đã Hoàn thành")
@@ -70,7 +78,6 @@ class CompetitionStatsGui(QWidget):
         self.center_stack = QStackedWidget()
         layout.addWidget(self.center_stack)
 
-        # Trang hiển thị bảng
         table_page = QWidget()
         table_layout = QVBoxLayout(table_page)
         table_layout.setContentsMargins(0,0,0,0)
@@ -85,7 +92,6 @@ class CompetitionStatsGui(QWidget):
         self.ranking_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         table_layout.addWidget(self.ranking_table)
         
-        # Trang hiển thị thông báo
         message_page = QWidget()
         message_layout = QVBoxLayout(message_page)
         message_label = QLabel("◀ Vui lòng chọn một phiên kiểm tra để xem kết quả")
@@ -106,7 +112,6 @@ class CompetitionStatsGui(QWidget):
         self.right_stack = QStackedWidget()
         layout.addWidget(self.right_stack)
         
-        # Trang hiển thị chi tiết
         details_page = QWidget()
         details_layout = QVBoxLayout(details_page)
         details_layout.setContentsMargins(0,0,0,0)
@@ -115,12 +120,10 @@ class CompetitionStatsGui(QWidget):
         self.shooter_name_label.setStyleSheet("font-size: 15px; font-weight: bold;")
         
         self.target_details_grid = QGridLayout()
-        # Nội dung chi tiết sẽ được thêm vào đây bằng code
         
         details_layout.addWidget(self.shooter_name_label)
         details_layout.addLayout(self.target_details_grid, 1)
 
-        # Trang hiển thị thông báo
         message_page = QWidget()
         message_layout = QVBoxLayout(message_page)
         message_label = QLabel("◀ Vui lòng chọn một người bắn từ bảng xếp hạng")

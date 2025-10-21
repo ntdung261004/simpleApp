@@ -103,7 +103,7 @@ class ProcessingWorker(QObject):
                 if asset_bundle:
                     result_data = handler_func(hit_info=hit_info, original_frame=photo_frame, **asset_bundle)
             
-            if not result_data or result_data.get('score', 0) == 0:
+            if not result_data or result_data.get('score', 0) == 0 and target_detected_raw != "Trượt":
                  result_data = handle_miss(hit_info, photo_frame)
                  target_detected_raw = "Trượt"
         else:
@@ -111,12 +111,10 @@ class ProcessingWorker(QObject):
             target_detected_raw = "Trượt"
         
         if image_path:
-            try: cv2.imwrite(image_path, photo_frame)
-            except Exception as e: logger.error(f"Worker: Lỗi khi lưu ảnh gốc: {e}")
+            frame_to_save = result_data.get('image', photo_frame)
+            try: cv2.imwrite(image_path, frame_to_save)
+            except Exception as e: logger.error(f"Worker: Lỗi khi lưu ảnh: {e}")
 
-        # === BẮT ĐẦU VÙNG SỬA LỖI QUAN TRỌNG NHẤT ===
-        # Chuyển đổi tường minh tọa độ sang kiểu Python gốc trước khi gửi tín hiệu.
-        # Đây là bước sửa lỗi cốt lõi để tương thích sau khi build.
         safe_coords = None
         raw_coords = result_data.get('coords')
         if raw_coords is not None and isinstance(raw_coords, (tuple, list)) and len(raw_coords) == 2:
@@ -125,21 +123,28 @@ class ProcessingWorker(QObject):
             except (ValueError, TypeError):
                 logger.warning(f"Không thể chuyển đổi tọa độ {raw_coords} sang kiểu int.")
                 safe_coords = None
-        # === KẾT THÚC VÙNG SỬA LỖI QUAN TRỌNG NHẤT ===
-
-        final_package = {
-            'time_str': datetime.now().strftime('%H:%M:%S'),
-            'target_name': result_data.get('target', 'Trượt'),
-            'score': result_data.get('score', 0),
-            'result_frame': result_data.get('image'),
-            'coords': safe_coords, # Sử dụng tọa độ đã được làm sạch
-            'image_path': image_path,
-            'target_detected_raw': target_detected_raw,
-            'aim_point_used': aim_point
-        }
         
-        logger.info(f"Worker: Xử lý hoàn tất. Điểm: {final_package['score']}. Gửi kết quả về giao diện.")
         if mode == 'practice':
-            self.practice_finished.emit(final_package)
+            practice_package = {
+                'time_str': datetime.now().strftime('%H%M:%S'),
+                'target_name': result_data.get('target', 'Trượt'),
+                'score': result_data.get('score', 0),
+                'result_frame': result_data.get('image'),
+                'coords': safe_coords,
+                'image_path': image_path,
+                'target_detected_raw': target_detected_raw,
+            }
+            logger.info(f"LOG WORKER (PRACTICE): Chuẩn bị gửi đi - Coords: {practice_package.get('coords')}")
+            self.practice_finished.emit(practice_package)
+            
         elif mode == 'competition':
-            self.competition_finished.emit(final_package, metadata)
+            competition_package = {
+                'score': result_data.get('score', 0),
+                'coords': safe_coords,
+                'image_path': image_path,
+                'target_detected_raw': target_detected_raw
+            }
+            # === BẮT ĐẦU VÙNG THÊM MỚI: GHI LOG CHI TIẾT ===
+            logger.info(f"LOG WORKER (COMPETITION): Chuẩn bị gửi đi - Gói dữ liệu: {competition_package}")
+            # === KẾT THÚC VÙNG THÊM MỚI ===
+            self.competition_finished.emit(competition_package, metadata)

@@ -106,7 +106,6 @@ class CompetitionWindow(QMainWindow):
 
     def __init__(self, worker: ProcessingWorker, trigger: BluetoothTrigger, config: dict):
         super().__init__()
-        # Sửa lỗi: Khởi tạo GUI trong __init__
         self.gui = CompetitionGui() 
         self.setCentralWidget(self.gui)
         self.setStyleSheet("background-color: #2c3e50;")
@@ -127,12 +126,16 @@ class CompetitionWindow(QMainWindow):
         self.current_shot_count = 0
         self.is_camera_connected = False
         self.calibrated_center = None
-        # Cập nhật thứ tự bia theo yêu cầu
+        
+        # === BẮT ĐẦU VÙNG THÊM MỚI: CƠ CHẾ KHÓA ===
+        self.is_shot_processing = False # Cờ khóa để ngăn bắn dồn dập
+        # === KẾT THÚC VÙNG THÊM MỚI ===
+
         self.target_image_labels = {
-            1: self.gui.target_1_image_label, # Bia 4b
-            2: self.gui.target_2_image_label, # Bia 4b
-            3: self.gui.target_3_image_label, # Bia 4c
-            4: self.gui.target_4_image_label  # Bia 4c
+            1: self.gui.target_1_image_label,
+            2: self.gui.target_2_image_label,
+            3: self.gui.target_3_image_label,
+            4: self.gui.target_4_image_label
         }
         self._setup_connections()
 
@@ -213,23 +216,37 @@ class CompetitionWindow(QMainWindow):
     @Slot(dict, object)
     def handle_processing_result(self, result: dict, shooter_data: dict):
         current_shooter = self.competition_data['participants'][self.current_shooter_index]
-        if not self.competition_data or shooter_data['id'] != current_shooter['id']: return
+        if not self.competition_data or shooter_data['id'] != current_shooter['id']: 
+            self.is_shot_processing = False # Mở khóa nếu kết quả không hợp lệ
+            return
+            
         self.current_shot_count += 1
         score = result.get('score', 0)
         
-        if score == 0:
-            self.audio_manager.play_sound('miss')
-        else:
-            self.audio_manager.play_score(score)
+        if score == 0: self.audio_manager.play_sound('miss')
+        else: self.audio_manager.play_score(score)
 
         current_shooter['shots'].append(score)
         self._update_scoreboard_and_markers(self.current_shot_count, score, result)
         self.db.add_competition_shot(competition_id=self.competition_data['id'], soldier_id=shooter_data['id'], score=score, coords=result.get('coords'), image_path=result.get('image_path'), target_name=result.get('target_detected_raw', 'N/A'))
-        if self.current_shot_count >= self.TOTAL_SHOTS: self.show_turn_result_popup()
         
+        # === BẮT ĐẦU VÙNG SỬA LỖI: LOGIC MỞ KHÓA ===
+        if self.current_shot_count >= self.TOTAL_SHOTS: 
+            self.show_turn_result_popup()
+        else:
+            self.is_shot_processing = False # Mở khóa để cho phép bắn viên tiếp theo
+        # === KẾT THÚC VÙNG SỬA LỖI ===
+
     @Slot()
     def handle_shot(self):
-        if not self.is_camera_connected or self.current_shot_count >= self.TOTAL_SHOTS or not self.trigger.is_active: return
+        # === BẮT ĐẦU VÙNG SỬA LỖI: LOGIC KHÓA ===
+        # Kiểm tra tất cả điều kiện trước khi bắn, bao gồm cả cờ khóa
+        if not self.is_camera_connected or self.current_shot_count >= self.TOTAL_SHOTS or not self.trigger.is_active or self.is_shot_processing: 
+            return
+        
+        # Khóa ngay lập tức để ngăn các phát bắn tiếp theo
+        self.is_shot_processing = True
+        # === KẾT THÚC VÙNG SỬA LỖI ===
         
         ret, frame = self.cam.read()
         if ret and frame is not None:
@@ -251,6 +268,9 @@ class CompetitionWindow(QMainWindow):
             
             self.request_processing.emit(frame_to_send, image_path, 'competition', metadata)
             self.audio_manager.play_sound('shot')
+        else:
+            # Mở khóa nếu không chụp được ảnh
+            self.is_shot_processing = False
 
     def _update_scoreboard_and_markers(self, shot_number, score, result: dict):
         target_scores_labels = {1: self.gui.target_1_score_label, 2: self.gui.target_2_score_label, 3: self.gui.target_3_score_label, 4: self.gui.target_4_score_label}; 
@@ -262,9 +282,7 @@ class CompetitionWindow(QMainWindow):
             current_text = score_label.text().replace("Điểm: ", "").replace("--", "").strip()
             scores = current_text.split(" - ") if current_text else []
             
-            # Đảm bảo đủ chỗ cho điểm mới
-            while len(scores) < shot_in_target:
-                scores.append("0")
+            while len(scores) < shot_in_target: scores.append("0")
             scores.append(str(score))
             
             new_text = " - ".join(scores)
@@ -295,16 +313,12 @@ class CompetitionWindow(QMainWindow):
         self.disconnect_camera() 
         num_cameras = count_available_cameras()
         
-        if num_cameras < 2:
-            self.disconnect_camera("Vui lòng kết nối USB camera và nhấn 'Làm mới'")
+        if num_cameras < 2: self.disconnect_camera("Vui lòng kết nối USB camera và nhấn 'Làm mới'")
         else:
-            if self.configured_camera_index < num_cameras:
-                self.connect_camera(self.configured_camera_index)
-            else:
-                self.disconnect_camera(f"Lỗi: Index ({self.configured_camera_index}) không hợp lệ. Tìm thấy {num_cameras} camera.")
+            if self.configured_camera_index < num_cameras: self.connect_camera(self.configured_camera_index)
+            else: self.disconnect_camera(f"Lỗi: Index ({self.configured_camera_index}) không hợp lệ. Tìm thấy {num_cameras} camera.")
 
-    def refresh_camera_connection(self):
-        self.start_camera()
+    def refresh_camera_connection(self): self.start_camera()
 
     def connect_camera(self, index: int):
         self.disconnect_camera()
@@ -344,7 +358,12 @@ class CompetitionWindow(QMainWindow):
         shooter['status'] = 'shooting'; self.current_shot_count = 0; self._update_participant_list(); self.gui.participants_list.setEnabled(False); self.gui.start_turn_button.setEnabled(False); self.gui.score_stack.setCurrentIndex(1); self._reset_scoreboard(); self.trigger.activate()
 
     def show_turn_result_popup(self):
-        self.trigger.deactivate(); shooter = self.competition_data['participants'][self.current_shooter_index]; target_pixmaps = [self.target_image_labels[i].grab() for i in range(1, 5)]; dialog = TurnResultDialog(shooter['name'], shooter['shots'], target_pixmaps, self); result = dialog.exec()
+        self.trigger.deactivate(); 
+        self.is_shot_processing = False # Mở khóa khi lượt bắn kết thúc
+        shooter = self.competition_data['participants'][self.current_shooter_index]; 
+        target_pixmaps = [self.target_image_labels[i].grab() for i in range(1, 5)]; 
+        dialog = TurnResultDialog(shooter['name'], shooter['shots'], target_pixmaps, self); 
+        result = dialog.exec()
         if result == QDialog.Accepted: self.finalize_turn()
         else: self.retry_turn()
 
@@ -359,6 +378,11 @@ class CompetitionWindow(QMainWindow):
     def retry_turn(self):
         shooter = self.competition_data['participants'][self.current_shooter_index]; success = self.db.delete_shots_for_turn(self.competition_data['id'], shooter['id'], self.TOTAL_SHOTS)
         if not success: QMessageBox.critical(self, "Lỗi Database", "Không thể xóa các phát bắn cũ."); self.finalize_turn(); return
+        
+        # === BẮT ĐẦU VÙNG SỬA LỖI: RESET KHÓA ===
+        self.is_shot_processing = False # Đảm bảo mở khóa khi bắn lại
+        # === KẾT THÚC VÙNG SỬA LỖI ===
+
         shooter['shots'] = []; shooter['status'] = 'waiting'; self._update_participant_list(); self.gui.participants_list.setEnabled(True); self.gui.participants_list.setCurrentRow(self.current_shooter_index); self.on_participant_selected(self.gui.participants_list.item(self.current_shooter_index)); self.gui.score_stack.setCurrentIndex(0)
 
     def end_competition(self):
@@ -405,7 +429,7 @@ class CompetitionWindow(QMainWindow):
         except TypeError as e: logger.error(f"Lỗi khi chuyển trạng thái sang JSON: {e}"); QMessageBox.critical(self, "Lỗi Dữ liệu", "Không thể chuyển đổi dữ liệu.")
 
     def _reset_state(self):
-        logger.info("Dọn dẹp trạng thái cửa sổ thi đấu..."); self.competition_data = None; self.current_shooter_index = -1; self.current_shot_count = 0; self.gui.participants_list.setCurrentRow(-1); self.gui.participants_list.clear(); self._reset_competition_ui()
+        logger.info("Dọn dẹp trạng thái cửa sổ thi đấu..."); self.competition_data = None; self.current_shooter_index = -1; self.current_shot_count = 0; self.is_shot_processing = False; self.gui.participants_list.setCurrentRow(-1); self.gui.participants_list.clear(); self._reset_competition_ui()
 
     def _prompt_exit(self):
         if self.competition_data is None: self._reset_state(); self.back_to_menu_signal.emit(); return
