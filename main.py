@@ -8,6 +8,7 @@ import traceback # <<< THÊM MỚI để ghi log lỗi chi tiết
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QMessageBox
 from PySide6.QtCore import QThread, Slot, QTimer
 from datetime import datetime
+from PySide6.QtGui import QIcon
 
 from gui.windows.main_menu_window import MainMenuWindow
 from gui.windows.practice_window import PracticeWindow
@@ -242,6 +243,11 @@ class ApplicationController(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    app_icon_path = resource_path("assets/app_icon.ico")
+    if os.path.exists(app_icon_path):
+        app.setWindowIcon(QIcon(app_icon_path))
+    else:
+        logging.warning(f"Không tìm thấy file icon tại: {app_icon_path}")
     if check_or_request_license():
         controller = ApplicationController()
         controller.showMaximized()

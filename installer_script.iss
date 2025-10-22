@@ -1,8 +1,8 @@
 ; === Shooting App Installer Script ===
 
-#define MyAppName "Tập Luyện K54 - Bản dùng thử"
-#define MyAppVersion "1.0"
-#define MyAppPublisher "MinhLuan"
+#define MyAppName "Tập Luyện K54"
+#define MyAppVersion "1.0.1"
+#define MyAppPublisher "LTSoftware"
 #define MyAppExeName "TrainingK54.exe"
 #define MyAppIconName "assets\app_icon.ico" 
 #define MyOutputFolder "dist\TrainingK54"
