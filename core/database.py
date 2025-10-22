@@ -12,12 +12,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# Hàm này vẫn cần thiết cho chức năng Luyện tập (add_shot)
 def convert_numpy_types(obj):
-    """
-    Hàm đệ quy để chuyển đổi tất cả các kiểu dữ liệu của numpy thành
-    kiểu dữ liệu gốc của Python (int, float, list, dict).
-    Điều này cực kỳ quan trọng để đảm bảo tương thích với JSON sau khi build.
-    """
     if isinstance(obj, (np.integer, np.int_, np.intc, np.intp, np.int8,
                         np.int16, np.int32, np.int64, np.uint8,
                         np.uint16, np.uint32, np.uint64)):
@@ -46,6 +42,7 @@ def get_app_data_path(file_name: str) -> str:
     return dest_path
 
 class DatabaseManager:
+    # --- Phần khởi tạo và các hàm khác giữ nguyên ---
     def __init__(self, db_name: str = "shooting_data.db"):
         self.db_path = get_app_data_path(db_name)
         self.conn: Optional[sqlite3.Connection] = None
@@ -94,6 +91,7 @@ class DatabaseManager:
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi thêm UNIQUE index: {e}")
 
+    # --- Các hàm khác không liên quan đến lỗi giữ nguyên ---
     def add_soldier(self, name: str, class_name: str) -> Optional[int]:
         if not self.conn: return None
         try:
@@ -141,21 +139,56 @@ class DatabaseManager:
             self.cursor.execute(sql, (session_id, shot_number, score, target_detected, coords_str, image_path, timestamp)); self.conn.commit()
         except (sqlite3.Error, TypeError) as e: logger.error(f"Lỗi khi lưu phát bắn (tập luyện): {e}")
 
-    def update_session_name(self, session_id: int, new_name: str) -> bool:
-        if not self.conn: return False
-        try: self.cursor.execute("UPDATE sessions SET exercise_name = ? WHERE id = ?", (new_name, session_id)); self.conn.commit(); return True
-        except sqlite3.Error as e: logger.error(f"Lỗi khi đổi tên phiên tập: {e}"); return False
+    # === BẮT ĐẦU VÙNG SỬA LỖI ===
+    def add_competition_shot(self, competition_id: int, soldier_id: int, score: int, coords: Optional[list], image_path: str, target_name: str):
+        if not self.conn:
+            return
+        try:
+            self.cursor.execute("SELECT COUNT(id) FROM competition_shots WHERE competition_id = ? AND participant_id = ?", (competition_id, soldier_id))
+            shot_count = self.cursor.fetchone()[0]
+            shot_number = shot_count + 1
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Gỡ bỏ các bước chuyển đổi không cần thiết. `coords` đã là một list float sạch.
+            # `json.dumps` sẽ xử lý nó một cách chính xác.
+            coords_str = json.dumps(coords) if coords is not None else None
+            
+            logger.info(f"LOG DATABASE: Chuẩn bị lưu phát bắn cho competition_id={competition_id}, soldier_id={soldier_id}. Chuỗi JSON tọa độ: {coords_str}")
 
-    def delete_session(self, session_id: int) -> bool:
-        if not self.conn: return False
-        try: self.cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,)); self.conn.commit(); return True
-        except sqlite3.Error as e: logger.error(f"Lỗi khi xóa phiên tập: {e}"); return False
+            sql = "INSERT INTO competition_shots (competition_id, participant_id, shot_number, score, target_detected, coords, image_path, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            params = (competition_id, soldier_id, shot_number, score, target_name, coords_str, image_path, timestamp)
+            self.cursor.execute(sql, params)
+            self.conn.commit()
+        except (sqlite3.Error, TypeError) as e: 
+            logger.error(f"Lỗi khi thêm phát bắn (kiểm tra): {e}")
+            self.conn.rollback()
+    # === KẾT THÚC VÙNG SỬA LỖI ===
 
-    def get_shot_count_for_session(self, session_id: int) -> int:
-        if not self.conn: return 0
-        try: self.cursor.execute("SELECT COUNT(id) FROM shots WHERE session_id = ?", (session_id,)); return self.cursor.fetchone()[0]
-        except sqlite3.Error as e: logger.error(f"Lỗi khi đếm số phát bắn: {e}"); return 0
-
+    # --- Các hàm còn lại giữ nguyên ---
+    def competition_name_exists(self, name: str) -> bool:
+        if not self.conn: return True
+        try:
+            sql = "SELECT 1 FROM competitions WHERE name = ?"
+            self.cursor.execute(sql, (name,)); return self.cursor.fetchone() is not None
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi kiểm tra tên cuộc thi: {e}"); return True
+            
+    def create_competition(self, name: str, participant_soldier_ids: list) -> Optional[int]:
+        if not self.conn: return None
+        try:
+            created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.cursor.execute("INSERT INTO competitions (name, created_at, status) VALUES (?, ?, 'in_progress')", (name, created_at))
+            competition_id = self.cursor.lastrowid
+            participants_data = [(competition_id, soldier_id) for soldier_id in participant_soldier_ids]
+            self.cursor.executemany("INSERT INTO competition_participants (competition_id, soldier_id) VALUES (?, ?)", participants_data)
+            self.conn.commit()
+            return competition_id
+        except sqlite3.IntegrityError:
+            logger.error(f"Lỗi khi tạo cuộc thi: Tên '{name}' đã tồn tại.")
+            self.conn.rollback(); return None
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi tạo cuộc thi: {e}"); self.conn.rollback(); return None
+            
     def get_sessions_for_soldier(self, soldier_id: int) -> list:
         if not self.conn: return []
         try:
@@ -175,42 +208,15 @@ class DatabaseManager:
             self.cursor.execute(sql, params); return self.cursor.fetchone() is not None
         except sqlite3.Error as e: logger.error(f"Lỗi khi kiểm tra tên phiên: {e}"); return True
 
-    def create_competition(self, name: str, participant_soldier_ids: list) -> Optional[int]:
-        if not self.conn: return None
-        try:
-            created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            self.cursor.execute("INSERT INTO competitions (name, created_at, status) VALUES (?, ?, 'in_progress')", (name, created_at))
-            competition_id = self.cursor.lastrowid
-            participants_data = [(competition_id, soldier_id) for soldier_id in participant_soldier_ids]
-            self.cursor.executemany("INSERT INTO competition_participants (competition_id, soldier_id) VALUES (?, ?)", participants_data)
-            self.conn.commit()
-            return competition_id
-        except sqlite3.IntegrityError:
-            logger.error(f"Lỗi khi tạo cuộc thi: Tên '{name}' đã tồn tại.")
-            self.conn.rollback(); return None
-        except sqlite3.Error as e:
-            logger.error(f"Lỗi khi tạo cuộc thi: {e}"); self.conn.rollback(); return None
+    def update_session_name(self, session_id: int, new_name: str) -> bool:
+        if not self.conn: return False
+        try: self.cursor.execute("UPDATE sessions SET exercise_name = ? WHERE id = ?", (new_name, session_id)); self.conn.commit(); return True
+        except sqlite3.Error as e: logger.error(f"Lỗi khi đổi tên phiên tập: {e}"); return False
 
-    def competition_name_exists(self, name: str) -> bool:
-        if not self.conn: return True
-        try:
-            sql = "SELECT 1 FROM competitions WHERE name = ?"
-            self.cursor.execute(sql, (name,)); return self.cursor.fetchone() is not None
-        except sqlite3.Error as e:
-            logger.error(f"Lỗi khi kiểm tra tên cuộc thi: {e}"); return True
-
-    def add_competition_shot(self, competition_id: int, soldier_id: int, score: int, coords: Optional[Any], image_path: str, target_name: str):
-        if not self.conn: return
-        try:
-            self.cursor.execute("SELECT COUNT(id) FROM competition_shots WHERE competition_id = ? AND participant_id = ?", (competition_id, soldier_id))
-            shot_count = self.cursor.fetchone()[0]; shot_number = shot_count + 1
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            safe_coords = convert_numpy_types(coords)
-            coords_str = json.dumps(safe_coords) if safe_coords is not None else None
-            sql = "INSERT INTO competition_shots (competition_id, participant_id, shot_number, score, target_detected, coords, image_path, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-            params = (competition_id, soldier_id, shot_number, score, target_name, coords_str, image_path, timestamp)
-            self.cursor.execute(sql, params); self.conn.commit()
-        except (sqlite3.Error, TypeError) as e: logger.error(f"Lỗi khi thêm phát bắn (kiểm tra): {e}"); self.conn.rollback()
+    def delete_session(self, session_id: int) -> bool:
+        if not self.conn: return False
+        try: self.cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,)); self.conn.commit(); return True
+        except sqlite3.Error as e: logger.error(f"Lỗi khi xóa phiên tập: {e}"); return False
 
     def delete_shots_for_turn(self, competition_id: int, soldier_id: int, num_shots_to_delete: int) -> bool:
         if not self.conn: return False

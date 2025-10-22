@@ -9,13 +9,14 @@ def handle_miss(hit_info: dict, original_frame):
     """
     Xử lý khi bắn trượt.
     """
-    logger.info("Xử lý kết quả: TRƯỢỢT")
+    logger.info("Xử lý kết quả: TRƯỢT")
     # Khi trượt, không bao giờ trả về tọa độ để tránh vẽ nhầm.
     return {
         'target': "Trượt",
         'score': 0,
         'image': original_frame,
-        'coords': None
+        'coords': None,
+        'target_detected_raw': 'Trượt' # Thêm key này để đồng bộ dữ liệu
     }
 
 def _handle_hit_logic(hit_info, original_frame, original_img, mask, calculate_score_func, target_name_str, original_img_alt=None):
@@ -48,16 +49,17 @@ def _handle_hit_logic(hit_info, original_frame, original_img, mask, calculate_sc
         transformed_point = (final_x, final_y)
 
     score = calculate_score_func(transformed_point, original_img, mask)
-    logger.info(f"LOG HANDLES: Điểm tính được: {score}, Tọa độ gốc (Numpy): {transformed_point}")
+    logger.info(f"LOG HANDLES: Điểm: {score}, Tọa độ gốc (Numpy): {transformed_point}")
     
-    # === BẮT ĐẦU VÙNG SỬA LỖI CYTHON ===
-    # Chuyển đổi tường minh tọa độ từ kiểu Numpy sang list các float tiêu chuẩn của Python.
-    # Điều này đảm bảo json.dumps hoạt động chính xác trong cả môi trường dev và bản build.
+    # === BẮT ĐẦU VÙNG SỬA LỖI: LÀM SẠCH DỮ LIỆU TẠI NGUỒN ===
     final_coords = None
+    # Chỉ lưu tọa độ nếu bắn trúng và có điểm
     if score > 0 and transformed_point is not None:
-        # Chuyển đổi tuple (numpy.float, numpy.float) thành list [float, float]
+        # Chuyển đổi tường minh tuple (numpy.float, numpy.float) thành list [float, float]
+        # Đây là bước quan trọng để đảm bảo dữ liệu tương thích với JSON và không bị làm tròn.
         final_coords = [float(p) for p in transformed_point]
-    # === KẾT THÚC VÙNG SỬA LỖI CYTHON ===
+        logger.info(f"LOG HANDLES: Tọa độ đã chuyển đổi sang kiểu Python chuẩn: {final_coords}")
+    # === KẾT THÚC VÙNG SỬA LỖI ===
     
     # Vẽ vết đạn lên ảnh để hiển thị kết quả tức thì
     if final_coords:
@@ -67,7 +69,8 @@ def _handle_hit_logic(hit_info, original_frame, original_img, mask, calculate_sc
         'target': target_name_str,
         'score': score,
         'image': processed_image,
-        'coords': final_coords # Trả về tọa độ đã được "làm sạch"
+        'coords': final_coords, # Trả về tọa độ đã được "làm sạch"
+        'target_detected_raw': hit_info.get('name', 'N/A')
     }
 
 def handle_hit_bia_4b(hit_info: dict, original_frame, original_img, mask, original_img_alt=None):

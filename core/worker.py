@@ -17,12 +17,7 @@ logger = logging.getLogger(__name__)
 
 class ProcessingWorker(QObject):
     practice_finished = Signal(dict)
-    
-    # === BẮT ĐẦU VÙNG SỬA LỖI 1: ĐỊNH NGHĨA TÍN HIỆU CHÍNH XÁC ===
-    # Khai báo tường minh cả hai tham số đều là 'dict' để đảm bảo
-    # việc truyền dữ liệu ổn định sau khi build.
     competition_finished = Signal(dict, dict)
-    # === KẾT THÚC VÙNG SỬA LỖI 1 ===
 
     def __init__(self, config: dict):
         super().__init__()
@@ -117,37 +112,30 @@ class ProcessingWorker(QObject):
             try: cv2.imwrite(image_path, frame_to_save)
             except Exception as e: logger.error(f"Worker: Lỗi khi lưu ảnh: {e}")
 
-        safe_coords = None
-        raw_coords = result_data.get('coords')
-        if raw_coords is not None and isinstance(raw_coords, (tuple, list)) and len(raw_coords) == 2:
-            try:
-                safe_coords = (int(raw_coords[0]), int(raw_coords[1]))
-            except (ValueError, TypeError):
-                logger.warning(f"Không thể chuyển đổi tọa độ {raw_coords} sang kiểu int.")
-                safe_coords = None
-        
+        # === BẮT ĐẦU VÙNG SỬA LỖI: LOẠI BỎ CHUYỂN ĐỔI SANG SỐ NGUYÊN ===
+        # Lấy trực tiếp tọa độ (list of float) đã được làm sạch từ handles.py
+        # Không cần tạo biến 'safe_coords' và không làm tròn sang int nữa.
+        final_coords = result_data.get('coords') 
+
         if mode == 'practice':
-            # === BẮT ĐẦU VÙNG SỬA LỖI 2: KHÔI PHỤC DỮ LIỆU TÂM NGẮM ===
-            # Thêm lại 'aim_point_used' vào gói dữ liệu để giao diện có thể
-            # vẽ lại tâm đỏ lên ảnh kết quả.
             practice_package = {
                 'time_str': datetime.now().strftime('%H:%M:%S'),
                 'target_name': result_data.get('target', 'Trượt'),
                 'score': result_data.get('score', 0),
                 'result_frame': result_data.get('image'),
-                'coords': safe_coords,
+                'coords': final_coords, # Sử dụng tọa độ số thực
                 'image_path': image_path,
                 'target_detected_raw': target_detected_raw,
-                'aim_point_used': aim_point # <<< DÒNG NÀY ĐÃ ĐƯỢC THÊM LẠI
+                'aim_point_used': aim_point
             }
-            # === KẾT THÚC VÙNG SỬA LỖI 2 ===
             self.practice_finished.emit(practice_package)
             
         elif mode == 'competition':
             competition_package = {
                 'score': result_data.get('score', 0),
-                'coords': safe_coords,
+                'coords': final_coords, # Sử dụng tọa độ số thực
                 'image_path': image_path,
                 'target_detected_raw': target_detected_raw
             }
             self.competition_finished.emit(competition_package, metadata)
+        # === KẾT THÚC VÙNG SỬA LỖI ===
