@@ -9,7 +9,8 @@ def handle_miss(hit_info: dict, original_frame):
     """
     Xử lý khi bắn trượt.
     """
-    logger.info("Xử lý kết quả: TRƯỢT")
+    logger.info("Xử lý kết quả: TRƯỢỢT")
+    # Khi trượt, không bao giờ trả về tọa độ để tránh vẽ nhầm.
     return {
         'target': "Trượt",
         'score': 0,
@@ -31,6 +32,7 @@ def _handle_hit_logic(hit_info, original_frame, original_img, mask, calculate_sc
     
     _, transformed_point = warp_via_bounding_rect(original_img, obj_crop, shot_point_relative)
 
+    # Fallback (phần này giữ nguyên)
     if transformed_point is None:
         logger.warning("Warp bằng Bounding Rectangle thất bại. Chuyển sang phương pháp dự phòng.")
         h_orig, w_orig = original_img.shape[:2]
@@ -46,19 +48,26 @@ def _handle_hit_logic(hit_info, original_frame, original_img, mask, calculate_sc
         transformed_point = (final_x, final_y)
 
     score = calculate_score_func(transformed_point, original_img, mask)
+    logger.info(f"LOG HANDLES: Điểm tính được: {score}, Tọa độ gốc (Numpy): {transformed_point}")
     
-    # === BẮT ĐẦU VÙNG THÊM MỚI: GHI LOG CHI TIẾT ===
-    logger.info(f"LOG HANDLES: Điểm tính được: {score}, Tọa độ gốc: {transformed_point}")
-    # === KẾT THÚC VÙNG THÊM MỚI ===
-
-    if transformed_point:
-        cv2.drawMarker(processed_image, (int(transformed_point[0]), int(transformed_point[1])), (0, 0, 255), cv2.MARKER_CROSS, 40, 3)
+    # === BẮT ĐẦU VÙNG SỬA LỖI CYTHON ===
+    # Chuyển đổi tường minh tọa độ từ kiểu Numpy sang list các float tiêu chuẩn của Python.
+    # Điều này đảm bảo json.dumps hoạt động chính xác trong cả môi trường dev và bản build.
+    final_coords = None
+    if score > 0 and transformed_point is not None:
+        # Chuyển đổi tuple (numpy.float, numpy.float) thành list [float, float]
+        final_coords = [float(p) for p in transformed_point]
+    # === KẾT THÚC VÙNG SỬA LỖI CYTHON ===
+    
+    # Vẽ vết đạn lên ảnh để hiển thị kết quả tức thì
+    if final_coords:
+        cv2.drawMarker(processed_image, (int(final_coords[0]), int(final_coords[1])), (0, 0, 255), cv2.MARKER_CROSS, 40, 3)
 
     return {
         'target': target_name_str,
         'score': score,
         'image': processed_image,
-        'coords': transformed_point
+        'coords': final_coords # Trả về tọa độ đã được "làm sạch"
     }
 
 def handle_hit_bia_4b(hit_info: dict, original_frame, original_img, mask, original_img_alt=None):
