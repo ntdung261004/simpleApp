@@ -26,14 +26,18 @@ class ProcessingWorker(QObject):
             logger.info("Worker: Bắt đầu khởi tạo...")
             model_relative_path = config.get("yolo_model_path", "assets/models/K54v2.pt")
             model_path = os.path.join(APP_DATA_DIR, model_relative_path)
-            logging.info(f"Worker: Đang tải model từ: {model_path}")
+            
+            # === BẮT ĐẦU VÙNG LOGGING BỔ SUNG ===
+            logging.info(f"Worker: Đường dẫn đầy đủ của model AI được sử dụng: '{model_path}'")
+            # === KẾT THÚC VÙNG LOGGING BỔ SUNG ===
 
             if not os.path.exists(model_path):
-                raise FileNotFoundError(f"Không tìm thấy file model AI tại: {model_path}. Vui lòng kiểm tra lại file config.json và sự tồn tại của file.")
+                # Đây là lỗi nghiêm trọng, cần thông báo rõ ràng
+                raise FileNotFoundError(f"Không tìm thấy file model AI tại: {model_path}. Vui lòng kiểm tra lại file config.json và đảm bảo file model đã được sao chép vào thư mục dữ liệu ứng dụng.")
 
             self.detector = ObjectDetector(model_path=model_path)
             if self.detector.model is None:
-                raise RuntimeError("Không thể tải model YOLO.")
+                raise RuntimeError("Không thể tải model YOLO. File có thể bị hỏng hoặc không tương thích.")
 
             self.assets = self._load_assets()
             if self.assets is None:
@@ -62,15 +66,36 @@ class ProcessingWorker(QObject):
             
     def _load_assets(self):
         try:
+            # === BẮT ĐẦU VÙNG LOGGING BỔ SUNG ===
+            asset_paths = {
+                'bia_4b_img': resource_path("assets/images/original/bia_4b.png"),
+                'bia_4b_mask': resource_path("assets/images/mask/mask_4b.png"),
+                'bia_4b_alt': resource_path(os.path.join("assets", "images", "warp", "warp_bia_4b.png")),
+                'bia_4c_img': resource_path("assets/images/original/bia_4c.png"),
+                'bia_4c_mask': resource_path("assets/images/mask/mask_4c.png"),
+                'bia_4c_alt': resource_path(os.path.join("assets", "images", "warp", "warp_bia_4c.png"))
+            }
+            for name, path in asset_paths.items():
+                logger.info(f"Worker: Đang chuẩn bị tải tài nguyên '{name}' từ đường dẫn: '{path}'")
+            # === KẾT THÚC VÙNG LOGGING BỔ SUNG ===
+            
             assets = {
-                'bia_4b': {'original_img': cv2.imread(resource_path("assets/images/original/bia_4b.png")), 'mask': cv2.imread(resource_path("assets/images/mask/mask_4b.png"), cv2.IMREAD_GRAYSCALE)},
-                'bia_4c': {'original_img': cv2.imread(resource_path("assets/images/original/bia_4c.png")), 'mask': cv2.imread(resource_path("assets/images/mask/mask_4c.png"), cv2.IMREAD_GRAYSCALE)}
+                'bia_4b': {
+                    'original_img': cv2.imread(asset_paths['bia_4b_img']), 
+                    'mask': cv2.imread(asset_paths['bia_4b_mask'], cv2.IMREAD_GRAYSCALE)
+                },
+                'bia_4c': {
+                    'original_img': cv2.imread(asset_paths['bia_4c_img']), 
+                    'mask': cv2.imread(asset_paths['bia_4c_mask'], cv2.IMREAD_GRAYSCALE)
+                }
             }
             for key, value in assets.items():
                 if value['original_img'] is None or value['mask'] is None:
-                    logger.error(f"Lỗi tải tài nguyên cho '{key}'.")
+                    logger.error(f"Lỗi tải tài nguyên cho '{key}'. Kiểm tra lại đường dẫn hoặc file ảnh.")
                     return None
-                alt_path = resource_path(os.path.join("assets", "images", "warp", f"warp_{key}.png"))
+                
+                alt_path_key = f"{key}_alt"
+                alt_path = asset_paths.get(alt_path_key)
                 value['original_img_alt'] = cv2.imread(alt_path) if os.path.exists(alt_path) else None
             return assets
         except Exception as e:
@@ -112,9 +137,6 @@ class ProcessingWorker(QObject):
             try: cv2.imwrite(image_path, frame_to_save)
             except Exception as e: logger.error(f"Worker: Lỗi khi lưu ảnh: {e}")
 
-        # === BẮT ĐẦU VÙNG SỬA LỖI: LOẠI BỎ CHUYỂN ĐỔI SANG SỐ NGUYÊN ===
-        # Lấy trực tiếp tọa độ (list of float) đã được làm sạch từ handles.py
-        # Không cần tạo biến 'safe_coords' và không làm tròn sang int nữa.
         final_coords = result_data.get('coords') 
 
         if mode == 'practice':
@@ -123,7 +145,7 @@ class ProcessingWorker(QObject):
                 'target_name': result_data.get('target', 'Trượt'),
                 'score': result_data.get('score', 0),
                 'result_frame': result_data.get('image'),
-                'coords': final_coords, # Sử dụng tọa độ số thực
+                'coords': final_coords,
                 'image_path': image_path,
                 'target_detected_raw': target_detected_raw,
                 'aim_point_used': aim_point
@@ -133,9 +155,8 @@ class ProcessingWorker(QObject):
         elif mode == 'competition':
             competition_package = {
                 'score': result_data.get('score', 0),
-                'coords': final_coords, # Sử dụng tọa độ số thực
+                'coords': final_coords,
                 'image_path': image_path,
                 'target_detected_raw': target_detected_raw
             }
             self.competition_finished.emit(competition_package, metadata)
-        # === KẾT THÚC VÙNG SỬA LỖI ===

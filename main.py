@@ -30,24 +30,30 @@ log_file_path = os.path.join(APP_DATA_DIR, "app_log.txt")
 logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(), logging.FileHandler(log_file_path, 'a', 'utf-8')], format='%(asctime)s [%(levelname)s] (%(name)s) - %(message)s')
 logging.info("--- Application Started ---")
 
-# === BẮT ĐẦU VÙNG THÊM MỚI: GHI LOG LỖI TOÀN CỤC ===
+# === BẮT ĐẦU VÙNG THÊM MỚI: GHI LOG LỖI TOÀN CỤC (CẢI TIẾN) ===
 def global_exception_hook(exctype, value, tb):
-    """Bẫy và ghi lại tất cả các lỗi không được xử lý trong ứng dụng."""
+    """
+    Bắt và ghi lại tất cả các lỗi không được xử lý (uncaught exceptions).
+    Đây là công cụ gỡ lỗi cực kỳ quan trọng sau khi build.
+    """
     error_message = "".join(traceback.format_exception(exctype, value, tb))
-    logging.critical(f"LỖI KHÔNG XÁC ĐỊNH GÂY SẬP ỨNG DỤNG:\n{error_message}")
-    # Hiển thị thông báo lỗi cho người dùng
-    QMessageBox.critical(
-        None,
-        "Lỗi nghiêm trọng",
-        "Ứng dụng đã gặp một lỗi không mong muốn và cần phải đóng.\n"
-        f"Vui lòng kiểm tra file app_log.txt trong thư mục:\n{APP_DATA_DIR}\n\n"
-        f"Chi tiết lỗi: {value}"
-    )
-    sys.exit(1)
+    logging.critical(f"LỖI TOÀN CỤC KHÔNG XỬ LÝ:\n{error_message}")
+    
+    # Hiển thị thông báo cho người dùng
+    msg_box = QMessageBox()
+    msg_box.setIcon(QMessageBox.Critical)
+    msg_box.setText("Đã xảy ra một lỗi nghiêm trọng!")
+    msg_box.setInformativeText(f"Ứng dụng đã gặp phải một lỗi không mong muốn và cần phải đóng. Vui lòng kiểm tra file app_log.txt trong thư mục {APP_DATA_DIR} để biết chi tiết.")
+    msg_box.setWindowTitle("Lỗi Ứng Dụng")
+    msg_box.setStandardButtons(QMessageBox.Ok)
+    msg_box.exec()
 
-# Gán hàm xử lý lỗi cho hệ thống
+    # Đảm bảo ứng dụng thoát an toàn
+    QApplication.quit()
+
 sys.excepthook = global_exception_hook
 # === KẾT THÚC VÙNG THÊM MỚI ===
+
 
 def check_or_request_license() -> bool:
     license_file = os.path.join(APP_DATA_DIR, 'license.key')
@@ -110,7 +116,10 @@ class ApplicationController(QMainWindow):
 
         if not os.path.exists(dest_config_path):
             try:
+                # === BẮT ĐẦU VÙNG LOGGING BỔ SUNG ===
                 source_config_path = resource_path("config.json")
+                logging.info(f"Đang tìm config.json nguồn tại: {source_config_path}")
+                # === KẾT THÚC VÙNG LOGGING BỔ SUNG ===
                 if os.path.exists(source_config_path):
                     shutil.copyfile(source_config_path, dest_config_path)
                     logging.info(f"Đã sao chép config.json mặc định vào {APP_DATA_DIR}")
@@ -133,7 +142,10 @@ class ApplicationController(QMainWindow):
 
             if not os.path.exists(dest_model_path):
                 try:
+                    # === BẮT ĐẦU VÙNG LOGGING BỔ SUNG ===
                     source_model_path = resource_path(model_relative_path)
+                    logging.info(f"Đang tìm file model nguồn tại: {source_model_path}")
+                    # === KẾT THÚC VÙNG LOGGING BỔ SUNG ===
                     if os.path.exists(source_model_path):
                         shutil.copyfile(source_model_path, dest_model_path)
                         logging.info(f"Đã sao chép model mặc định vào {os.path.dirname(dest_model_path)}")
