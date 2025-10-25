@@ -1,12 +1,14 @@
 # file: gui/windows/competition_stats_window.py
 import logging
 import json
+import cv2
+import numpy as np
 from PySide6.QtWidgets import (
     QMainWindow, QListWidgetItem, QTableWidgetItem, QGroupBox,
-    QLabel, QGridLayout, QVBoxLayout, QMessageBox
+    QLabel, QGridLayout, QVBoxLayout, QMessageBox, QSizePolicy
 )
 from PySide6.QtCore import Signal, Slot, Qt, QPoint
-from PySide6.QtGui import QFont, QColor, QPixmap, QPainter, QPen
+from PySide6.QtGui import QFont, QColor, QPixmap, QImage, QPainter
 from datetime import datetime
 
 from ..ui.ui_competition_stats import CompetitionStatsGui
@@ -16,46 +18,40 @@ from utils.resource_path import resource_path
 
 logger = logging.getLogger(__name__)
 
-class ShotMarkerLabel(QLabel):
+# === BẮT ĐẦU VÙNG SỬA ĐỔI: SỬ DỤNG LỚP WIDGET GIỐNG HỆT COMPETITION_WINDOW ===
+class SquareImageLabel(QLabel):
+    """
+    Một QLabel tùy chỉnh với paintEvent được ghi đè để luôn vẽ ảnh
+    với tỷ lệ co giãn được giữ nguyên (hình vuông) ở chính giữa.
+    Đây là logic được lấy từ ui_competition.py để đảm bảo sự nhất quán.
+    """
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setMinimumSize(50, 50)
         self.setAlignment(Qt.AlignCenter)
         self._pixmap = QPixmap()
-        self.hit_points_relative = []
 
     def setPixmap(self, pixmap: QPixmap):
         self._pixmap = pixmap
-        self.update()
-
-    def add_hit_marker(self, relative_point: tuple[float, float]):
-        if relative_point:
-            self.hit_points_relative.append(relative_point)
-            self.update()
-
-    def clear_hit_markers(self):
-        self.hit_points_relative.clear()
-        self.update()
+        self.update() # Yêu cầu vẽ lại widget
 
     def paintEvent(self, event):
-        super().paintEvent(event)
+        # Không gọi super().paintEvent() vì chúng ta sẽ tự vẽ mọi thứ.
         painter = QPainter(self)
-        if self._pixmap.isNull(): return
+        
+        if self._pixmap.isNull():
+            # Nếu không có ảnh, hãy để QLabel gốc tự xử lý (ví dụ: vẽ background)
+            super().paintEvent(event)
+            return
 
+        # Tính toán để vẽ pixmap đã co giãn và căn giữa
         scaled_pixmap = self._pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
         offset_x = (self.width() - scaled_pixmap.width()) / 2
         offset_y = (self.height() - scaled_pixmap.height()) / 2
+        
+        # Vẽ pixmap tại vị trí đã tính toán
         painter.drawPixmap(QPoint(int(offset_x), int(offset_y)), scaled_pixmap)
-
-        pen = QPen(QColor("#e74c3c"))
-        pen.setWidth(2)
-        painter.setPen(pen)
-
-        for rel_x, rel_y in self.hit_points_relative:
-            draw_x = offset_x + (rel_x * scaled_pixmap.width())
-            draw_y = offset_y + (rel_y * scaled_pixmap.height())
-            marker_size = 5
-            painter.drawLine(int(draw_x - marker_size), int(draw_y), int(draw_x + marker_size), int(draw_y))
-            painter.drawLine(int(draw_x), int(draw_y - marker_size), int(draw_x), int(draw_y + marker_size))
+# === KẾT THÚC VÙNG SỬA ĐỔI ===
 
 class CompetitionStatsWindow(QMainWindow):
     back_to_menu_signal = Signal()
@@ -72,16 +68,13 @@ class CompetitionStatsWindow(QMainWindow):
 
         self._connect_signals()
         self.set_panels_state("INITIAL")
-        self.ui.delete_button.setEnabled(False) # Vô hiệu hóa nút xóa ban đầu
+        self.ui.delete_button.setEnabled(False)
 
     def _connect_signals(self):
         self.ui.back_button.clicked.connect(self.back_to_menu_signal.emit)
         self.ui.completed_list.itemSelectionChanged.connect(self._on_competition_selected)
         self.ui.ranking_table.itemSelectionChanged.connect(self._on_shooter_selected)
-        
-        # === BẮT ĐẦU VÙNG THÊM MỚI: KẾT NỐI NÚT XÓA ===
         self.ui.delete_button.clicked.connect(self._delete_competition)
-        # === KẾT THÚC VÙNG THÊM MỚI ===
 
     def enter_view(self):
         self.load_completed_competitions()
@@ -90,7 +83,7 @@ class CompetitionStatsWindow(QMainWindow):
     def load_completed_competitions(self):
         self.ui.completed_list.clear()
         self.current_competition_id = None
-        self.ui.delete_button.setEnabled(False) # Đảm bảo nút xóa bị vô hiệu hóa
+        self.ui.delete_button.setEnabled(False)
         try:
             completed_competitions = self.db.get_completed_competitions()
             if not completed_competitions:
@@ -129,71 +122,56 @@ class CompetitionStatsWindow(QMainWindow):
         if not selected_items:
             self.set_panels_state("INITIAL")
             self.current_competition_id = None
-            self.ui.delete_button.setEnabled(False) # Vô hiệu hóa nút xóa
+            self.ui.delete_button.setEnabled(False)
             return
 
         item = selected_items[0]
         self.current_competition_id = item.data(Qt.UserRole)
-        self.ui.delete_button.setEnabled(True) # Kích hoạt nút xóa
+        self.ui.delete_button.setEnabled(True)
 
         if self.current_competition_id:
             ranking_data = self.db.get_competition_ranking(self.current_competition_id)
             self._populate_ranking_table(ranking_data)
             self.set_panels_state("COMPETITION_SELECTED")
 
-    # === BẮT ĐẦU VÙNG THÊM MỚI: LOGIC XÓA PHIÊN ===
     @Slot()
     def _delete_competition(self):
-        """Xử lý sự kiện khi nhấn nút xóa phiên kiểm tra."""
-        if self.current_competition_id is None:
-            return
-            
+        if self.current_competition_id is None: return
         selected_items = self.ui.completed_list.selectedItems()
-        if not selected_items:
-            return
+        if not selected_items: return
         
-        # Lấy tên phiên để hiển thị trong hộp thoại xác nhận
-        item_widget = self.ui.completed_list.itemWidget(selected_items[0])
-        competition_name = item_widget.findChild(QLabel, "name_label").text()
+        try:
+            item_widget = self.ui.completed_list.itemWidget(selected_items[0])
+            competition_name = item_widget.findChild(QLabel, "name_label").text()
+        except AttributeError:
+            competition_name = "Đã chọn"
+
 
         reply = QMessageBox.warning(
-            self,
-            "Xác nhận Xóa",
-            f"Bạn có chắc chắn muốn xóa vĩnh viễn phiên kiểm tra:\n\n'{competition_name}'\n\nToàn bộ dữ liệu liên quan sẽ bị mất.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            self, "Xác nhận Xóa", f"Bạn có chắc chắn muốn xóa vĩnh viễn phiên kiểm tra:\n\n'{competition_name}'\n\nToàn bộ dữ liệu liên quan sẽ bị mất.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
-
         if reply == QMessageBox.Yes:
-            success = self.db.delete_competition(self.current_competition_id)
-            if success:
+            if self.db.delete_competition(self.current_competition_id):
                 QMessageBox.information(self, "Thành công", "Đã xóa phiên kiểm tra thành công.")
-                self.load_completed_competitions() # Tải lại danh sách
-                self.set_panels_state("INITIAL") # Reset giao diện về trạng thái ban đầu
-            else:
-                QMessageBox.critical(self, "Lỗi", "Không thể xóa phiên kiểm tra khỏi cơ sở dữ liệu.")
-    # === KẾT THÚC VÙNG THÊM MỚI ===
+                self.load_completed_competitions()
+                self.set_panels_state("INITIAL")
+            else: QMessageBox.critical(self, "Lỗi", "Không thể xóa phiên kiểm tra khỏi cơ sở dữ liệu.")
 
     def _populate_ranking_table(self, ranking_data: list):
         self.ui.ranking_table.setRowCount(0)
         rank_icons = {1: "🥇", 2: "🥈", 3: "🥉"}
 
         for i, participant in enumerate(ranking_data):
-            rank = i + 1
-            self.ui.ranking_table.insertRow(i)
-            rank_text = rank_icons.get(rank, f"{rank}")
-            rank_item = QTableWidgetItem(rank_text)
+            rank = i + 1; self.ui.ranking_table.insertRow(i)
+            rank_text = rank_icons.get(rank, f"{rank}"); rank_item = QTableWidgetItem(rank_text)
             rank_item.setTextAlignment(Qt.AlignCenter)
             if rank <= 3: rank_item.setFont(QFont("Segoe UI", 16))
-            rank_item.setData(Qt.UserRole, participant['soldier_id'])
-            self.ui.ranking_table.setItem(i, 0, rank_item)
+            rank_item.setData(Qt.UserRole, participant['soldier_id']); self.ui.ranking_table.setItem(i, 0, rank_item)
             self.ui.ranking_table.setItem(i, 1, QTableWidgetItem(participant['name']))
             self.ui.ranking_table.setItem(i, 2, QTableWidgetItem(participant['class_name']))
-            total_score = participant.get('total_score', 0)
-            score_item = QTableWidgetItem(str(total_score))
-            score_item.setTextAlignment(Qt.AlignCenter)
-            score_item.setFont(QFont("Segoe UI", 14, QFont.Bold))
-            score_item.setForeground(QColor("#f1c40f"))
+            total_score = participant.get('total_score', 0); score_item = QTableWidgetItem(str(total_score))
+            score_item.setTextAlignment(Qt.AlignCenter); score_item.setFont(QFont("Segoe UI", 14, QFont.Bold)); score_item.setForeground(QColor("#f1c40f"))
             self.ui.ranking_table.setItem(i, 3, score_item)
 
     @Slot()
@@ -203,10 +181,8 @@ class CompetitionStatsWindow(QMainWindow):
             self.set_panels_state("COMPETITION_SELECTED")
             return
 
-        row = self.ui.ranking_table.row(selected_items[0])
-        shooter_id = self.ui.ranking_table.item(row, 0).data(Qt.UserRole)
+        row = self.ui.ranking_table.row(selected_items[0]); shooter_id = self.ui.ranking_table.item(row, 0).data(Qt.UserRole)
         shooter_name = self.ui.ranking_table.item(row, 1).text()
-
         if shooter_id:
             all_shooter_shots = self.db.get_shots_for_competition(self.current_competition_id, shooter_id)
             all_shooter_shots.sort(key=lambda s: s.get('shot_number', 0))
@@ -216,9 +192,36 @@ class CompetitionStatsWindow(QMainWindow):
     def _clear_grid_layout(self, layout):
         while layout.count():
             item = layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+            if item.widget():
+                item.widget().deleteLater()
+
+    def _create_target_image_with_shots(self, target_type: str, shots: list) -> QPixmap:
+        image_path = resource_path(f"assets/images/original/bia_{target_type}.png")
+        logger.info(f"Thống kê: Đang tải ảnh bia '{target_type}' từ: {image_path}")
+
+        base_image = cv2.imread(image_path)
+        if base_image is None:
+            logger.error(f"Thống kê: Lỗi nghiêm trọng - Không thể tải ảnh bia gốc tại {image_path}")
+            return QPixmap()
+
+        for shot in shots:
+            coords_str = shot.get('coords')
+            if not coords_str:
+                continue
+            try:
+                coords = json.loads(coords_str)
+                if isinstance(coords, list) and len(coords) == 2:
+                    draw_point = (int(coords[0]), int(coords[1]))
+                    logger.info(f"Thống kê: Đang vẽ vết đạn cho phát bắn số {shot.get('shot_number')} tại {draw_point}")
+                    cv2.drawMarker(base_image, draw_point, (0, 0, 255), cv2.MARKER_CROSS, 40, 3)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(f"Thống kê: Bỏ qua vẽ vết đạn cho ID {shot.get('id')} do lỗi parse tọa độ: '{coords_str}'")
+
+        rgb_image = cv2.cvtColor(base_image, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb_image.shape
+        bytes_per_line = ch * w
+        qt_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        return QPixmap.fromImage(qt_image)
 
     def _populate_shooter_details(self, shooter_name: str, all_shots: list):
         self._clear_grid_layout(self.ui.target_details_grid)
@@ -236,33 +239,21 @@ class CompetitionStatsWindow(QMainWindow):
             target_box.setAlignment(Qt.AlignCenter)
             box_layout = QVBoxLayout(target_box)
 
-            img_label = ShotMarkerLabel()
-            img_path = resource_path(f"assets/images/original/bia_{target_info['type']}.png")
-            img_label.setPixmap(QPixmap(img_path))
+            final_pixmap = self._create_target_image_with_shots(target_info['type'], target_info['shots'])
 
-            scores = []
-            for shot in target_info['shots']:
-                scores.append(shot.get('score', 0))
-                coords_str = shot.get('coords')
-                
-                if coords_str:
-                    try:
-                        coords = json.loads(coords_str)
-                        target_name_raw = shot.get('target_detected', f"bia_{target_info['type']}")
-                        orig_w, orig_h = self.TARGET_DIMENSIONS.get(target_name_raw, (500, 500))
+            # === BẮT ĐẦU VÙNG SỬA ĐỔI: SỬ DỤNG LỚP WIDGET ĐÃ SỬA LỖI MÉO HÌNH ===
+            img_label = SquareImageLabel() # Sử dụng lớp mới để đảm bảo khung hình vuông
+            img_label.setPixmap(final_pixmap)
+            # Không cần setScaledContents(True) vì paintEvent đã xử lý
+            # === KẾT THÚC VÙNG SỬA ĐỔI ===
 
-                        if coords and orig_w > 0 and orig_h > 0:
-                            relative_coords = (coords[0] / orig_w, coords[1] / orig_h)
-                            img_label.add_hit_marker(relative_coords)
-                    except (json.JSONDecodeError, TypeError):
-                        logger.warning(f"Không thể parse tọa độ cho phát bắn ID: {shot.get('id')}")
-
+            scores = [shot.get('score', 0) for shot in target_info['shots']]
             score_text = " - ".join(map(str, scores))
             score_label = QLabel(f"Điểm: {score_text} (Tổng: {sum(scores)})")
             score_label.setAlignment(Qt.AlignCenter)
             score_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #f1c40f;")
 
-            box_layout.addWidget(img_label, 1)
+            box_layout.addWidget(img_label, 1) # Tham số '1' cho phép widget co giãn
             box_layout.addWidget(score_label)
 
             row, col = divmod(i, 2)
