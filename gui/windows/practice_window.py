@@ -271,7 +271,7 @@ class PracticeWindow(QMainWindow):
     def refresh_camera_connection(self):
         logger.info("PRACTICE: Bắt đầu làm mới kết nối camera..."); all_cameras = find_available_cameras()
         if len(all_cameras) > 1: target_index = self.configured_camera_index; logger.info(f"Phát hiện {len(all_cameras)} camera. Kết nối với camera USB tại chỉ số {target_index}."); self.connect_camera(target_index)
-        elif len(all_cameras) == 1: logger.warning("Chỉ phát hiện 1 camera (laptop). Yêu cầu kết nối camera USB."); self.disconnect_camera(message="Vui lòng kết nối USB Camera và nhấn Làm mới")
+        elif len(all_cameras) == 1: target_index = all_cameras[0]; logger.info(f"Chỉ phát hiện 1 camera. Tự động kết nối với camera tại chỉ số {target_index}."); self.connect_camera(target_index)
         else: logger.warning("Không tìm thấy camera nào."); self.disconnect_camera(message="Không tìm thấy camera")
     def start_camera(self):
         logger.info("Màn hình luyện tập: Kích hoạt camera và trigger..."); self.populate_soldier_selector()
