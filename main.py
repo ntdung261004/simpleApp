@@ -3,7 +3,7 @@ import os
 import sys
 import logging
 import json
-import shutil # <<< THÊM MỚI
+import shutil
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QInputDialog, QLineEdit, QMessageBox
 from PySide6.QtCore import QThread
 from PySide6.QtGui import QIcon
@@ -18,13 +18,22 @@ from core.triggers import BluetoothTrigger
 from config import APP_DATA_DIR
 from utils.license_manager import verify_key
 
-# Cấu hình logging cơ bản (giữ nguyên)
+# --- BẮT ĐẦU VÙNG TINH CHỈNH ---
+# Cấu hình logging để ghi lại tất cả các cấp độ từ INFO trở lên
 log_file_path = os.path.join(APP_DATA_DIR, "app_log.txt")
+# Thiết lập cho bộ ghi log gốc
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO) # <-- DÒNG NÀY ĐƯỢC THÊM VÀO
+
+# Thiết lập cho bộ xử lý file
 file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
 file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] (%(name)s) - %(message)s'))
-logging.getLogger().addHandler(file_handler)
+formatter = logging.Formatter('%(asctime)s [%(levelname)s] (%(name)s) - %(message)s')
+file_handler.setFormatter(formatter)
+root_logger.addHandler(file_handler)
+
 logging.info("--- Application Started ---")
+# --- KẾT THÚC VÙNG TINH CHỈNH ---
 
 
 # Hàm check_or_request_license giữ nguyên
@@ -58,7 +67,9 @@ class ApplicationController(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.config = self._load_config() # Sẽ gọi hàm đã được sửa đổi
+        self.config = self._load_config()
+        self._ensure_assets_are_in_appdata()
+        
         app_title = self.config.get("labels", {}).get("app_title", "Phần Mềm Bắn Súng")
         self.setWindowTitle(app_title)
         self.setStyleSheet("background-color: #2c3e50;")
@@ -90,16 +101,10 @@ class ApplicationController(QMainWindow):
         self.processing_thread.start()
         self.bt_trigger.start_global_listener()
     
-    # --- BẮT ĐẦU VÙNG SỬA ĐỔI: VIẾT LẠI HOÀN TOÀN HÀM _load_config ---
     def _load_config(self) -> dict:
-        """
-        Tải file config.json. Chỉ sao chép file gốc vào AppData nếu nó chưa tồn tại.
-        Điều này giúp bảo toàn các thay đổi của người dùng.
-        """
         config_filename = "config.json"
         dest_path = os.path.join(APP_DATA_DIR, config_filename)
 
-        # Chỉ sao chép file config gốc nếu file trong AppData chưa tồn tại
         if not os.path.exists(dest_path):
             logging.info(f"'{config_filename}' không tìm thấy trong AppData. Sao chép file mặc định.")
             source_path = resource_path(config_filename)
@@ -112,7 +117,6 @@ class ApplicationController(QMainWindow):
             else:
                 logging.error(f"Lỗi nghiêm trọng: Không tìm thấy file config gốc tại '{source_path}'.")
 
-        # Bây giờ, tiến hành đọc file config từ AppData (dù nó vừa được tạo hay đã có sẵn)
         if os.path.exists(dest_path):
             try:
                 with open(dest_path, 'r', encoding='utf-8') as f:
@@ -122,6 +126,31 @@ class ApplicationController(QMainWindow):
         
         QMessageBox.critical(None, "Lỗi nghiêm trọng", "Không thể tải file cấu hình (config.json). Ứng dụng có thể không hoạt động đúng.")
         return {}
+
+    def _ensure_assets_are_in_appdata(self):
+        model_filename = self.config.get("yolo_model_name")
+        if not model_filename:
+            logging.error("Config thiếu key 'yolo_model_name'. Không thể tải model.")
+            return
+
+        dest_model_path = os.path.join(APP_DATA_DIR, model_filename)
+
+        if not os.path.exists(dest_model_path):
+            logging.info(f"Model '{model_filename}' không tìm thấy trong AppData. Sao chép từ file mặc định.")
+            
+            source_model_path = resource_path(os.path.join("assets", "models", model_filename))
+            
+            if os.path.exists(source_model_path):
+                try:
+                    os.makedirs(os.path.dirname(dest_model_path), exist_ok=True)
+                    shutil.copyfile(source_model_path, dest_model_path)
+                    logging.info(f"Đã sao chép thành công model mặc định vào AppData.")
+                except (IOError, shutil.SameFileError) as e:
+                    logging.error(f"Không thể sao chép file model mặc định: {e}")
+                    QMessageBox.critical(None, "Lỗi Sao chép Model", f"Không thể sao chép model AI cần thiết vào thư mục dữ liệu.\nLỗi: {e}")
+            else:
+                logging.error(f"Lỗi nghiêm trọng: Không tìm thấy file model gốc tại '{source_model_path}'.")
+                QMessageBox.critical(None, "Lỗi Thiếu Model", f"Không tìm thấy file model AI '{model_filename}' trong gói cài đặt.")
      
     def connect_signals(self):
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)       

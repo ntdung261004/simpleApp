@@ -10,22 +10,23 @@ from module.detection_module import ObjectDetector
 from utils.processing import check_object_center
 from utils.handles import handle_hit_bia_so_4, handle_hit_bia_so_7, handle_hit_bia_so_8, handle_miss
 from utils.resource_path import resource_path
+from config import APP_DATA_DIR
+
 logger = logging.getLogger(__name__)
 
 class ProcessingWorker(QObject):
     finished = Signal(dict)
 
-    # --- BẮT ĐẦU THAY ĐỔI ---
-    def __init__(self, config: dict): # << Nhận 'config' từ main.py
+    def __init__(self, config: dict):
         super().__init__()
-        model_path = resource_path("assets/models/my_modelv8m.pt")
-        self.detector = ObjectDetector(model_path=model_path)
-        self.assets = self._load_assets()
+        self.config = config
+        self.detector = None
+        
+        self._initialize_detector()
 
-        # Lấy ngưỡng tin cậy từ config, nếu không có thì dùng 0.75
-        self.confidence_threshold = config.get('yolo_confidence_threshold', 0.75)
+        self.assets = self._load_assets()
+        self.confidence_threshold = self.config.get('yolo_confidence_threshold', 0.75)
         logger.info(f"Worker initialized with confidence threshold: {self.confidence_threshold}")
-    # --- KẾT THÚC THAY ĐỔI ---
         
         self.hit_handlers = {
             'bia_so_4': (handle_hit_bia_so_4, 'bia_so_4'),
@@ -33,17 +34,35 @@ class ProcessingWorker(QObject):
             'bia_so_8': (handle_hit_bia_so_8, 'bia_so_8'),
         }
 
-        # Logic "làm nóng" model
-        logger.info("Worker: Thực hiện warm-up cho mô hình YOLO...")
-        try:
-            dummy_image = np.zeros((480, 640, 3), dtype=np.uint8)
-            self.detector.detect(dummy_image)
-            logger.info("Worker: Warm-up hoàn tất.")
-        except Exception as e:
-            logger.error(f"Worker: Lỗi trong quá trình warm-up: {e}")
+        if self.detector:
+            logger.info("Worker: Thực hiện warm-up cho mô hình YOLO...")
+            try:
+                dummy_image = np.zeros((480, 640, 3), dtype=np.uint8)
+                self.detector.detect(dummy_image)
+                logger.info("Worker: Warm-up hoàn tất.")
+            except Exception as e:
+                logger.error(f"Worker: Lỗi trong quá trình warm-up: {e}")
 
+    def _initialize_detector(self):
+        """
+        Khởi tạo ObjectDetector bằng cách đọc đường dẫn model từ config
+        và trỏ đến thư mục AppData.
+        """
+        model_filename = self.config.get("yolo_model_name")
+        if not model_filename:
+            logger.critical("Config không chứa 'yolo_model_name'. Không thể khởi tạo AI.")
+            return
+
+        model_path = os.path.join(APP_DATA_DIR, model_filename)
+
+        if not os.path.exists(model_path):
+            logger.critical(f"Không tìm thấy file model tại đường dẫn '{model_path}'. Worker không thể hoạt động.")
+            return
+
+        logger.info(f"Đang khởi tạo detector với model tại: {model_path}")
+        self.detector = ObjectDetector(model_path=model_path)
+        
     def _load_assets(self):
-        # Hàm này giữ nguyên như trong file của bạn
         assets = {}
         target_names = ['bia_so_4', 'bia_so_7', 'bia_so_8']
         
@@ -67,10 +86,18 @@ class ProcessingWorker(QObject):
 
     @Slot(np.ndarray, object, str)
     def process_image(self, photo_frame, calibrated_center, image_path):
-        # --- BẮT ĐẦU THAY ĐỔI ---
-        # Sử dụng ngưỡng tin cậy đã đọc từ config
+        if not self.detector or not self.detector.model:
+            logger.error("Detector chưa được khởi tạo. Hủy bỏ xử lý ảnh.")
+            error_package = {
+                'time_str': datetime.now().strftime('%H:%M:%S'),
+                'target_name': "Lỗi Model AI",
+                'score': 0, 'result_frame': photo_frame, 'coords': None,
+                'image_path': image_path, 'target_detected_raw': "ERROR"
+            }
+            self.finished.emit(error_package)
+            return
+            
         detections = self.detector.detect(image=photo_frame, conf=self.confidence_threshold)
-        # --- KẾT THÚC THAY ĐỔI ---
 
         status, hit_info = check_object_center(detections, photo_frame, calibrated_center)
 
