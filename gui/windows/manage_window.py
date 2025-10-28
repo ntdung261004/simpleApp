@@ -18,7 +18,7 @@ from core.database import DatabaseManager
 from utils.resource_path import resource_path
 
 # =============================================================================
-# === LỚP DIALOG THÊM/SỬA NGƯỜI HỌC (ĐỊNH NGHĨA Ở CẤP CAO NHẤT) ===
+# === LỚP DIALOG THÊM/SỬA NGƯỜI HỌC ===
 # =============================================================================
 class AddSoldierDialog(QDialog):
     def __init__(self, config: dict, is_edit_mode: bool = False, parent=None):
@@ -90,7 +90,7 @@ class AddSoldierDialog(QDialog):
 
 
 # =============================================================================
-# === LỚP DIALOG HIỂN THỊ ĐỘ CHỤM (ĐỊNH NGHĨA Ở CẤP CAO NHẤT) ===
+# === LỚP DIALOG HIỂN THỊ ĐỘ CHỤM ===
 # =============================================================================
 class GroupingDisplayDialog(QDialog):
     def __init__(self, parent=None):
@@ -158,7 +158,9 @@ class ManageWindow(QMainWindow):
         self.ui.history_list.setContextMenuPolicy(Qt.CustomContextMenu)
 
     def setup_ui_styles(self):
-        self.ui.history_list.setStyleSheet("QListWidget::item { padding: 10px; border-bottom: 1px solid #4a6278; } QListWidget::item:selected { background-color: #1abc9c; color: #2c3e50; border-bottom: 1px solid #16a085; }")
+        # Cập nhật style để tương thích với kích thước động
+        padding = int(10 * self.ui.scale_factor)
+        self.ui.history_list.setStyleSheet(f"QListWidget::item {{ padding: {padding}px; border-bottom: 1px solid #4a6278; }} QListWidget::item:selected {{ background-color: #1abc9c; color: #2c3e50; border-bottom: 1px solid #16a085; }}")
         table_stylesheet = "QTableWidget::item:selected { background-color: #1abc9c; color: white; }"
         self.ui.soldier_table.setStyleSheet(table_stylesheet)
         self.ui.shot_table.setStyleSheet(table_stylesheet)
@@ -172,8 +174,34 @@ class ManageWindow(QMainWindow):
         self.ui.shot_table.itemSelectionChanged.connect(self.on_shot_table_selected)
         self.ui.soldier_table.customContextMenuRequested.connect(self.show_soldier_context_menu)
         self.ui.history_list.customContextMenuRequested.connect(self.show_session_context_menu)
+        
+        # --- BẮT ĐẦU VÙNG TINH CHỈNH: KẾT NỐI TÍN HIỆU TÌM KIẾM ---
+        self.ui.search_box.textChanged.connect(self.filter_soldiers)
+        # --- KẾT THÚC VÙNG TINH CHỈNH ---
+        
         for target_key, button in self.ui.analysis_view_buttons.items():
             button.clicked.connect(lambda checked=False, key=target_key: self.show_grouping_popup(key))
+
+    # --- BẮT ĐẦU VÙNG TINH CHỈNH: HÀM LOGIC LỌC DANH SÁCH ---
+    def filter_soldiers(self):
+        """
+        Lọc danh sách chiến sĩ trong bảng dựa trên nội dung của thanh tìm kiếm.
+        """
+        search_text = self.ui.search_box.text().lower()
+        for row in range(self.ui.soldier_table.rowCount()):
+            name_item = self.ui.soldier_table.item(row, 0)
+            class_item = self.ui.soldier_table.item(row, 1)
+            
+            # Đảm bảo item tồn tại trước khi lấy text
+            name_matches = search_text in name_item.text().lower() if name_item else False
+            class_matches = search_text in class_item.text().lower() if class_item else False
+
+            # Ẩn/hiện dòng nếu tên hoặc đơn vị khớp
+            if name_matches or class_matches:
+                self.ui.soldier_table.setRowHidden(row, False)
+            else:
+                self.ui.soldier_table.setRowHidden(row, True)
+    # --- KẾT THÚC VÙNG TINH CHỈNH ---
 
     def show_grouping_popup(self, target_key: str):
         coords = self.current_shot_coords.get(target_key)
@@ -183,8 +211,7 @@ class ManageWindow(QMainWindow):
         asset_path = resource_path("assets/images/original")
         target_image_map = {'bia_so_4': 'bia_so_4.png', 'bia_so_7_8': 'bia_so_7.png', 'bia_so_8': 'bia_so_8.png'}
         image_file = target_image_map.get(target_key)
-        if not image_file:
-            return
+        if not image_file: return
         image_path = os.path.join(asset_path, image_file)
         if not os.path.exists(image_path):
             QMessageBox.warning(self, "Lỗi", f"Không tìm thấy ảnh bia gốc tại:\n{image_path}")
@@ -335,15 +362,11 @@ class ManageWindow(QMainWindow):
             self.current_shot_index = -1
             self.update_shot_display()
 
-    # --- BẮT ĐẦU VÙNG SỬA ĐỔI 1: Cập nhật hàm hiển thị ---
     def update_shot_display(self):
         total_shots = len(self.current_shots)
         has_shots = 0 <= self.current_shot_index < total_shots
-
-        # Cập nhật trạng thái các nút điều hướng
         self.ui.prev_shot_button.setEnabled(has_shots and self.current_shot_index > 0)
         self.ui.next_shot_button.setEnabled(has_shots and self.current_shot_index < total_shots - 1)
-
         if has_shots:
             shot_data = self.current_shots[self.current_shot_index]
             self.ui.shot_index_label.setText(f"Phát {self.current_shot_index + 1}/{total_shots}")
@@ -357,27 +380,20 @@ class ManageWindow(QMainWindow):
             self.ui.shot_index_label.setText("Phát 0/0")
             self.ui.result_image.setPixmap(QPixmap())
             self.ui.result_image.setText("Chưa có phát bắn")
-    # --- KẾT THÚC VÙNG SỬA ĐỔI 1 ---
 
-    # --- BẮT ĐẦU VÙNG SỬA ĐỔI 2: Sửa logic các nút ---
     def show_previous_shot(self):
-        # Chỉ yêu cầu bảng chọn dòng trước đó. Hàm on_shot_table_selected sẽ xử lý phần còn lại.
         if self.current_shot_index > 0:
             self.ui.shot_table.selectRow(self.current_shot_index - 1)
 
     def show_next_shot(self):
-        # Chỉ yêu cầu bảng chọn dòng tiếp theo.
         if self.current_shot_index < len(self.current_shots) - 1:
             self.ui.shot_table.selectRow(self.current_shot_index + 1)
-    # --- KẾT THÚC VÙNG SỬA ĐỔI 2 ---
             
     def on_shot_table_selected(self):
         selected_rows = self.ui.shot_table.selectionModel().selectedRows()
         if not selected_rows:
             return
         selected_row_index = selected_rows[0].row()
-        
-        # Logic này bây giờ sẽ hoạt động đúng
         if self.current_shot_index != selected_row_index:
             self.current_shot_index = selected_row_index
             self.update_shot_display()
@@ -396,6 +412,9 @@ class ManageWindow(QMainWindow):
 
     def load_soldiers(self):
         logging.info("Bắt đầu tải danh sách người học...")
+        # --- BẮT ĐẦU VÙNG TINH CHỈNH: XÓA NỘI DUNG TÌM KIẾM KHI TẢI LẠI ---
+        self.ui.search_box.clear()
+        # --- KẾT THÚC VÙNG TINH CHỈNH ---
         self.ui.soldier_table.setRowCount(0)
         try:
             soldiers = self.db.get_all_soldiers()
@@ -417,13 +436,11 @@ class ManageWindow(QMainWindow):
 
     def show_soldier_context_menu(self, pos):
         item = self.ui.soldier_table.itemAt(pos)
-        if not item:
-            return
+        if not item: return
         row = item.row()
         soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
         soldier_name = self.ui.soldier_table.item(row, 0).text()
-        if soldier_id is None:
-            return
+        if soldier_id is None: return
         menu = QMenu(self)
         edit_action = menu.addAction("Sửa thông tin")
         edit_action.triggered.connect(lambda: self.edit_soldier(row))
@@ -464,8 +481,7 @@ class ManageWindow(QMainWindow):
 
     def show_session_context_menu(self, pos):
         item = self.ui.history_list.itemAt(pos)
-        if not item:
-            return
+        if not item: return
         session_id = item.data(Qt.UserRole)
         session_name = item.text().split('\n')[0]
         menu = QMenu(self)
@@ -477,16 +493,13 @@ class ManageWindow(QMainWindow):
 
     def edit_session_name(self, session_id):
         session_data = self.db.get_session_by_id(session_id)
-        if not session_data:
-            return
+        if not session_data: return
         current_name = session_data.get('exercise_name')
         while True:
             new_name, ok = QInputDialog.getText(self, "Đổi tên Phiên tập", "Nhập tên mới:", QLineEdit.Normal, current_name)
-            if not ok:
-                break
+            if not ok: break
             stripped_name = new_name.strip()
-            if not stripped_name:
-                continue
+            if not stripped_name: continue
             if self.db.session_name_exists(stripped_name, soldier_id=self.current_soldier_id, exclude_session_id=session_id):
                 QMessageBox.warning(self, "Tên bị trùng", f"Người này đã có phiên tập tên '{stripped_name}'.\nVui lòng chọn một tên khác.")
                 current_name = stripped_name
