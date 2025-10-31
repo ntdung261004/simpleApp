@@ -3,9 +3,10 @@
     "yolo_model_name": "my_modelv8m.pt",
     "yolo_confidence_threshold": 0.75,
     "labels": {
-        "customer_unit_name": "TÊN ĐƠN VỊ KHÁCH HÀNG",
+        "customer_unit_name": "Đại đội 1 Tiểu đoàn 1 Trung đoàn 887 BCHQS tỉnh Quảng Ngãi",
         "app_title": "PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM",
         "app_subtitle": "SÚNG TIỂU LIÊN",
+        "app_footer": "Tác giả: Phạm Bá Nhật",
         "trainee": "Chiến sĩ",
         "trainee_class": "Đơn vị",
         "trainee_list_title": "Danh sách Chiến sĩ",
