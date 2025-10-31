@@ -269,10 +269,27 @@ class PracticeWindow(QMainWindow):
         if self.cam: self.cam.release()
         self.cam = None; self.is_camera_connected = False; self.gui.clear_video_feed(message); logger.info(f"Đã ngắt kết nối camera. Lý do: {message}")
     def refresh_camera_connection(self):
-        logger.info("PRACTICE: Bắt đầu làm mới kết nối camera..."); all_cameras = find_available_cameras()
-        if len(all_cameras) > 1: target_index = self.configured_camera_index; logger.info(f"Phát hiện {len(all_cameras)} camera. Kết nối với camera USB tại chỉ số {target_index}."); self.connect_camera(target_index)
-        elif len(all_cameras) == 1: target_index = all_cameras[0]; logger.info(f"Chỉ phát hiện 1 camera. Tự động kết nối với camera tại chỉ số {target_index}."); self.connect_camera(target_index)
-        else: logger.warning("Không tìm thấy camera nào."); self.disconnect_camera(message="Không tìm thấy camera")
+        """
+        Cố gắng kết nối với camera được chỉ định trong config.
+        Logic được tối ưu để không phụ thuộc vào số lượng camera.
+        """
+        logger.info("PRACTICE: Bắt đầu làm mới kết nối camera...")
+        
+        # 1. Quét để xem có camera nào khả dụng hay không.
+        available_cameras = find_available_cameras()
+        
+        # 2. Nếu không có camera nào, dừng lại và thông báo lỗi.
+        if not available_cameras:
+            logger.warning("Không tìm thấy bất kỳ camera nào được kết nối.")
+            self.disconnect_camera(message="Không tìm thấy camera")
+            return
+
+        # 3. Luôn thử kết nối với chỉ số camera lấy từ config.
+        target_index = self.configured_camera_index
+        logger.info(f"Tìm thấy {len(available_cameras)} camera. Sẽ thử kết nối với camera được cấu hình tại index: {target_index}.")
+        
+        # 4. Hàm connect_camera sẽ tự xử lý việc kết nối và báo lỗi nếu thất bại.
+        self.connect_camera(target_index)
     def start_camera(self):
         logger.info("Màn hình luyện tập: Kích hoạt camera và trigger..."); self.populate_soldier_selector()
         if self.bt_trigger: self.bt_trigger.activate()
