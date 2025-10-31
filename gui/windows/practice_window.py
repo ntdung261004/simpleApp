@@ -105,8 +105,9 @@ class PracticeWindow(QMainWindow):
     def update_frame(self):
         if not self.is_camera_connected or self.cam is None: return
         ret, frame = self.cam.read()
-        if not ret or frame is None: self.disconnect_camera("Mất kết nối camera.\nVui lòng kết nối lại và nhấn làm mới.")
-
+        if not ret or frame is None: 
+            self.disconnect_camera("Mất kết nối camera.\nVui lòng kết nối lại và nhấn làm mới.")
+            return
         frame_cropped = self._crop_frame_to_3_4(frame)
         frame_resized = cv2.resize(frame_cropped, (self.final_size[1], self.final_size[0]))
         
@@ -227,7 +228,7 @@ class PracticeWindow(QMainWindow):
         
         # Nếu có 1 camera hoặc không có, giả định đó là camera tích hợp và yêu cầu cắm USB camera
         if num_cameras < 2:
-            self.disconnect_camera("Vui lòng kết nối USB camera và nhấn 'Làm mới'")
+            self.connect_camera(self.configured_camera_index)
         else:
             # Nếu có từ 2 camera trở lên, kết nối vào index đã cấu hình
             if self.configured_camera_index < num_cameras:

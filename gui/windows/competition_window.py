@@ -373,7 +373,7 @@ class CompetitionWindow(QMainWindow):
     def start_camera(self):
         self.disconnect_camera()
         num_cameras = count_available_cameras()
-        if num_cameras < 2: self.disconnect_camera("Vui lòng kết nối USB camera và nhấn 'Làm mới'")
+        if num_cameras < 2: self.connect_camera(self.configured_camera_index)
         else:
             if self.configured_camera_index < num_cameras: self.connect_camera(self.configured_camera_index)
             else: self.disconnect_camera(f"Lỗi: Index ({self.configured_camera_index}) không hợp lệ. Tìm thấy {num_cameras} camera.")
