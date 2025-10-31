@@ -10,7 +10,8 @@ from PySide6.QtGui import QScreen
 
 from ..ui.ui_practice import MainGui
 from utils.audio import AudioManager
-from utils.camera import count_available_cameras, Camera
+# THAY ĐỔI 1: Import hàm mới và xóa hàm cũ
+from utils.camera import find_available_cameras, Camera
 from core.triggers import BluetoothTrigger
 from core.worker import ProcessingWorker
 from core.database import DatabaseManager
@@ -50,11 +51,12 @@ class PracticeWindow(QMainWindow):
         self.load_soldiers()
         self.set_ui_state('INITIAL')
 
+    # ... (Các hàm từ _crop_frame_to_3_4 đến shutdown_components giữ nguyên) ...
     def _crop_frame_to_3_4(self, frame: np.ndarray) -> np.ndarray:
         h, w = frame.shape[:2]
         target_aspect = 3.0 / 4.0
         new_w = int(h * target_aspect)
-        if new_w > w: return frame 
+        if new_w > w: return frame
         start_x = (w - new_w) // 2
         return frame[:, start_x : start_x + new_w]
 
@@ -78,9 +80,9 @@ class PracticeWindow(QMainWindow):
         if ret and frame is not None:
             frame_cropped = self._crop_frame_to_3_4(frame)
             frame_resized = cv2.resize(frame_cropped, (self.final_size[1], self.final_size[0]))
-            
+
             frame_to_send = self._apply_effects_to_frame(frame_resized)
-            
+
             h, w, _ = frame_resized.shape
             original_aim_point = self.calibrated_center if self.calibrated_center else (w // 2, h // 2)
 
@@ -98,24 +100,24 @@ class PracticeWindow(QMainWindow):
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             image_path = os.path.join(image_dir, f"shot_{timestamp}.jpg")
             metadata = {'aim_point': final_aim_point}
-            
+
             self.request_processing.emit(frame_to_send, image_path, 'practice', metadata)
             self.audio_manager.play_sound('shot')
 
     def update_frame(self):
         if not self.is_camera_connected or self.cam is None: return
         ret, frame = self.cam.read()
-        if not ret or frame is None: 
+        if not ret or frame is None:
             self.disconnect_camera("Mất kết nối camera.\nVui lòng kết nối lại và nhấn làm mới.")
             return
         frame_cropped = self._crop_frame_to_3_4(frame)
         frame_resized = cv2.resize(frame_cropped, (self.final_size[1], self.final_size[0]))
-        
+
         frame_with_effects = self._apply_effects_to_frame(frame_resized)
 
         h, w, _ = frame_resized.shape
         original_aim_point = self.calibrated_center if self.calibrated_center else (w // 2, h // 2)
-        
+
         if self.zoom_level > 1.0:
             zoomed_w, zoomed_h = int(w / self.zoom_level), int(h / self.zoom_level)
             crop_start_x, crop_start_y = (w - zoomed_w) // 2, (h - zoomed_h) // 2
@@ -127,7 +129,7 @@ class PracticeWindow(QMainWindow):
 
         cv2.drawMarker(frame_with_effects, display_aim_point, (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
         self.gui.display_frame(frame_with_effects)
-        
+
     def setup_connections(self):
         self.gui.soldier_selector.currentIndexChanged.connect(self.on_soldier_selected)
         self.gui.session_button.clicked.connect(self.toggle_session_state)
@@ -143,7 +145,7 @@ class PracticeWindow(QMainWindow):
     def on_processing_finished(self, result: dict):
         result_image = result.get('result_frame')
         score = result.get('score', 0)
-        
+
         if score == 0:
             aim_point_used = result.get('aim_point_used')
             if result_image is not None and aim_point_used is not None:
@@ -155,7 +157,7 @@ class PracticeWindow(QMainWindow):
             except Exception as e: logger.error(f"Lỗi khi ghi ảnh kết quả: {e}")
 
         self.gui.update_results(time_str=result.get('time_str'), target_name=result.get('target_name'), score=score, result_frame=result_image)
-        
+
         if score == 0: self.audio_manager.play_sound('miss')
         else: self.audio_manager.play_score(score)
 
@@ -221,25 +223,38 @@ class PracticeWindow(QMainWindow):
         self.trigger.deactivate()
         self.disconnect_camera()
 
-    # === BẮT ĐẦU VÙNG THAY ĐỔI: LOGIC KẾT NỐI CAMERA MỚI ===
+    # THAY ĐỔI 2: Thay thế toàn bộ hàm start_camera và refresh_camera_connection
     def start_camera(self):
-        self.disconnect_camera() 
-        num_cameras = count_available_cameras()
-        
-        # Nếu có 1 camera hoặc không có, giả định đó là camera tích hợp và yêu cầu cắm USB camera
-        if num_cameras < 2:
-            self.connect_camera(self.configured_camera_index)
-        else:
-            # Nếu có từ 2 camera trở lên, kết nối vào index đã cấu hình
-            if self.configured_camera_index < num_cameras:
-                self.connect_camera(self.configured_camera_index)
-            else:
-                self.disconnect_camera(f"Lỗi: Index ({self.configured_camera_index}) không hợp lệ. Tìm thấy {num_cameras} camera.")
-    # === KẾT THÚC VÙNG THAY ĐỔI ===
+        """
+        Hàm được gọi khi cửa sổ được hiển thị.
+        Nó sẽ tự động cố gắng kết nối với camera đã cấu hình.
+        """
+        self.refresh_camera_connection()
 
     def refresh_camera_connection(self):
-        self.start_camera()
+        """
+        Cố gắng kết nối với camera được chỉ định trong config.
+        Logic được tối ưu để không phụ thuộc vào số lượng camera.
+        """
+        logger.info("PRACTICE: Bắt đầu làm mới kết nối camera...")
 
+        # 1. Quét để xem có camera nào khả dụng hay không.
+        available_cameras = find_available_cameras()
+
+        # 2. Nếu không có camera nào, dừng lại và thông báo lỗi.
+        if not available_cameras:
+            logger.warning("Không tìm thấy bất kỳ camera nào được kết nối.")
+            self.disconnect_camera(message="Không tìm thấy camera")
+            return
+
+        # 3. Luôn thử kết nối với chỉ số camera lấy từ config.
+        target_index = self.configured_camera_index
+        logger.info(f"Tìm thấy {len(available_cameras)} camera. Sẽ thử kết nối với camera được cấu hình tại index: {target_index}.")
+
+        # 4. Hàm connect_camera sẽ tự xử lý việc kết nối và báo lỗi nếu thất bại.
+        self.connect_camera(target_index)
+
+    # ... (Các hàm còn lại giữ nguyên) ...
     def connect_camera(self, index: int):
         self.disconnect_camera()
         self.cam = Camera(index)
