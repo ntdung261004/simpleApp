@@ -81,7 +81,6 @@ class ManageWindow(QMainWindow):
         self.setStyleSheet("background-color: #2c3e50;")
         self.setWindowTitle("Quản lý và Thống kê")
         
-        # === SỬA LỖI: Khởi tạo ManageGui không cần tham số ===
         self.ui = ManageGui()
         
         self.setCentralWidget(self.ui); self.db = DatabaseManager()
@@ -91,7 +90,6 @@ class ManageWindow(QMainWindow):
         self.ui.soldier_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ui.history_list.setContextMenuPolicy(Qt.CustomContextMenu)
 
-    # --- Các hàm còn lại giữ nguyên, không thay đổi ---
     def setup_ui_styles(self):
         self.ui.history_list.setStyleSheet(""" QListWidget::item { padding: 10px; border-bottom: 1px solid #4a6278; } QListWidget::item:selected { background-color: #1abc9c; color: #2c3e50; border-bottom: 1px solid #16a085; } """)
         self.ui.soldier_table.setStyleSheet("QTableWidget::item:selected { background-color: #1abc9c; color: white; }")
@@ -108,6 +106,19 @@ class ManageWindow(QMainWindow):
         self.ui.history_list.customContextMenuRequested.connect(self.show_session_context_menu)
         for target_key, button in self.ui.analysis_view_buttons.items():
             button.clicked.connect(lambda checked=False, key=target_key: self.show_grouping_popup(key))
+        
+        # === BẮT ĐẦU VÙNG THÊM MỚI: Kết nối thanh tìm kiếm ===
+        self.ui.search_input.textChanged.connect(self.on_search_text_changed)
+        # === KẾT THÚC VÙNG THÊM MỚI ===
+
+    # === BẮT ĐẦU VÙNG THÊM MỚI: Hàm xử lý tìm kiếm ===
+    def on_search_text_changed(self, text):
+        """
+        Được gọi mỗi khi người dùng thay đổi văn bản trong ô tìm kiếm.
+        """
+        self.load_soldiers() # Gọi lại hàm load_soldiers để lọc danh sách
+    # === KẾT THÚC VÙNG THÊM MỚI ===
+
     def show_previous_shot(self):
         if self.current_shot_index > 0:
             self.current_shot_index -= 1; self.update_shot_display(); self.ui.shot_table.selectRow(self.current_shot_index)
@@ -228,20 +239,41 @@ class ManageWindow(QMainWindow):
                 self.db.add_soldier(**data); QMessageBox.information(self, "Thành công", f"Đã thêm người tập '{data['name']}'.")
                 self.load_soldiers()
             except Exception as e: QMessageBox.critical(self, "Lỗi", f"Không thể thêm người tập.\nLỗi: {e}")
+
+    # === BẮT ĐẦU VÙNG THAY ĐỔI: Chỉnh sửa hàm load_soldiers ===
     def load_soldiers(self):
         self.ui.soldier_table.setRowCount(0)
+        search_term = self.ui.search_input.text().strip()
+        
         try:
-            soldiers = self.db.get_all_soldiers()
+            # Nếu có từ khóa tìm kiếm, gọi hàm search, ngược lại lấy tất cả
+            if search_term:
+                soldiers = self.db.search_soldiers(search_term)
+            else:
+                soldiers = self.db.get_all_soldiers()
+            
             if not soldiers:
-                self.ui.soldier_table.setRowCount(1); notice_item = QTableWidgetItem("Chưa có người tập nào")
-                notice_item.setTextAlignment(Qt.AlignCenter); notice_item.setFlags(notice_item.flags() & ~Qt.ItemIsEnabled)
-                self.ui.soldier_table.setItem(0, 0, notice_item); self.ui.soldier_table.setSpan(0, 0, 1, self.ui.soldier_table.columnCount()); return
+                self.ui.soldier_table.setRowCount(1)
+                notice_text = "Không tìm thấy kết quả" if search_term else "Chưa có người tập nào"
+                notice_item = QTableWidgetItem(notice_text)
+                notice_item.setTextAlignment(Qt.AlignCenter)
+                notice_item.setFlags(notice_item.flags() & ~Qt.ItemIsEnabled)
+                self.ui.soldier_table.setItem(0, 0, notice_item)
+                self.ui.soldier_table.setSpan(0, 0, 1, self.ui.soldier_table.columnCount())
+                return
+
             self.ui.soldier_table.setRowCount(len(soldiers))
             for row, soldier_data in enumerate(soldiers):
-                name_item = QTableWidgetItem(soldier_data['name']); class_name_item = QTableWidgetItem(soldier_data.get('class_name', ''))
-                class_name_item.setTextAlignment(Qt.AlignCenter); name_item.setData(Qt.UserRole, soldier_data['id'])
-                self.ui.soldier_table.setItem(row, 0, name_item); self.ui.soldier_table.setItem(row, 1, class_name_item)
-        except Exception as e: logging.error(f"Lỗi khi tải danh sách người tập: {e}", exc_info=True)
+                name_item = QTableWidgetItem(soldier_data['name'])
+                class_name_item = QTableWidgetItem(soldier_data.get('class_name', ''))
+                class_name_item.setTextAlignment(Qt.AlignCenter)
+                name_item.setData(Qt.UserRole, soldier_data['id'])
+                self.ui.soldier_table.setItem(row, 0, name_item)
+                self.ui.soldier_table.setItem(row, 1, class_name_item)
+        except Exception as e:
+            logging.error(f"Lỗi khi tải danh sách người tập: {e}", exc_info=True)
+    # === KẾT THÚC VÙNG THAY ĐỔI ===
+    
     def show_soldier_context_menu(self, pos):
         item = self.ui.soldier_table.itemAt(pos)
         if not item: return

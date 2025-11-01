@@ -2,7 +2,8 @@
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QGroupBox, QFormLayout, QTableWidget, QTableWidgetItem,
-    QFrame, QSizePolicy, QAbstractItemView, QHeaderView , QListWidget, QStackedWidget
+    QFrame, QSizePolicy, QAbstractItemView, QHeaderView , QListWidget, QStackedWidget,
+    QLineEdit
 )
 from PySide6.QtGui import QFont, QPixmap, QColor, QPainter
 from PySide6.QtCore import Qt
@@ -64,6 +65,17 @@ class ManageGui(QWidget):
             QPushButton#danger:hover {{ background-color: #c0392b; }}
             QListWidget, QTableWidget {{ background-color: #2c3e50; border: 1px solid #4a6278; border-radius: {scaler.scale(6)}px; gridline-color: #4a6278; }}
             QHeaderView::section {{ background-color: #415a72; color: #ecf0f1; padding: {scaler.scale(4)}px; border: 1px solid #4a6278; }}
+            QLineEdit#search_input {{
+                background-color: #2c3e50;
+                border: 1px solid #4a6278;
+                border-radius: {scaler.scale(6)}px;
+                padding: {scaler.scale(6)}px;
+                color: #ecf0f1;
+                font-size: {scaler.scale(13)}px;
+            }}
+            QLineEdit#search_input:focus {{
+                border: 1px solid #1abc9c;
+            }}
         """)
         self.setupUi()
 
@@ -110,6 +122,14 @@ class ManageGui(QWidget):
         
         soldier_box = QGroupBox("Danh sách Người tập")
         soldier_layout = QVBoxLayout(soldier_box)
+        
+        # === BẮT ĐẦU VÙNG THÊM MỚI: Thanh tìm kiếm ===
+        self.search_input = QLineEdit()
+        self.search_input.setObjectName("search_input")
+        self.search_input.setPlaceholderText("Tìm theo tên hoặc đơn vị...")
+        soldier_layout.addWidget(self.search_input)
+        # === KẾT THÚC VÙNG THÊM MỚI ===
+
         self.soldier_table = QTableWidget(0, 2)
         self.soldier_table.setHorizontalHeaderLabels(["Họ và Tên", "Đơn vị"])
         self.soldier_table.verticalHeader().setVisible(False)

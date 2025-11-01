@@ -103,6 +103,24 @@ class DatabaseManager:
         if not self.conn: return []
         try: self.cursor.execute("SELECT * FROM soldiers ORDER BY name ASC"); return [dict(row) for row in self.cursor.fetchall()]
         except sqlite3.Error as e: logger.error(f"Lỗi khi lấy danh sách người bắn: {e}"); return []
+        
+    # === BẮT ĐẦU VÙNG THÊM MỚI: Hàm tìm kiếm người tập ===
+    def search_soldiers(self, search_term: str) -> List[Dict[str, Any]]:
+        """
+        Tìm kiếm người tập dựa trên tên hoặc đơn vị.
+        """
+        if not self.conn:
+            return []
+        try:
+            query = "SELECT * FROM soldiers WHERE name LIKE ? OR class_name LIKE ? ORDER BY name ASC"
+            # Thêm ký tự '%' để tìm kiếm một phần của chuỗi
+            term = f"%{search_term}%"
+            self.cursor.execute(query, (term, term))
+            return [dict(row) for row in self.cursor.fetchall()]
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi tìm kiếm người tập: {e}")
+            return []
+    # === KẾT THÚC VÙNG THÊM MỚI ===
 
     def update_soldier(self, soldier_id: int, name: str, class_name: str) -> bool:
         if not self.conn: return False
@@ -139,7 +157,6 @@ class DatabaseManager:
             self.cursor.execute(sql, (session_id, shot_number, score, target_detected, coords_str, image_path, timestamp)); self.conn.commit()
         except (sqlite3.Error, TypeError) as e: logger.error(f"Lỗi khi lưu phát bắn (tập luyện): {e}")
 
-    # === BẮT ĐẦU VÙNG SỬA LỖI ===
     def add_competition_shot(self, competition_id: int, soldier_id: int, score: int, coords: Optional[list], image_path: str, target_name: str):
         if not self.conn:
             return
@@ -149,8 +166,6 @@ class DatabaseManager:
             shot_number = shot_count + 1
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            # Gỡ bỏ các bước chuyển đổi không cần thiết. `coords` đã là một list float sạch.
-            # `json.dumps` sẽ xử lý nó một cách chính xác.
             coords_str = json.dumps(coords) if coords is not None else None
             
             logger.info(f"LOG DATABASE: Chuẩn bị lưu phát bắn cho competition_id={competition_id}, soldier_id={soldier_id}. Chuỗi JSON tọa độ: {coords_str}")
@@ -162,9 +177,7 @@ class DatabaseManager:
         except (sqlite3.Error, TypeError) as e: 
             logger.error(f"Lỗi khi thêm phát bắn (kiểm tra): {e}")
             self.conn.rollback()
-    # === KẾT THÚC VÙNG SỬA LỖI ===
 
-    # --- Các hàm còn lại giữ nguyên ---
     def competition_name_exists(self, name: str) -> bool:
         if not self.conn: return True
         try:
