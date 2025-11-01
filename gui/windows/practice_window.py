@@ -256,7 +256,7 @@ class PracticeWindow(QMainWindow):
     def on_zoom_changed(self, value): self.zoom_level = value / 10.0
     def connect_camera(self, index):
         self.disconnect_camera(); self.cam = Camera(index)
-        if not self.cam.isOpened(): logger.error(f"PRACTICE: Không thể mở camera index {index} ở tầng driver."); self.disconnect_camera(f"Lỗi: Không thể mở Camera {index}"); return
+        if not self.cam.isOpened(): logger.error(f"PRACTICE: Không thể mở camera index {index} ở tầng driver."); self.disconnect_camera(f"Vui lòng kết nối với thiết bị camera."); return
         is_frame_read_successfully = False; attempts = 0; max_attempts = 10
         while attempts < max_attempts:
             ret, frame = self.cam.read()
