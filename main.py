@@ -10,7 +10,7 @@ import traceback
 # Sử dụng user_data_dir một cách an toàn
 try:
     from platformdirs import user_data_dir
-    APP_DATA_DIR_FOR_ERROR = user_data_dir("ShootingApp", "LTSoftware")
+    APP_DATA_DIR_FOR_ERROR = user_data_dir("TrainingK54", "LTSoftware")
     os.makedirs(APP_DATA_DIR_FOR_ERROR, exist_ok=True)
     error_file_path = os.path.join(APP_DATA_DIR_FOR_ERROR, "critical_error.txt")
 except Exception as e:
@@ -119,17 +119,29 @@ try:
             return {}
 
         def _ensure_assets_are_in_appdata(self):
-            model_filename = self.config.get("yolo_model_name")
-            if not model_filename:
-                logging.error("Config thiếu key 'yolo_model_name'. Không thể tải model.")
+            # SỬA LỖI 1: Đọc đúng key "yolo_model_path" thay vì "yolo_model_name"
+            model_relative_path = self.config.get("yolo_model_path") 
+            
+            if not model_relative_path:
+                logging.error("Config thiếu key 'yolo_model_path'. Không thể tải model.")
                 return
-            dest_model_path = os.path.join(APP_DATA_DIR, model_filename)
+            
+            # Đường dẫn đầy đủ nơi file model SẼ NẰM trong AppData
+            dest_model_path = os.path.join(APP_DATA_DIR, model_relative_path) 
+            
             if not os.path.exists(dest_model_path):
-                logging.info(f"Model '{model_filename}' không tìm thấy trong AppData. Sao chép từ file mặc định.")
-                source_model_path = resource_path(os.path.join("assets", "models", model_filename))
+                logging.info(f"Model '{model_relative_path}' không tìm thấy trong AppData. Sao chép từ file mặc định.")
+                
+                # SỬA LỖI 2: Lấy đường dẫn nguồn của model từ resource_path
+                # Đường dẫn này là đường dẫn tương đối trong gói cài đặt (ví dụ: assets/models/K54v2.pt)
+                source_model_path = resource_path(model_relative_path)
+
                 if os.path.exists(source_model_path):
                     try:
+                        # SỬA LỖI 3: Đảm bảo thư mục đích tồn tại trước khi sao chép
+                        # (ví dụ: tạo thư mục .../Training54/assets/models/)
                         os.makedirs(os.path.dirname(dest_model_path), exist_ok=True)
+                        
                         shutil.copyfile(source_model_path, dest_model_path)
                         logging.info(f"Đã sao chép thành công model mặc định vào AppData.")
                     except (IOError, shutil.SameFileError) as e:
@@ -137,8 +149,8 @@ try:
                         QMessageBox.critical(None, "Lỗi Sao chép Model", f"Không thể sao chép model AI cần thiết vào thư mục dữ liệu.\nLỗi: {e}")
                 else:
                     logging.error(f"Lỗi nghiêm trọng: Không tìm thấy file model gốc tại '{source_model_path}'.")
-                    QMessageBox.critical(None, "Lỗi Thiếu Model", f"Không tìm thấy file model AI '{model_filename}' trong gói cài đặt.")
-     
+                    QMessageBox.critical(None, "Lỗi Thiếu Model", f"Không tìm thấy file model AI '{model_relative_path}' trong gói cài đặt.")
+        
         def connect_signals(self):
             self.main_menu.practice_button.clicked.connect(self.show_practice_screen)       
             self.main_menu.stats_button.clicked.connect(self.show_manage_screen)
