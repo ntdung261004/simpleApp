@@ -84,7 +84,7 @@ try:
             self.bt_trigger = BluetoothTrigger()
             self.processing_thread.setObjectName("ProcessingThread")
             self.processing_worker.moveToThread(self.processing_thread)
-            self.main_menu = MainMenuWindow(self.config)
+            self.main_menu = MainMenuWindow()
             self.practice_screen = PracticeWindow(worker=self.processing_worker, trigger=self.bt_trigger, config=self.config)
             self.manage_screen = ManageWindow(self.config)
             self.stacked_widget = QStackedWidget()
