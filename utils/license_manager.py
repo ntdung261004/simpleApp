@@ -2,12 +2,12 @@
 import hashlib
 import logging
 import subprocess
-import sys # <<< THÊM MỚI để kiểm tra hệ điều hành
+import sys 
 
 logger = logging.getLogger(__name__)
-SECRET_SALT = "0986534710" # Giữ nguyên chuỗi bí mật của bạn
+SECRET_SALT = "0986534710" 
 
-# --- BẮT ĐẦU VÙNG SỬA ĐỔI: HỖ TRỢ ĐA NỀN TẢNG (WINDOWS & MACOS) ---
+# --- BẮT ĐẦU VÙNG SỬA ĐỔI: SỬ DỤNG POWERSHELL CHO WINDOWS ---
 def get_system_uuid() -> str:
     """
     Lấy UUID của bo mạch chủ, hoạt động trên cả Windows và macOS.
@@ -17,8 +17,9 @@ def get_system_uuid() -> str:
     command = ""
     
     if platform == "win32":
-        # Lệnh cho Windows
-        command = "wmic csproduct get uuid"
+        # Lệnh cho Windows (Sử dụng PowerShell thay vì WMIC đã lỗi thời)
+        # <<< SỬA ĐỔI DÒNG NÀY >>>
+        command = "powershell -Command \"(Get-CimInstance Win32_ComputerSystemProduct).UUID\""
     elif platform == "darwin":
         # Lệnh cho macOS
         command = "ioreg -d2 -c IOPlatformExpertDevice | awk -F\\\" '/IOPlatformUUID/{print $(NF-1)}'"
@@ -44,6 +45,7 @@ def get_system_uuid() -> str:
         logger.error(f"Lỗi nghiêm trọng khi lấy System UUID trên {platform}: {e}")
         return "UUID_ERROR"
 
+# ... (Phần còn lại của file giữ nguyên) ...
 def generate_key(system_id: str) -> str:
     """Tạo license key từ một định danh hệ thống (UUID) và chuỗi bí mật."""
     s = hashlib.sha256()
