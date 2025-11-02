@@ -21,10 +21,19 @@ except Exception as e:
 
 try:
     # --- TOÀN BỘ CODE GỐC CỦA BẠN SẼ NẰM TRONG KHỐI TRY NÀY ---
+
+    # === SỬA LỖI CRASH THẦM LẶNG ===
+    # Khởi tạo QApplication LÊN ĐẦU TIÊN, trước khi import bất cứ thứ gì.
+    # Việc này đảm bảo các module (như scaler.py) có thể hoạt động.
+    from PySide6.QtWidgets import QApplication
+    app = QApplication(sys.argv)
+    # === KẾT THÚC SỬA LỖI ===
+
     import logging
     import json
     import shutil
-    from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QInputDialog, QLineEdit, QMessageBox
+    # (QApplication đã được import ở trên)
+    from PySide6.QtWidgets import QMainWindow, QStackedWidget, QInputDialog, QLineEdit, QMessageBox
     from PySide6.QtCore import QThread
     from PySide6.QtGui import QIcon
     from utils.resource_path import resource_path
@@ -84,7 +93,7 @@ try:
             self.bt_trigger = BluetoothTrigger()
             self.processing_thread.setObjectName("ProcessingThread")
             self.processing_worker.moveToThread(self.processing_thread)
-            self.main_menu = MainMenuWindow()
+            self.main_menu = MainMenuWindow() # Đã sửa (bỏ self.config)
             self.practice_screen = PracticeWindow(worker=self.processing_worker, trigger=self.bt_trigger, config=self.config)
             self.manage_screen = ManageWindow(self.config)
             self.stacked_widget = QStackedWidget()
@@ -119,27 +128,22 @@ try:
             return {}
 
         def _ensure_assets_are_in_appdata(self):
-            # SỬA LỖI 1: Đọc đúng key "yolo_model_path" thay vì "yolo_model_name"
+            # Đã sửa (đọc yolo_model_path)
             model_relative_path = self.config.get("yolo_model_path") 
             
             if not model_relative_path:
                 logging.error("Config thiếu key 'yolo_model_path'. Không thể tải model.")
                 return
             
-            # Đường dẫn đầy đủ nơi file model SẼ NẰM trong AppData
             dest_model_path = os.path.join(APP_DATA_DIR, model_relative_path) 
             
             if not os.path.exists(dest_model_path):
                 logging.info(f"Model '{model_relative_path}' không tìm thấy trong AppData. Sao chép từ file mặc định.")
                 
-                # SỬA LỖI 2: Lấy đường dẫn nguồn của model từ resource_path
-                # Đường dẫn này là đường dẫn tương đối trong gói cài đặt (ví dụ: assets/models/K54v2.pt)
                 source_model_path = resource_path(model_relative_path)
 
                 if os.path.exists(source_model_path):
                     try:
-                        # SỬA LỖI 3: Đảm bảo thư mục đích tồn tại trước khi sao chép
-                        # (ví dụ: tạo thư mục .../Training54/assets/models/)
                         os.makedirs(os.path.dirname(dest_model_path), exist_ok=True)
                         
                         shutil.copyfile(source_model_path, dest_model_path)
@@ -158,7 +162,12 @@ try:
             self.manage_screen.ui.back_button.clicked.connect(self.show_main_menu)
             self.main_menu.exit_button.clicked.connect(self.close)
             self.practice_screen.request_processing.connect(self.processing_worker.process_image)
-            self.processing_worker.finished.connect(self.practice_screen.on_processing_finished)
+            
+            # === SỬA LỖI ATTRIBUTEERROR TẠI ĐÂY ===
+            # Tên signal đúng là 'practice_finished', không phải 'finished'
+            self.processing_worker.practice_finished.connect(self.practice_screen.on_processing_finished)
+            # === KẾT THÚC SỬA LỖI ===
+            
             self.bt_trigger.triggered.connect(self.practice_screen.capture_photo)
 
         def cleanup_before_exit(self):
@@ -183,12 +192,15 @@ try:
             self.stacked_widget.setCurrentWidget(self.manage_screen)
 
     # --- Phần `main` gốc ---
-    app = QApplication(sys.argv)
+    
+    # app = QApplication(sys.argv) # <--- ĐÃ XÓA DÒNG NÀY (ĐÃ CHUYỂN LÊN ĐẦU)
+    
     icon_path = resource_path("assets/app_icon.ico")
     app_icon = QIcon(icon_path)
     app.setWindowIcon(app_icon)
+    
     if check_or_request_license():
-        controller = ApplicationController()
+        controller = ApplicationController() # Bây giờ gọi Controller là an toàn
         app.aboutToQuit.connect(controller.cleanup_before_exit)
         controller.showMaximized()
         sys.exit(app.exec())
@@ -206,8 +218,7 @@ except Exception:
     
     # Hiển thị thông báo lỗi thân thiện cho người dùng
     try:
-        from PySide6.QtWidgets import QApplication, QMessageBox
-        app = QApplication(sys.argv)
+        # app = QApplication(sys.argv) # <--- Không cần tạo app nữa vì nó đã ở trên
         QMessageBox.critical(
             None, 
             "Lỗi Khởi Động Nghiêm Trọng",
