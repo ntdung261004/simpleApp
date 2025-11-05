@@ -1,5 +1,5 @@
 {
     "camera_index": 0,
-    "yolo_confidence_threshold": 0.35,
+    "yolo_confidence_threshold": 0.45,
     "yolo_model_path": "assets/models/K54v2.pt"
 }

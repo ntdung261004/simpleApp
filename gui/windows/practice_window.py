@@ -162,7 +162,10 @@ class PracticeWindow(QMainWindow):
         else: self.audio_manager.play_score(score)
 
         if self.active_session_id:
-            shot_number = self.db.get_shot_count_for_session(self.active_session_id) + 1
+            # === BẮT ĐẦU SỬA LỖI 1 (Dòng 165) ===
+            # Sử dụng len() của hàm get_shots_for_session (trả về list)
+            shot_number = len(self.db.get_shots_for_session(self.active_session_id)) + 1
+            # === KẾT THÚC SỬA LỖI 1 ===
             self.db.add_shot(session_id=self.active_session_id, shot_number=shot_number, score=score, target_detected=result.get('target_detected_raw', 'N/A'), coords=result.get('coords'), image_path=image_path)
 
     def set_ui_state(self, state: str):
@@ -196,7 +199,11 @@ class PracticeWindow(QMainWindow):
 
     def end_current_session(self):
         if not self.active_session_id: return
-        shot_count = self.db.get_shot_count_for_session(self.active_session_id)
+        # === BẮT ĐẦU SỬA LỖI 2 (Dòng 196) ===
+        # Sử dụng len() của hàm get_shots_for_session (trả về list)
+        shot_count = len(self.db.get_shots_for_session(self.active_session_id))
+        # === KẾT THÚC SỬA LỖI 2 ===
+        
         if shot_count == 0:
             reply = QMessageBox.question(self, "Xác nhận", "Phiên tập này chưa có phát bắn nào.\n\nThoát và xóa phiên này?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply == QMessageBox.No: return
