@@ -1,14 +1,13 @@
 # file: gui/ui/ui_practice.py
 
 import cv2
-import base64
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QFrame, QSizePolicy,
-    QGraphicsDropShadowEffect, QGroupBox, QComboBox, QApplication
+    QGraphicsDropShadowEffect, QGroupBox, QComboBox, QApplication, QStackedWidget
 )
 import logging
-from PySide6.QtGui import QFont, QImage, QPixmap, QPainter, QColor, QIcon
-from PySide6.QtCore import Qt, QSize, QPoint, QByteArray, Signal
+from PySide6.QtGui import QFont, QImage, QPixmap, QPainter, QColor
+from PySide6.QtCore import Qt, QSize, QPoint, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +17,8 @@ class VideoLabel(QLabel):
         super().__init__(parent)
         self._pixmap = QPixmap()
         self.setScaledContents(False)
-        self.aspect_ratio = 4.0 / 3.0
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.aspect_ratio = 3.0 / 4.0  # Tỷ lệ dọc 3:4
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setAlignment(Qt.AlignCenter)
         self._is_calibrating = False
 
@@ -62,14 +61,12 @@ class MainGui(QWidget):
         self._apply_labels()
 
     def setupUi(self):
-        # --- BẮT ĐẦU VÙNG TINH CHỈNH: TÍNH TOÁN TỶ LỆ GIAO DIỆN ---
         screen = QApplication.primaryScreen().availableGeometry()
         screen_height = screen.height()
         self.scale_factor = screen_height / 1080.0
 
         def scale_size(base_size):
             return max(1, int(base_size * self.scale_factor))
-
         def scale_font(base_size):
             return max(9, int(base_size * self.scale_factor))
 
@@ -104,20 +101,45 @@ class MainGui(QWidget):
         root_layout.setContentsMargins(margin, scale_size(10), margin, margin)
         root_layout.setSpacing(spacing)
 
+        # --- HEADER ---
+        header_layout = QHBoxLayout()
         title_label = QLabel("MÀN HÌNH TẬP LUYỆN")
         title_label.setObjectName("title")
         title_label.setAlignment(Qt.AlignCenter)
         title_font = QFont('Segoe UI', scale_font(18), QFont.Bold)
         title_label.setFont(title_font)
-        root_layout.addWidget(title_label)
-
-        columns_layout = QHBoxLayout()
-        columns_layout.setSpacing(scale_size(20))
-        # --- KẾT THÚC VÙNG TINH CHỈNH ---
         
-        columns_layout.addWidget(self._create_camera_column(), 6)
-        columns_layout.addWidget(self._create_right_column(), 4)
-        root_layout.addLayout(columns_layout)
+        self.mode_selector = QComboBox()
+        self.mode_selector.addItem("Chế độ 1 Camera")
+        self.mode_selector.addItem("Chế độ 2 Camera")
+        self.mode_selector.setFixedWidth(200)
+
+        # Nút Về Menu (Dùng chung)
+        self.back_button = QPushButton("Về Menu")
+        self.back_button.setObjectName("danger")
+        self.back_button.setFixedWidth(scale_size(150))
+
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        header_layout.addWidget(QLabel("Chế độ:"))
+        header_layout.addWidget(self.mode_selector)
+        header_layout.addWidget(self.back_button)
+        
+        root_layout.addLayout(header_layout)
+
+        # --- STACKED WIDGET ---
+        self.main_stack = QStackedWidget()
+        root_layout.addWidget(self.main_stack)
+
+        # PAGE 1: 1 CAMERA
+        self.page_single = QWidget()
+        self._setup_original_single_ui(self.page_single, scale_size, scale_font)
+        self.main_stack.addWidget(self.page_single)
+
+        # PAGE 2: 2 CAMERA
+        self.page_dual = QWidget()
+        self._setup_dual_ui(self.page_dual, scale_size, scale_font)
+        self.main_stack.addWidget(self.page_dual)
 
     def _apply_labels(self):
         labels = self.config.get("labels", {})
@@ -134,135 +156,173 @@ class MainGui(QWidget):
         panel.setGraphicsEffect(shadow_effect)
         return panel
 
-    def _create_camera_column(self) -> QWidget:
-        panel = self._create_styled_panel()
-        margin = int(15 * self.scale_factor)
-        main_layout = QVBoxLayout(panel)
-        main_layout.setContentsMargins(margin, margin, margin, margin)
-        main_layout.setSpacing(margin)
+    def _setup_original_single_ui(self, parent, scale_size, scale_font):
+        layout = QHBoxLayout(parent)
+        layout.setContentsMargins(0,0,0,0)
+        layout.setSpacing(scale_size(20))
+
+        # Cột Trái
+        left_panel = self._create_styled_panel()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(scale_size(15), scale_size(15), scale_size(15), scale_size(15))
+        left_layout.setSpacing(scale_size(15))
 
         title_widget = QWidget()
         title_layout = QHBoxLayout(title_widget)
-        title_layout.setContentsMargins(0, 0, 0, 0)
-        title_layout.setSpacing(0)
         title = QLabel("Đường ngắm trực tiếp")
         title.setProperty("class", "panel-title")
         title.setAlignment(Qt.AlignCenter)
         title_layout.addStretch(1)
         title_layout.addWidget(title)
         title_layout.addStretch(1)
-        main_layout.addWidget(title_widget)
+        left_layout.addWidget(title_widget)
 
         self.camera_view_label = VideoLabel()
         self.camera_view_label.setText("Vui lòng kết nối camera")
-        main_layout.addWidget(self.camera_view_label, 1)
+        left_layout.addWidget(self.camera_view_label, 1)
 
         controls_panel = QWidget()
         controls_layout = QHBoxLayout(controls_panel)
-        controls_layout.setContentsMargins(int(10*self.scale_factor), int(5*self.scale_factor), int(10*self.scale_factor), 0)
-        controls_layout.setSpacing(int(10 * self.scale_factor))
         self.refresh_button = QPushButton("Làm mới")
         self.refresh_button.setObjectName("refreshButton")
         controls_layout.addWidget(self.refresh_button)
         controls_layout.addStretch(1)
-        zoom_text_label = QLabel("Khoảng cách:")
+        
         self.zoom_slider = QSlider(Qt.Horizontal)
-        self.zoom_slider.setMinimum(10)
-        self.zoom_slider.setMaximum(50)
-        self.zoom_slider.setValue(10)
+        self.zoom_slider.setMinimum(10); self.zoom_slider.setMaximum(50); self.zoom_slider.setValue(10)
         self.zoom_value_label = QLabel("1.0x")
-        self.zoom_value_label.setObjectName("zoomValueLabel")
-        controls_layout.addWidget(zoom_text_label)
+        controls_layout.addWidget(QLabel("Khoảng cách:"))
         controls_layout.addWidget(self.zoom_slider, 2)
         controls_layout.addWidget(self.zoom_value_label)
         controls_layout.addStretch(1)
+        
         self.calibrate_button = QPushButton("Hiệu chỉnh tâm")
         controls_layout.addWidget(self.calibrate_button)
-        main_layout.addWidget(controls_panel)
-        self.zoom_slider.valueChanged.connect(self._update_zoom_value_label)
-        return panel
+        left_layout.addWidget(controls_panel)
+        
+        self.zoom_slider.valueChanged.connect(lambda v: self.zoom_value_label.setText(f"{v/10.0:.1f}x"))
 
-    def _update_zoom_value_label(self, value):
-        zoom_factor = value / 10.0
-        self.zoom_value_label.setText(f"{zoom_factor:.1f}x")
+        # Cột Phải
+        right_panel = self._create_styled_panel()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(scale_size(20), scale_size(20), scale_size(20), scale_size(20))
 
-    def _create_right_column(self) -> QWidget:
-        panel = self._create_styled_panel()
-        margin = int(20 * self.scale_factor)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(margin, margin, margin, margin)
-        layout.setSpacing(margin)
-
-        # --- Session Box ---
+        # Session Box
         session_box = QGroupBox("Quản lý Lần bắn")
         session_layout = QVBoxLayout(session_box)
-        soldier_select_layout = QHBoxLayout()
+        row1 = QHBoxLayout()
         self.soldier_select_label = QLabel()
         self.soldier_selector = QComboBox()
-        soldier_select_layout.addWidget(self.soldier_select_label)
-        soldier_select_layout.addWidget(self.soldier_selector, 1)
-        session_layout.addLayout(soldier_select_layout)
+        row1.addWidget(self.soldier_select_label)
+        row1.addWidget(self.soldier_selector, 1)
+        session_layout.addLayout(row1)
         
-        session_buttons_layout = QHBoxLayout()
+        row2 = QHBoxLayout()
         self.session_button = QPushButton("Bắt đầu")
-        self.back_button = QPushButton("Về Menu")
-        self.back_button.setObjectName("danger")
-        session_buttons_layout.addWidget(self.session_button)
-        session_buttons_layout.addWidget(self.back_button)
-        session_layout.addLayout(session_buttons_layout)
+        row2.addWidget(self.session_button)
+        session_layout.addLayout(row2)
 
-        # --- Result Box ---
+        # Result Box
         result_box = QGroupBox("Kết quả mới nhất")
         result_layout = QVBoxLayout(result_box)
-        font_info = QFont('Segoe UI', max(9, int(12 * self.scale_factor)))
         
-        self.time_label = QLabel("Thời gian: --:--:--")
-        self.target_name_label = QLabel("Tên mục tiêu: --")
         self.score_label = QLabel("Điểm số: --")
+        self.score_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #e74c3c;")
+        self.score_label.setAlignment(Qt.AlignCenter)
         
-        for label in [self.time_label, self.target_name_label, self.score_label]:
-            label.setFont(font_info)
-            result_layout.addWidget(label)
-        
-        result_image_title = QLabel("Ảnh kết quả:")
-        result_image_title.setFont(font_info)
-        result_layout.addWidget(result_image_title)
-        
+        result_layout.addWidget(self.score_label)
+        result_layout.addWidget(QLabel("Ảnh kết quả:"))
         self.result_image_label = VideoLabel()
         result_layout.addWidget(self.result_image_label, 1)
 
-        # --- BẮT ĐẦU VÙNG TINH CHỈNH: ÁP DỤNG TỶ LỆ 3:7 ---
-        layout.addWidget(session_box, 3) # Stretch factor = 3
-        layout.addWidget(result_box, 7)  # Stretch factor = 7
-        # --- KẾT THÚC VÙNG TINH CHỈNH ---
-        
-        return panel
+        right_layout.addWidget(session_box, 3)
+        right_layout.addWidget(result_box, 7)
+        layout.addWidget(left_panel, 6)
+        layout.addWidget(right_panel, 4)
 
-    def _convert_cv_to_pixmap(self, cv_img) -> QPixmap:
-        if cv_img is None: return QPixmap()
-        rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb_image.shape
-        bytes_per_line = ch * w
-        qt_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        return QPixmap.fromImage(qt_image)
+    def _setup_dual_ui(self, parent, scale_size, scale_font):
+        layout = QHBoxLayout(parent)
+        layout.setContentsMargins(0,0,0,0)
+        layout.setSpacing(scale_size(10))
+
+        # Helper tạo cột dọc
+        def create_vertical_column(title, prefix):
+            panel = self._create_styled_panel()
+            col_layout = QVBoxLayout(panel)
+            col_layout.setContentsMargins(scale_size(10), scale_size(10), scale_size(10), scale_size(10))
+            
+            # 1. Header (Tên Cam + Chọn Nguồn)
+            header_widget = QWidget(); header_lo = QHBoxLayout(header_widget); header_lo.setContentsMargins(0,0,0,0)
+            lbl_title = QLabel(title); lbl_title.setProperty("class", "panel-title")
+            cmb_source = QComboBox(); cmb_source.setToolTip("Chọn nguồn Camera")
+            header_lo.addWidget(lbl_title); header_lo.addStretch(); header_lo.addWidget(QLabel("Nguồn:")); header_lo.addWidget(cmb_source)
+            col_layout.addWidget(header_widget)
+            
+            # 2. Session Control (Riêng biệt)
+            sess_widget = QWidget(); sess_lo = QHBoxLayout(sess_widget); sess_lo.setContentsMargins(0,0,0,0)
+            cmb_soldier = QComboBox(); cmb_soldier.setMinimumWidth(150)
+            btn_session = QPushButton("Bắt đầu"); btn_session.setMinimumWidth(80)
+            sess_lo.addWidget(QLabel("Người tập:")); sess_lo.addWidget(cmb_soldier, 1); sess_lo.addWidget(btn_session)
+            col_layout.addWidget(sess_widget)
+
+            # 3. View
+            cam_view = VideoLabel(); cam_view.setText(f"Kết nối {title}")
+            col_layout.addWidget(cam_view, 5) 
+            
+            # 4. Controls
+            ctrl_widget = QWidget(); ctrl_lo = QHBoxLayout(ctrl_widget); ctrl_lo.setContentsMargins(0,0,0,0)
+            btn_refresh = QPushButton("Làm mới")
+            sld_zoom = QSlider(Qt.Horizontal); sld_zoom.setRange(10,50); sld_zoom.setValue(10)
+            lbl_zoom = QLabel("1.0x")
+            sld_zoom.valueChanged.connect(lambda v: lbl_zoom.setText(f"{v/10.0:.1f}x"))
+            btn_calib = QPushButton("Hiệu chỉnh")
+            ctrl_lo.addWidget(btn_refresh); ctrl_lo.addWidget(QLabel("Zoom:")); ctrl_lo.addWidget(sld_zoom); ctrl_lo.addWidget(lbl_zoom); ctrl_lo.addWidget(btn_calib)
+            col_layout.addWidget(ctrl_widget)
+            
+            # 5. Result
+            grp_res = QGroupBox("Kết quả"); res_lo = QVBoxLayout(grp_res)
+            lbl_score = QLabel("Điểm số: --"); lbl_score.setStyleSheet("font-size: 16px; font-weight: bold; color: #e74c3c;"); lbl_score.setAlignment(Qt.AlignCenter)
+            img_res = VideoLabel(); img_res.setText("Ảnh KQ")
+            res_lo.addWidget(lbl_score); res_lo.addWidget(img_res, 1)
+            col_layout.addWidget(grp_res, 4)
+            
+            # Map Attributes
+            setattr(self, f"{prefix}_view", cam_view)
+            setattr(self, f"{prefix}_source", cmb_source)
+            setattr(self, f"{prefix}_soldier_selector", cmb_soldier)
+            setattr(self, f"{prefix}_session_btn", btn_session)
+            setattr(self, f"{prefix}_refresh", btn_refresh)
+            setattr(self, f"{prefix}_zoom", sld_zoom)
+            setattr(self, f"{prefix}_calib", btn_calib)
+            setattr(self, f"{prefix}_score", lbl_score)
+            setattr(self, f"{prefix}_result_img", img_res)
+            
+            return panel
+
+        col1 = create_vertical_column("CAMERA 1", "dual_cam1")
+        col2 = create_vertical_column("CAMERA 2", "dual_cam2")
+        layout.addWidget(col1)
+        layout.addWidget(col2)
 
     def display_frame(self, frame_bgr):
-        if frame_bgr is None: return
-        pixmap = self._convert_cv_to_pixmap(frame_bgr)
-        self.camera_view_label.setPixmap(pixmap)
+        if frame_bgr is not None:
+            pix = self._convert_cv_to_pixmap(frame_bgr)
+            self.camera_view_label.setPixmap(pix)
 
-    def clear_video_feed(self, message: str):
-        self.camera_view_label.setPixmap(QPixmap())
-        self.camera_view_label.setText(message)
+    def _convert_cv_to_pixmap(self, cv_img):
+        if cv_img is None: return QPixmap()
+        rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb.shape
+        return QPixmap.fromImage(QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888))
 
-    def update_results(self, time_str, target_name, score, result_frame):
-        self.time_label.setText(f"Thời gian: {time_str}")
-        self.target_name_label.setText(f"Tên mục tiêu: {target_name}")
-        self.score_label.setText(f"Điểm số: {score}")
-        pixmap = self._convert_cv_to_pixmap(result_frame)
-        if pixmap.isNull():
-            self.result_image_label.setText("Không có ảnh kết quả")
-            self.result_image_label.setPixmap(QPixmap()) # Clear old pixmap
-        else:
-            self.result_image_label.setText("") # Clear text
-            self.result_image_label.setPixmap(pixmap)
+    def clear_video_feed(self, msg):
+        empty = QPixmap()
+        self.camera_view_label.setPixmap(empty); self.camera_view_label.setText(msg)
+        if hasattr(self, 'dual_cam1_view'): self.dual_cam1_view.setPixmap(empty); self.dual_cam1_view.setText(msg)
+        if hasattr(self, 'dual_cam2_view'): self.dual_cam2_view.setPixmap(empty); self.dual_cam2_view.setText(msg)
+
+    def update_results(self, t, n, s, img):
+        self.score_label.setText(f"Điểm số: {s}")
+        pix = self._convert_cv_to_pixmap(img)
+        self.result_image_label.setPixmap(pix if not pix.isNull() else QPixmap())
+        self.result_image_label.setText("" if not pix.isNull() else "Chưa có ảnh")
