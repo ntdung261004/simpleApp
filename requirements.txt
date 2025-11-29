@@ -20,6 +20,7 @@ numpy==1.26.4
 opencv-python==4.7.0.68
 packaging==25.0
 pandas==2.3.1
+openpyxl==3.1.2
 pillow==11.3.0
 platformdirs==4.4.0
 psutil==7.0.0
