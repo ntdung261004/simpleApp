@@ -210,13 +210,23 @@ class MainGui(QWidget):
         # Session Box
         session_box = QGroupBox("Quản lý Lần bắn")
         session_layout = QVBoxLayout(session_box)
+        
+        # Hàng 1: Người tập
         row1 = QHBoxLayout()
         self.soldier_select_label = QLabel()
         self.soldier_selector = QComboBox()
         row1.addWidget(self.soldier_select_label)
         row1.addWidget(self.soldier_selector, 1)
         session_layout.addLayout(row1)
+
+        # --- THÊM: Hàng 2: Chọn Cò ---
+        row_trigger = QHBoxLayout()
+        self.trigger_selector = QComboBox() # Combo chọn cò
+        row_trigger.addWidget(QLabel("Chọn Cò:"))
+        row_trigger.addWidget(self.trigger_selector, 1)
+        session_layout.addLayout(row_trigger)
         
+        # Hàng 3: Nút Bắt đầu
         row2 = QHBoxLayout()
         self.session_button = QPushButton("Bắt đầu")
         row2.addWidget(self.session_button)
@@ -259,10 +269,22 @@ class MainGui(QWidget):
             col_layout.addWidget(header_widget)
             
             # 2. Session Control (Riêng biệt)
-            sess_widget = QWidget(); sess_lo = QHBoxLayout(sess_widget); sess_lo.setContentsMargins(0,0,0,0)
+            sess_widget = QWidget(); sess_lo = QVBoxLayout(sess_widget); sess_lo.setContentsMargins(0,0,0,0) # Đổi thành VBox để xếp dòng
+            
+            # Dòng: Người tập + Nút
+            row_s = QHBoxLayout()
             cmb_soldier = QComboBox(); cmb_soldier.setMinimumWidth(150)
             btn_session = QPushButton("Bắt đầu"); btn_session.setMinimumWidth(80)
-            sess_lo.addWidget(QLabel("Người tập:")); sess_lo.addWidget(cmb_soldier, 1); sess_lo.addWidget(btn_session)
+            row_s.addWidget(QLabel("Người tập:")); row_s.addWidget(cmb_soldier, 1); row_s.addWidget(btn_session)
+            
+            # --- THÊM: Dòng Chọn Cò ---
+            row_t = QHBoxLayout()
+            cmb_trigger = QComboBox()
+            row_t.addWidget(QLabel("Chọn Cò:   ")); row_t.addWidget(cmb_trigger, 1)
+            
+            sess_lo.addLayout(row_s)
+            sess_lo.addLayout(row_t)
+            
             col_layout.addWidget(sess_widget)
 
             # 3. View
@@ -296,6 +318,7 @@ class MainGui(QWidget):
             setattr(self, f"{prefix}_calib", btn_calib)
             setattr(self, f"{prefix}_score", lbl_score)
             setattr(self, f"{prefix}_result_img", img_res)
+            setattr(self, f"{prefix}_trigger", cmb_trigger) # Thêm map cho trigger
             
             return panel
 

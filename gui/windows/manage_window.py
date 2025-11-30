@@ -8,7 +8,9 @@ from PySide6.QtWidgets import (
     QMainWindow, QDialog, QFormLayout, QLineEdit,
     QDialogButtonBox, QMessageBox, QTableWidgetItem,
     QVBoxLayout, QListWidgetItem, QLabel, QSizePolicy,
-    QMenu, QInputDialog
+    QMenu, QInputDialog, QWidget, QGroupBox, QTableWidget, 
+    QAbstractItemView, QHeaderView, QListWidget, QStackedWidget,
+    QApplication, QFrame
 )
 from datetime import datetime
 from PySide6.QtGui import QPixmap, QImage
@@ -158,7 +160,6 @@ class ManageWindow(QMainWindow):
         self.ui.history_list.setContextMenuPolicy(Qt.CustomContextMenu)
 
     def setup_ui_styles(self):
-        # Cập nhật style để tương thích với kích thước động
         padding = int(10 * self.ui.scale_factor)
         self.ui.history_list.setStyleSheet(f"QListWidget::item {{ padding: {padding}px; border-bottom: 1px solid #4a6278; }} QListWidget::item:selected {{ background-color: #1abc9c; color: #2c3e50; border-bottom: 1px solid #16a085; }}")
         table_stylesheet = "QTableWidget::item:selected { background-color: #1abc9c; color: white; }"
@@ -174,34 +175,19 @@ class ManageWindow(QMainWindow):
         self.ui.shot_table.itemSelectionChanged.connect(self.on_shot_table_selected)
         self.ui.soldier_table.customContextMenuRequested.connect(self.show_soldier_context_menu)
         self.ui.history_list.customContextMenuRequested.connect(self.show_session_context_menu)
-        
-        # --- BẮT ĐẦU VÙNG TINH CHỈNH: KẾT NỐI TÍN HIỆU TÌM KIẾM ---
         self.ui.search_box.textChanged.connect(self.filter_soldiers)
-        # --- KẾT THÚC VÙNG TINH CHỈNH ---
         
         for target_key, button in self.ui.analysis_view_buttons.items():
             button.clicked.connect(lambda checked=False, key=target_key: self.show_grouping_popup(key))
 
-    # --- BẮT ĐẦU VÙNG TINH CHỈNH: HÀM LOGIC LỌC DANH SÁCH ---
     def filter_soldiers(self):
-        """
-        Lọc danh sách chiến sĩ trong bảng dựa trên nội dung của thanh tìm kiếm.
-        """
         search_text = self.ui.search_box.text().lower()
         for row in range(self.ui.soldier_table.rowCount()):
             name_item = self.ui.soldier_table.item(row, 0)
             class_item = self.ui.soldier_table.item(row, 1)
-            
-            # Đảm bảo item tồn tại trước khi lấy text
             name_matches = search_text in name_item.text().lower() if name_item else False
             class_matches = search_text in class_item.text().lower() if class_item else False
-
-            # Ẩn/hiện dòng nếu tên hoặc đơn vị khớp
-            if name_matches or class_matches:
-                self.ui.soldier_table.setRowHidden(row, False)
-            else:
-                self.ui.soldier_table.setRowHidden(row, True)
-    # --- KẾT THÚC VÙNG TINH CHỈNH ---
+            self.ui.soldier_table.setRowHidden(row, not (name_matches or class_matches))
 
     def show_grouping_popup(self, target_key: str):
         coords = self.current_shot_coords.get(target_key)
@@ -287,9 +273,8 @@ class ManageWindow(QMainWindow):
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.UserRole, session['id'])
                 self.ui.history_list.addItem(item)
-            logging.info(f"Đã tải {len(sessions)} phiên tập cho chiến sĩ ID {soldier_id}.")
         except Exception as e:
-            logging.error(f"Lỗi khi tải lịch sử bắn: {e}", exc_info=True)
+            logging.error(f"Lỗi khi tải lịch sử bắn: {e}")
 
     def on_session_selected(self):
         selected_items = self.ui.history_list.selectedItems()
@@ -308,7 +293,24 @@ class ManageWindow(QMainWindow):
         logging.info(f"Đang tải chi tiết cho phiên ID: {session_id}")
         self.current_shots = self.db.get_shots_for_session(session_id)
         total_shots = len(self.current_shots)
-        hit_shots = [s for s in self.current_shots if s.get('score') is not None and s['score'] > 0]
+        
+        # --- FIX: Xử lý dữ liệu điểm số an toàn ---
+        hit_shots = []
+        for s in self.current_shots:
+            # Chuẩn hóa score về int, mặc định là 0
+            try:
+                # Ép kiểu an toàn, xử lý cả trường hợp None hoặc chuỗi rỗng
+                score_val = int(s.get('score') or 0)
+            except (ValueError, TypeError):
+                score_val = 0
+            
+            # Cập nhật lại vào dict để dùng hiển thị sau này (quan trọng)
+            s['score'] = score_val
+            
+            if score_val > 0:
+                hit_shots.append(s)
+        # ------------------------------------------
+
         total_hits = len(hit_shots)
         valid_scores = [s['score'] for s in hit_shots]
         total_score = sum(valid_scores)
@@ -350,7 +352,13 @@ class ManageWindow(QMainWindow):
             except (ValueError, TypeError):
                 formatted_ts = shot['timestamp']
 
-            items = [QTableWidgetItem(str(shot['shot_number'])), QTableWidgetItem(formatted_ts), QTableWidgetItem(target_display), QTableWidgetItem(str(shot['score']))]
+            # Sử dụng score đã được chuẩn hóa ở trên
+            items = [
+                QTableWidgetItem(str(shot['shot_number'])), 
+                QTableWidgetItem(formatted_ts), 
+                QTableWidgetItem(target_display), 
+                QTableWidgetItem(str(shot['score']))
+            ]
             for col, item in enumerate(items):
                 item.setTextAlignment(Qt.AlignCenter)
                 self.ui.shot_table.setItem(row, col, item)
@@ -412,9 +420,7 @@ class ManageWindow(QMainWindow):
 
     def load_soldiers(self):
         logging.info("Bắt đầu tải danh sách người học...")
-        # --- BẮT ĐẦU VÙNG TINH CHỈNH: XÓA NỘI DUNG TÌM KIẾM KHI TẢI LẠI ---
         self.ui.search_box.clear()
-        # --- KẾT THÚC VÙNG TINH CHỈNH ---
         self.ui.soldier_table.setRowCount(0)
         try:
             soldiers = self.db.get_all_soldiers()

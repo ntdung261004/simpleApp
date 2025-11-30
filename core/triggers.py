@@ -1,4 +1,4 @@
-# Thay thế TOÀN BỘ file core/triggers.py
+# file: core/triggers.py
 
 import logging
 from PySide6.QtCore import QObject, Signal
@@ -7,35 +7,63 @@ from pynput import keyboard
 logger = logging.getLogger(__name__)
 
 class BluetoothTrigger(QObject):
-    triggered = Signal()
+    # Signal gửi về chuỗi 'UP' hoặc 'DOWN' để phân biệt nút bấm
+    triggered = Signal(str)
 
     def __init__(self):
         super().__init__()
-        self.trigger_key = keyboard.Key.media_volume_up
+        self.key_up = keyboard.Key.media_volume_up
+        self.key_down = keyboard.Key.media_volume_down
         self.listener = None
-        self._is_key_pressed = False
-        self.is_active = False # Cờ trạng thái để bật/tắt chức năng
+        self.is_active = False
+        
+        # --- LOGIC GỐC: Dùng cờ trạng thái để chặn lặp phím (Auto-repeat) ---
+        # Sử dụng 2 cờ riêng biệt cho 2 nút để tránh xung đột
+        self._is_up_pressed = False
+        self._is_down_pressed = False
 
     def on_press(self, key):
-        # Chỉ gửi tín hiệu khi đang ở trạng thái active
-        if self.is_active and key == self.trigger_key and not self._is_key_pressed:
-            self._is_key_pressed = True
-            logger.info(f"Phát hiện tín hiệu trigger từ phím: {key}")
-            self.triggered.emit()
+        # Chỉ xử lý khi active
+        if not self.is_active:
+            return
+
+        # NÚT UP (Cò L)
+        if key == self.key_up:
+            # Chỉ bắn nếu cờ đang False (chưa nhấn)
+            if not self._is_up_pressed:
+                self._is_up_pressed = True # Khóa lại ngay
+                logger.info("Trigger: Nút L (UP) đã bấm")
+                self.triggered.emit('UP')
+        
+        # NÚT DOWN (Cò N)
+        elif key == self.key_down:
+            # Chỉ bắn nếu cờ đang False (chưa nhấn)
+            if not self._is_down_pressed:
+                self._is_down_pressed = True # Khóa lại ngay
+                logger.info("Trigger: Nút N (DOWN) đã bấm")
+                self.triggered.emit('DOWN')
 
     def on_release(self, key):
-        if key == self.trigger_key:
-            self._is_key_pressed = False
+        # Khi nhả phím, trả cờ về False để cho phép lần bắn sau
+        if key == self.key_up:
+            self._is_up_pressed = False
+        elif key == self.key_down:
+            self._is_down_pressed = False
 
     def activate(self):
         """Bật chức năng lắng nghe."""
         logger.info("Trigger đã được BẬT.")
         self.is_active = True
+        # Reset trạng thái để tránh kẹt phím khi bật lại
+        self._is_up_pressed = False
+        self._is_down_pressed = False
 
     def deactivate(self):
         """Tắt chức năng lắng nghe."""
         logger.info("Trigger đã được TẮT.")
         self.is_active = False
+        self._is_up_pressed = False
+        self._is_down_pressed = False
 
     def start_global_listener(self):
         """Khởi động luồng lắng nghe một lần duy nhất."""

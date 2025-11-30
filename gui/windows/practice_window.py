@@ -2,7 +2,7 @@
 
 import logging
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QInputDialog, QLineEdit
-from PySide6.QtCore import QTimer, Signal, Slot, QPoint
+from PySide6.QtCore import QTimer, Signal, Slot, QPoint, Qt
 import cv2
 import numpy as np
 import os
@@ -62,18 +62,50 @@ class PracticeWindow(QMainWindow):
         
         self._init_connections()
         self.populate_soldier_selectors()
-        # Không gọi populate_camera_sources() ở đây để tránh bật cam lúc khởi động
+        
+        # --- Khởi tạo danh sách cò ---
+        self.populate_trigger_selectors()
+
         self.reset_ui_state()
+
+    def populate_trigger_selectors(self):
+        """Điền dữ liệu vào các hộp chọn Cò."""
+        triggers = [("Cò L (Nút Lên)", "UP"), ("Cò N (Nút Xuống)", "DOWN")]
+        
+        # Single Mode
+        if hasattr(self.gui, 'trigger_selector'):
+            self.gui.trigger_selector.clear()
+            for txt, val in triggers:
+                self.gui.trigger_selector.addItem(txt, val)
+            self.gui.trigger_selector.setCurrentIndex(0) # Mặc định UP
+
+        # Dual Mode
+        if hasattr(self.gui, 'dual_cam1_trigger'):
+            self.gui.dual_cam1_trigger.clear()
+            for txt, val in triggers:
+                self.gui.dual_cam1_trigger.addItem(txt, val)
+            self.gui.dual_cam1_trigger.setCurrentIndex(0) # Cam 1 mặc định UP
+
+        if hasattr(self.gui, 'dual_cam2_trigger'):
+            self.gui.dual_cam2_trigger.clear()
+            for txt, val in triggers:
+                self.gui.dual_cam2_trigger.addItem(txt, val)
+            self.gui.dual_cam2_trigger.setCurrentIndex(1) # Cam 2 mặc định DOWN
 
     def _init_connections(self):
         self.gui.mode_selector.currentIndexChanged.connect(self.on_change_mode)
         self.gui.back_button.clicked.connect(self.close_and_reset)
+        
+        # --- KẾT NỐI TRIGGER MỚI ---
+        self.bt_trigger.triggered.connect(self.handle_trigger_signal)
         
         # Single
         self.gui.session_button.clicked.connect(lambda: self.toggle_session(0))
         self.gui.soldier_selector.currentIndexChanged.connect(lambda: self._reset_session_ui(0))
         self.gui.zoom_slider.valueChanged.connect(lambda v: self.set_zoom(1, v))
         self.gui.refresh_button.clicked.connect(lambda: self.refresh_cam(1))
+        
+        # Kết nối sự kiện hiệu chỉnh tâm
         self.gui.calibrate_button.clicked.connect(lambda: self.toggle_calib(1))
         self.gui.camera_view_label.clicked.connect(lambda p: self.set_center(1, p))
 
@@ -83,8 +115,11 @@ class PracticeWindow(QMainWindow):
             self.gui.dual_cam1_soldier_selector.currentIndexChanged.connect(lambda: self._reset_session_ui(1))
             self.gui.dual_cam1_zoom.valueChanged.connect(lambda v: self.set_zoom(1, v))
             self.gui.dual_cam1_refresh.clicked.connect(lambda: self.refresh_cam(1))
+            
+            # Hiệu chỉnh Dual Cam 1
             self.gui.dual_cam1_calib.clicked.connect(lambda: self.toggle_calib(1))
             self.gui.dual_cam1_view.clicked.connect(lambda p: self.set_center(1, p))
+            
             self.gui.dual_cam1_source.currentIndexChanged.connect(lambda i: self.change_cam_source(1, i))
 
         # Dual Cam 2
@@ -93,8 +128,11 @@ class PracticeWindow(QMainWindow):
             self.gui.dual_cam2_soldier_selector.currentIndexChanged.connect(lambda: self._reset_session_ui(2))
             self.gui.dual_cam2_zoom.valueChanged.connect(lambda v: self.set_zoom(2, v))
             self.gui.dual_cam2_refresh.clicked.connect(lambda: self.refresh_cam(2))
+            
+            # Hiệu chỉnh Dual Cam 2
             self.gui.dual_cam2_calib.clicked.connect(lambda: self.toggle_calib(2))
             self.gui.dual_cam2_view.clicked.connect(lambda p: self.set_center(2, p))
+            
             self.gui.dual_cam2_source.currentIndexChanged.connect(lambda i: self.change_cam_source(2, i))
 
     def populate_soldier_selectors(self):
@@ -196,7 +234,6 @@ class PracticeWindow(QMainWindow):
             cropped = frame[:, start_x : start_x + new_w]
         else:
             cropped = frame
-        # TỐI ƯU HÓA: INTER_LINEAR
         return cv2.resize(cropped, self.final_size, interpolation=cv2.INTER_LINEAR)
 
     def apply_zoom(self, frame, zoom):
@@ -246,15 +283,22 @@ class PracticeWindow(QMainWindow):
         if self.clean_frames[cam_id] is None: return
         h_img, w_img = self.clean_frames[cam_id].shape[:2]
         w_wid, h_wid = view.width(), view.height()
+        
+        # Logic tính toán tọa độ dựa trên KeepAspectRatio
         scale = min(w_wid/w_img, h_wid/h_img)
         dw, dh = int(w_img*scale), int(h_img*scale)
         ox, oy = (w_wid-dw)//2, (h_wid-dh)//2
+        
         cx = int((pos.x() - ox) / scale)
         cy = int((pos.y() - oy) / scale)
+        
+        # Kẹp giá trị trong phạm vi ảnh
         cx = max(0, min(cx, w_img-1))
         cy = max(0, min(cy, h_img-1))
+        
         self.calib_centers[cam_id] = (cx, cy)
-        self.toggle_calib(cam_id)
+        logger.info(f"Đã đặt tâm ngắm mới cho Cam {cam_id}: ({cx}, {cy})")
+        self.toggle_calib(cam_id) # Tắt chế độ hiệu chỉnh sau khi chọn
 
     # --- SESSION MANAGEMENT ---
     def toggle_session(self, session_idx):
@@ -292,8 +336,7 @@ class PracticeWindow(QMainWindow):
             reply = QMessageBox.question(self, "Phiên tập trống", "Bạn chưa bắn phát nào. Xóa phiên này không?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             
             if reply == QMessageBox.No:
-                # Giữ nguyên trạng thái
-                return 
+                return # Người dùng chọn No -> Không xóa, giữ session
             
             self.db_manager.delete_session(sid)
             
@@ -307,13 +350,18 @@ class PracticeWindow(QMainWindow):
 
             while True:
                 name, ok = QInputDialog.getText(self, "Lưu Phiên Tập", "Nhập tên:", QLineEdit.Normal, default_name)
-                if not ok: break
+                # --- SỬA ĐỔI: Nếu Cancel -> Thoát hàm, không kết thúc session ---
+                if not ok: 
+                    return 
+                
                 final_name = name.strip() if name.strip() else default_name
                 if soldier_id and self.db_manager.session_name_exists(final_name, soldier_id):
                     QMessageBox.warning(self, "Tên trùng", "Tên đã tồn tại.")
                     continue
                 self.db_manager.update_session_name(sid, final_name)
                 break
+            
+            # Chỉ chạy xuống đây nếu đã Lưu tên thành công
             self.db_manager.end_session(sid)
 
         # Reset UI khi kết thúc thật
@@ -336,6 +384,10 @@ class PracticeWindow(QMainWindow):
             self.gui.dual_cam2_soldier_selector.setEnabled(not active)
             
         btn.setText(txt); btn.setObjectName(obj); btn.style().polish(btn)
+        
+        # --- SỬA ĐỔI: Vô hiệu hóa nút Back nếu CÓ BẤT KỲ session nào đang chạy ---
+        any_active = any(self.session_active_flags.values())
+        self.gui.back_button.setEnabled(not any_active)
 
     def _reset_session_ui(self, idx):
         if self.session_active_flags[idx]: self.finalize_session(idx)
@@ -351,9 +403,7 @@ class PracticeWindow(QMainWindow):
                 self._update_session_btn(i, False)
 
     def start_camera(self):
-        # FIX: Gọi populate ở đây để tránh bật cam lúc khởi động app
         self.populate_camera_sources()
-        
         self.refresh_cam(1)
         if self.current_mode == 1: self.refresh_cam(2)
         if self.bt_trigger: self.bt_trigger.activate()
@@ -369,29 +419,33 @@ class PracticeWindow(QMainWindow):
         self.shutdown_components()
         self.close()
 
-    def capture_photo(self):
-        fired = False
-        
-        if self.current_mode == 0:
-            if self.clean_frames[1] is not None:
-                self.audio_manager.play_sound('shot')
-                self._send_to_worker(1, self.clean_frames[1], 0)
-                fired = True
-        
-        elif self.current_mode == 1:
-            sound_played = False
-            if self.clean_frames[1] is not None:
-                if not sound_played: 
-                    self.audio_manager.play_sound('shot')
-                    sound_played = True
-                self._send_to_worker(1, self.clean_frames[1], 1)
-                fired = True
+    # --- HÀM XỬ LÝ TRIGGER ---
+    def handle_trigger_signal(self, key_type):
+        if self.current_mode == 0: 
+            sel = self.gui.trigger_selector.currentData()
+            if sel == key_type:
+                self.capture_single_cam(1, session_idx=0)
+
+        elif self.current_mode == 1: 
+            if hasattr(self.gui, 'dual_cam1_trigger'):
+                sel1 = self.gui.dual_cam1_trigger.currentData()
+                if sel1 == key_type:
+                    self.capture_single_cam(1, session_idx=1)
             
-            if self.clean_frames[2] is not None:
-                if not sound_played:
-                    self.audio_manager.play_sound('shot')
-                    sound_played = True
-                self._send_to_worker(2, self.clean_frames[2], 2)
+            if hasattr(self.gui, 'dual_cam2_trigger'):
+                sel2 = self.gui.dual_cam2_trigger.currentData()
+                if sel2 == key_type:
+                    self.capture_single_cam(2, session_idx=2)
+
+    def capture_single_cam(self, cam_id, session_idx):
+        if self.clean_frames[cam_id] is not None:
+            frame_to_save = self.clean_frames[cam_id].copy()
+            center = self.shot_points[cam_id]
+            if center:
+                cv2.drawMarker(frame_to_save, center, (0, 0, 255), cv2.MARKER_CROSS, 30, 2)
+            
+            self.audio_manager.play_sound('shot')
+            self._send_to_worker(cam_id, frame_to_save, session_idx)
 
     def _send_to_worker(self, cam_id, frame, session_idx):
         ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -418,7 +472,6 @@ class PracticeWindow(QMainWindow):
         if score > 0: self.audio_manager.play_score(score)
         else: self.audio_manager.play_sound('miss')
         
-        # Chỉ lưu nếu session active
         sid = self.active_session_ids[session_idx]
         if sid and self.session_active_flags[session_idx]:
             self.shot_counters[session_idx] += 1

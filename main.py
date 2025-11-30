@@ -18,14 +18,11 @@ from core.triggers import BluetoothTrigger
 from config import APP_DATA_DIR
 from utils.license_manager import verify_key
 
-# --- BẮT ĐẦU VÙNG TINH CHỈNH ---
-# Cấu hình logging để ghi lại tất cả các cấp độ từ INFO trở lên
+# Cấu hình logging
 log_file_path = os.path.join(APP_DATA_DIR, "app_log.txt")
-# Thiết lập cho bộ ghi log gốc
 root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO) # <-- DÒNG NÀY ĐƯỢC THÊM VÀO
+root_logger.setLevel(logging.INFO)
 
-# Thiết lập cho bộ xử lý file
 file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
 file_handler.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s [%(levelname)s] (%(name)s) - %(message)s')
@@ -33,10 +30,8 @@ file_handler.setFormatter(formatter)
 root_logger.addHandler(file_handler)
 
 logging.info("--- Application Started ---")
-# --- KẾT THÚC VÙNG TINH CHỈNH ---
 
-
-# Hàm check_or_request_license giữ nguyên
+# Hàm check_or_request_license (giữ nguyên)
 def check_or_request_license() -> bool:
     license_file_path = os.path.join(APP_DATA_DIR, 'license.key')
 
@@ -161,19 +156,18 @@ class ApplicationController(QMainWindow):
 
         self.practice_screen.request_processing.connect(self.processing_worker.process_image)
         self.processing_worker.finished.connect(self.practice_screen.on_processing_finished)
-        self.bt_trigger.triggered.connect(self.practice_screen.capture_photo)
+        
+        # --- QUAN TRỌNG: ĐÃ XÓA DÒNG KẾT NỐI trigger CŨ ĐỂ TRÁNH BẮN 2 LẦN ---
+        # Logic trigger hiện tại nằm hoàn toàn trong PracticeWindow
 
     def cleanup_before_exit(self):
         print("INFO: Bắt đầu quá trình dọn dẹp ứng dụng...")
-        
         if self.bt_trigger:
             self.bt_trigger.stop_global_listener()
-
         if self.processing_thread.isRunning():
             self.processing_thread.quit()
             if not self.processing_thread.wait(3000):
                 self.processing_thread.terminate()
-            
         print("INFO: Dọn dẹp hoàn tất.")
 
     def show_main_menu(self):
@@ -191,7 +185,6 @@ class ApplicationController(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-
     icon_path = resource_path("assets/app_icon.ico")
     app_icon = QIcon(icon_path)
     app.setWindowIcon(app_icon)
