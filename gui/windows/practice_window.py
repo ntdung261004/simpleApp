@@ -1,7 +1,7 @@
 # file: gui/windows/practice_window.py
 
 import logging
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QInputDialog, QLineEdit
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QInputDialog, QLineEdit, QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QDialogButtonBox
 from PySide6.QtCore import Signal, Slot, Qt
 import cv2
 import numpy as np
@@ -18,6 +18,76 @@ from config import APP_DATA_DIR
 
 logger = logging.getLogger(__name__)
 
+# --- CLASS DIALOG CHỌN NGƯỜI TẬP ---
+class SelectSoldierDialog(QDialog):
+    def __init__(self, soldiers_list, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Chọn Người Tập")
+        self.setMinimumSize(600, 500)
+        self.setStyleSheet("""
+            QDialog { background-color: #2c3e50; color: white; }
+            QLineEdit { padding: 8px; border-radius: 4px; border: 1px solid #7f8c8d; background: #34495e; color: white; }
+            QTableWidget { background-color: #34495e; gridline-color: #7f8c8d; color: white; border: none; }
+            QHeaderView::section { background-color: #2c3e50; color: white; padding: 4px; border: 1px solid #7f8c8d; }
+            QTableWidget::item:selected { background-color: #1abc9c; color: white; }
+        """)
+        
+        self.selected_soldier = None
+        self.soldiers_list = soldiers_list
+        
+        layout = QVBoxLayout(self)
+        
+        # Ô tìm kiếm
+        self.search_box = QLineEdit()
+        self.search_box.setPlaceholderText("🔍 Tìm kiếm tên hoặc đơn vị...")
+        self.search_box.textChanged.connect(self.filter_list)
+        layout.addWidget(self.search_box)
+        
+        # Bảng danh sách
+        self.table = QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["Họ Tên", "Đơn vị"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.doubleClicked.connect(self.accept_selection)
+        layout.addWidget(self.table)
+        
+        self.populate_table(self.soldiers_list)
+        
+        # Nút bấm
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(self.accept_selection)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+    def populate_table(self, data):
+        self.table.setRowCount(len(data))
+        for r, s in enumerate(data):
+            self.table.setItem(r, 0, QTableWidgetItem(s['name']))
+            self.table.setItem(r, 1, QTableWidgetItem(s.get('class_name', '')))
+            self.table.item(r, 0).setData(Qt.UserRole, s) 
+
+    def filter_list(self):
+        text = self.search_box.text().lower()
+        for r in range(self.table.rowCount()):
+            name = self.table.item(r, 0).text().lower()
+            unit = self.table.item(r, 1).text().lower()
+            hide = text not in name and text not in unit
+            self.table.setRowHidden(r, hide)
+
+    def accept_selection(self):
+        rows = self.table.selectedItems()
+        if rows:
+            row = rows[0].row()
+            self.selected_soldier = self.table.item(row, 0).data(Qt.UserRole)
+            self.accept()
+        else:
+            QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn một người từ danh sách.")
+
+# --- PRACTICE WINDOW CHÍNH ---
 class PracticeWindow(QMainWindow):
     request_processing = Signal(np.ndarray, object, str)
 
@@ -38,7 +108,7 @@ class PracticeWindow(QMainWindow):
         # --- STATE ---
         self.current_mode = 0 
         self.cameras = {1: None, 2: None}
-        self.cam_indices = {1: 0, 2: 1} # Mặc định: Cam 1 là 0, Cam 2 là 1
+        self.cam_indices = {1: 0, 2: 1}
         self.zoom_levels = {1: 1.0, 2: 1.0}
         self.calib_centers = {1: None, 2: None}
         self.is_calib_mode = {1: False, 2: False}
@@ -50,30 +120,28 @@ class PracticeWindow(QMainWindow):
         self.active_session_ids = {0: None, 1: None, 2: None}
         self.session_active_flags = {0: False, 1: False, 2: False}
         self.shot_counters = {0: 0, 1: 0, 2: 0}
+        
+        # Lưu trữ người được chọn cho từng phiên (Thay vì lấy từ ComboBox)
+        self.selected_soldiers = {0: None, 1: None, 2: None}
 
         self.save_dir = os.path.join(APP_DATA_DIR, "captured_images")
         os.makedirs(self.save_dir, exist_ok=True)
         
-        # [ĐÃ XÓA]: Đoạn code try...except đọc camera_index từ config đã được gỡ bỏ.
-        
+        try: self.cam_indices[1] = int(self.config.get("camera_index", 0))
+        except: pass
+
         self._init_connections()
-        self.populate_soldier_selectors()
         self.populate_trigger_selectors()
         self.reset_ui_state()
 
-    # --- CÁC HÀM KHÁC GIỮ NGUYÊN ---
+    # ... (Giữ nguyên các hàm keyPressEvent, mousePressEvent, populate_trigger_selectors) ...
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
         trigger_action = None
-        
-        # CÒ L (UP): Chấp nhận VolumeUp HOẶC Enter/Return/W/Up
         if key in [Qt.Key_VolumeUp, Qt.Key_Enter, Qt.Key_Return, Qt.Key_W, Qt.Key_Up]:
             trigger_action = 'UP'
-            
-        # CÒ N (DOWN): Chấp nhận VolumeDown HOẶC Space/S/Down
         elif key in [Qt.Key_VolumeDown, Qt.Key_Space, Qt.Key_S, Qt.Key_Down]:
             trigger_action = 'DOWN'
-
         if trigger_action:
             event.accept()
             logger.info(f"Trigger kích hoạt: {trigger_action}")
@@ -103,46 +171,66 @@ class PracticeWindow(QMainWindow):
     def _init_connections(self):
         self.gui.mode_selector.currentIndexChanged.connect(self.on_change_mode)
         self.gui.back_button.clicked.connect(self.close_and_reset)
+        
+        # Kết nối nút Chọn người tập (MỚI)
+        self.gui.btn_select_soldier.clicked.connect(lambda: self.open_select_soldier_dialog(0))
+        
         self.gui.session_button.clicked.connect(lambda: self.toggle_session(0))
-        self.gui.soldier_selector.currentIndexChanged.connect(lambda: self._reset_session_ui(0))
         self.gui.zoom_slider.valueChanged.connect(lambda v: self.set_zoom(1, v))
         self.gui.refresh_button.clicked.connect(lambda: self.refresh_cam(1))
         self.gui.calibrate_button.clicked.connect(lambda: self.toggle_calib(1))
         self.gui.camera_view_label.clicked.connect(lambda p: self.set_center(1, p))
         self.gui.single_cam_source.currentIndexChanged.connect(lambda i: self.change_cam_source(1, i))
+
         if hasattr(self.gui, 'dual_cam1_session_btn'):
+            self.gui.dual_cam1_btn_select.clicked.connect(lambda: self.open_select_soldier_dialog(1)) # MỚI
             self.gui.dual_cam1_session_btn.clicked.connect(lambda: self.toggle_session(1))
-            self.gui.dual_cam1_soldier_selector.currentIndexChanged.connect(lambda: self._reset_session_ui(1))
             self.gui.dual_cam1_zoom.valueChanged.connect(lambda v: self.set_zoom(1, v))
             self.gui.dual_cam1_refresh.clicked.connect(lambda: self.refresh_cam(1))
             self.gui.dual_cam1_calib.clicked.connect(lambda: self.toggle_calib(1))
             self.gui.dual_cam1_view.clicked.connect(lambda p: self.set_center(1, p))
             self.gui.dual_cam1_source.currentIndexChanged.connect(lambda i: self.change_cam_source(1, i))
+
         if hasattr(self.gui, 'dual_cam2_session_btn'):
+            self.gui.dual_cam2_btn_select.clicked.connect(lambda: self.open_select_soldier_dialog(2)) # MỚI
             self.gui.dual_cam2_session_btn.clicked.connect(lambda: self.toggle_session(2))
-            self.gui.dual_cam2_soldier_selector.currentIndexChanged.connect(lambda: self._reset_session_ui(2))
             self.gui.dual_cam2_zoom.valueChanged.connect(lambda v: self.set_zoom(2, v))
             self.gui.dual_cam2_refresh.clicked.connect(lambda: self.refresh_cam(2))
             self.gui.dual_cam2_calib.clicked.connect(lambda: self.toggle_calib(2))
             self.gui.dual_cam2_view.clicked.connect(lambda p: self.set_center(2, p))
             self.gui.dual_cam2_source.currentIndexChanged.connect(lambda i: self.change_cam_source(2, i))
 
-    def populate_soldier_selectors(self):
-        self.gui.soldier_selector.clear()
-        if hasattr(self.gui, 'dual_cam1_soldier_selector'): self.gui.dual_cam1_soldier_selector.clear()
-        if hasattr(self.gui, 'dual_cam2_soldier_selector'): self.gui.dual_cam2_soldier_selector.clear()
+    # --- HÀM MỞ POPUP CHỌN NGƯỜI ---
+    def open_select_soldier_dialog(self, session_idx):
+        # Nếu đang có phiên chạy thì không cho đổi người
+        if self.session_active_flags[session_idx]:
+            QMessageBox.warning(self, "Đang tập", "Vui lòng kết thúc phiên tập trước khi đổi người.")
+            return
+
         soldiers = self.db_manager.get_all_soldiers()
-        if soldiers:
-            for s in soldiers:
-                txt = f"{s['name']} - {s.get('class_name', '')}"
-                self.gui.soldier_selector.addItem(txt, userData=s)
-                if hasattr(self.gui, 'dual_cam1_soldier_selector'): self.gui.dual_cam1_soldier_selector.addItem(txt, userData=s)
-                if hasattr(self.gui, 'dual_cam2_soldier_selector'): self.gui.dual_cam2_soldier_selector.addItem(txt, userData=s)
-        else:
-            msg = "Chưa có dữ liệu"
-            self.gui.soldier_selector.addItem(msg)
-            if hasattr(self.gui, 'dual_cam1_soldier_selector'): self.gui.dual_cam1_soldier_selector.addItem(msg)
-            if hasattr(self.gui, 'dual_cam2_soldier_selector'): self.gui.dual_cam2_soldier_selector.addItem(msg)
+        dialog = SelectSoldierDialog(soldiers, self)
+        
+        if dialog.exec() == QDialog.Accepted and dialog.selected_soldier:
+            # Lưu người được chọn
+            self.selected_soldiers[session_idx] = dialog.selected_soldier
+            name_display = f"{dialog.selected_soldier['name']} - {dialog.selected_soldier.get('class_name', '')}"
+            
+            # Cập nhật hiển thị lên ô LineEdit tương ứng
+            if session_idx == 0:
+                self.gui.soldier_display.setText(name_display)
+            elif session_idx == 1:
+                self.gui.dual_cam1_soldier_display.setText(name_display)
+            elif session_idx == 2:
+                self.gui.dual_cam2_soldier_display.setText(name_display)
+            
+            # Reset lại phiên để sẵn sàng
+            self._reset_session_ui(session_idx)
+
+    # --- XÓA HÀM CŨ populate_soldier_selectors VÌ KHÔNG CÒN COMBOBOX ---
+    # def populate_soldier_selectors(self): ...
+
+    # ... (Giữ nguyên các hàm populate_camera_sources, _sync_combo_selection, change_cam_source, on_change_mode, handle_camera_frame...) ...
+    # Để tiết kiệm, tôi chỉ paste lại hàm toggle_session có thay đổi logic
 
     def populate_camera_sources(self):
         available = find_available_cameras()
@@ -226,7 +314,7 @@ class PracticeWindow(QMainWindow):
         center = self.calib_centers[cam_id] if self.calib_centers[cam_id] else (w//2, h//2)
         self.shot_points[cam_id] = center
         display = zoomed.copy()
-        cv2.drawMarker(display, center, (0,0,255), cv2.MARKER_CROSS, 15, 1)
+        cv2.drawMarker(display, center, (0,0,255), cv2.MARKER_CROSS, 20, 1)
         pix = self.gui._convert_cv_to_pixmap(display)
         if self.current_mode == 0:
             if cam_id == 1: self.gui.camera_view_label.setPixmap(pix)
@@ -314,23 +402,25 @@ class PracticeWindow(QMainWindow):
         if self.session_active_flags[session_idx]:
             self.finalize_session(session_idx)
         else:
-            if session_idx == 0: sel = self.gui.soldier_selector
-            elif session_idx == 1: sel = self.gui.dual_cam1_soldier_selector
-            else: sel = self.gui.dual_cam2_soldier_selector
-            data = sel.currentData()
+            # [THAY ĐỔI]: Lấy người tập từ biến đã lưu thay vì ComboBox
+            data = self.selected_soldiers[session_idx]
+            
             if not data: 
-                QMessageBox.warning(self, "Thông báo", "Vui lòng chọn người tập để lưu kết quả.")
+                QMessageBox.warning(self, "Thông báo", "Vui lòng chọn người tập trước khi bắt đầu.")
                 return
+            
             phys_cam_id = 1 if session_idx in [0, 1] else 2
             if not self.cameras[phys_cam_id] or not self.cameras[phys_cam_id].is_active(): 
                 QMessageBox.warning(self, "Lỗi", f"Camera {phys_cam_id} chưa hoạt động")
                 return
+
             sid = self.db_manager.create_session(data['id'])
             if sid:
                 self.active_session_ids[session_idx] = sid
                 self.session_active_flags[session_idx] = True
                 self.shot_counters[session_idx] = 0
                 self._update_session_btn(session_idx, True)
+            
             self.setFocus()
 
     def finalize_session(self, session_idx):
@@ -344,10 +434,11 @@ class PracticeWindow(QMainWindow):
         else:
             default_name = f"Phiên tập #{sid}"
             soldier_id = None
-            if session_idx == 0: data = self.gui.soldier_selector.currentData()
-            elif session_idx == 1: data = self.gui.dual_cam1_soldier_selector.currentData()
-            else: data = self.gui.dual_cam2_soldier_selector.currentData()
+            
+            # [THAY ĐỔI]: Lấy ID người tập từ biến đã lưu
+            data = self.selected_soldiers[session_idx]
             if data: soldier_id = data['id']
+            
             while True:
                 name, ok = QInputDialog.getText(self, "Lưu Phiên Tập", "Nhập tên:", QLineEdit.Normal, default_name)
                 if not ok: return
@@ -367,13 +458,14 @@ class PracticeWindow(QMainWindow):
         obj = "danger" if active else ""
         if idx == 0: 
             btn = self.gui.session_button
-            self.gui.soldier_selector.setEnabled(not active)
+            # self.gui.soldier_selector.setEnabled(not active) -> Không cần nữa
+            self.gui.btn_select_soldier.setEnabled(not active) # Khóa nút chọn
         elif idx == 1: 
             btn = self.gui.dual_cam1_session_btn
-            self.gui.dual_cam1_soldier_selector.setEnabled(not active)
+            self.gui.dual_cam1_btn_select.setEnabled(not active)
         else: 
             btn = self.gui.dual_cam2_session_btn
-            self.gui.dual_cam2_soldier_selector.setEnabled(not active)
+            self.gui.dual_cam2_btn_select.setEnabled(not active)
         btn.setText(txt); btn.setObjectName(obj); btn.style().polish(btn)
         any_active = any(self.session_active_flags.values())
         self.gui.back_button.setEnabled(not any_active)
@@ -424,9 +516,7 @@ class PracticeWindow(QMainWindow):
     def capture_single_cam(self, cam_id, session_idx):
         if self.clean_frames[cam_id] is not None:
             frame_to_save = self.clean_frames[cam_id].copy()
-            center = self.shot_points[cam_id]
-            if center:
-                cv2.drawMarker(frame_to_save, center, (0, 0, 255), cv2.MARKER_CROSS, 15, 1)
+            # Đã xóa code vẽ tâm ngắm ở đây
             self.audio_manager.play_sound('shot')
             self._send_to_worker(cam_id, frame_to_save, session_idx)
 

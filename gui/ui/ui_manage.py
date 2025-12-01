@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QApplication, QLineEdit
 )
 from PySide6.QtGui import QFont, QPixmap, QColor, QPainter
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
 class VideoLabel(QLabel):
@@ -72,8 +72,13 @@ class ManageGui(QWidget):
                 border-radius: {int(8 * self.scale_factor)}px;
             }}
             QPushButton:hover {{ background-color: #16a085; }}
+            
+            QPushButton#importBtn {{ background-color: #3498db; }}
+            QPushButton#importBtn:hover {{ background-color: #2980b9; }}
+
             QPushButton#danger {{ background-color: #e74c3c; }}
             QPushButton#danger:hover {{ background-color: #c0392b; }}
+            
             QListWidget, QTableWidget {{
                 background-color: #2c3e50; border: 1px solid #4a6278;
                 border-radius: {int(6 * self.scale_factor)}px; gridline-color: #4a6278; color: #ecf0f1;
@@ -90,7 +95,6 @@ class ManageGui(QWidget):
                  border-radius: {int(8 * self.scale_factor)}px; color: #95a5a6;
                  font-size: {scale_font(16)}px;
             }}
-            /* --- BẮT ĐẦU VÙNG TINH CHỈNH: THÊM STYLE CHO THANH TÌM KIẾM --- */
             QLineEdit#searchBox {{
                 background-color: #2c3e50;
                 border: 1px solid #4a6278;
@@ -102,7 +106,6 @@ class ManageGui(QWidget):
             QLineEdit#searchBox:focus {{
                 border: 1px solid #1abc9c;
             }}
-            /* --- KẾT THÚC VÙNG TINH CHỈNH --- */
         """)
 
         self.setupUi()
@@ -145,10 +148,8 @@ class ManageGui(QWidget):
         self.soldier_table.setHorizontalHeaderLabels([header_name, header_class])
         self.history_box.setTitle(labels.get("history_title_prefix", "Lịch sử bắn"))
         
-        # Thêm placeholder text cho thanh tìm kiếm
         trainee_term = labels.get("trainee", "chiến sĩ")
         self.search_box.setPlaceholderText(f"Tìm kiếm {trainee_term.lower()}...")
-
 
     def _create_styled_panel(self) -> QFrame:
         panel = QFrame()
@@ -170,11 +171,17 @@ class ManageGui(QWidget):
         self.soldier_box = QGroupBox()
         soldier_layout = QVBoxLayout(self.soldier_box)
 
-        # --- BẮT ĐẦU VÙNG TINH CHỈNH: THÊM THANH TÌM KIẾM VÀO LAYOUT ---
+        # Thanh tìm kiếm
         self.search_box = QLineEdit()
         self.search_box.setObjectName("searchBox")
         soldier_layout.addWidget(self.search_box)
-        # --- KẾT THÚC VÙNG TINH CHỈNH ---
+
+        # --- MỚI: NHÃN HIỂN THỊ TỔNG SỐ ---
+        self.total_count_label = QLabel("Tổng số: 0")
+        self.total_count_label.setStyleSheet("color: #95a5a6; font-style: italic; margin-bottom: 5px;")
+        self.total_count_label.setAlignment(Qt.AlignRight)
+        soldier_layout.addWidget(self.total_count_label)
+        # -----------------------------------
 
         self.soldier_table = QTableWidget(0, 2)
         self.soldier_table.verticalHeader().setVisible(False)
@@ -190,10 +197,17 @@ class ManageGui(QWidget):
 
         buttons_layout = QHBoxLayout()
         self.add_button = QPushButton("Thêm mới")
+        
+        self.import_button = QPushButton("Nhập Excel")
+        self.import_button.setObjectName("importBtn")
+        
         self.back_button = QPushButton("Quay lại")
         self.back_button.setObjectName("danger")
+        
         buttons_layout.addWidget(self.add_button)
+        buttons_layout.addWidget(self.import_button)
         buttons_layout.addWidget(self.back_button)
+        
         layout.addLayout(buttons_layout)
         return panel
         

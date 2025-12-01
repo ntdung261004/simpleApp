@@ -4,13 +4,15 @@ import logging
 import numpy as np
 import cv2
 import os
+import pandas as pd
+import unicodedata
 from PySide6.QtWidgets import (
     QMainWindow, QDialog, QFormLayout, QLineEdit,
     QDialogButtonBox, QMessageBox, QTableWidgetItem,
     QVBoxLayout, QListWidgetItem, QLabel, QSizePolicy,
     QMenu, QInputDialog, QWidget, QGroupBox, QTableWidget, 
     QAbstractItemView, QHeaderView, QListWidget, QStackedWidget,
-    QApplication, QFrame
+    QApplication, QFrame, QFileDialog, QCheckBox, QHBoxLayout, QPushButton
 )
 from datetime import datetime
 from PySide6.QtGui import QPixmap, QImage
@@ -19,21 +21,78 @@ from gui.ui.ui_manage import ManageGui
 from core.database import DatabaseManager
 from utils.resource_path import resource_path
 
+logger = logging.getLogger(__name__)
+
 # =============================================================================
-# === LỚP DIALOG THÊM/SỬA NGƯỜI HỌC ===
+# === CÁC CLASS DIALOG HỖ TRỢ (GIỮ NGUYÊN) ===
 # =============================================================================
+# (Giữ nguyên class ExcelPreviewDialog, AddSoldierDialog, GroupingDisplayDialog 
+# như phiên bản trước - không thay đổi)
+
+class ExcelPreviewDialog(QDialog):
+    def __init__(self, data_list, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Xác nhận nhập dữ liệu")
+        self.setMinimumSize(700, 500)
+        self.data_list = data_list
+
+        layout = QVBoxLayout(self)
+        lbl_info = QLabel(f"<b>Đã tìm thấy {len(data_list)} bản ghi.</b><br>"
+                          "Vui lòng kiểm tra kỹ danh sách bên dưới trước khi nhập.")
+        lbl_info.setStyleSheet("font-size: 14px; margin-bottom: 10px;")
+        layout.addWidget(lbl_info)
+
+        self.table = QTableWidget(len(data_list), 3)
+        self.table.setHorizontalHeaderLabels(["Chọn", "Họ và Tên", "Đơn vị"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        
+        self.checkboxes = []
+        for i, row_data in enumerate(data_list):
+            chk_box = QCheckBox()
+            chk_box.setChecked(True)
+            cell_widget = QWidget()
+            chk_layout = QHBoxLayout(cell_widget)
+            chk_layout.addWidget(chk_box)
+            chk_layout.setAlignment(Qt.AlignCenter)
+            chk_layout.setContentsMargins(0,0,0,0)
+            self.table.setCellWidget(i, 0, cell_widget)
+            self.checkboxes.append(chk_box)
+            self.table.setItem(i, 1, QTableWidgetItem(str(row_data.get('name', ''))))
+            self.table.setItem(i, 2, QTableWidgetItem(str(row_data.get('class_name', ''))))
+
+        layout.addWidget(self.table)
+        btn_layout = QHBoxLayout()
+        btn_all = QPushButton("Chọn tất cả")
+        btn_all.clicked.connect(lambda: self.toggle_all(True))
+        btn_none = QPushButton("Bỏ chọn tất cả")
+        btn_none.clicked.connect(lambda: self.toggle_all(False))
+        btn_layout.addWidget(btn_all)
+        btn_layout.addWidget(btn_none)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def toggle_all(self, state):
+        for chk in self.checkboxes: chk.setChecked(state)
+    def get_selected_data(self):
+        result = []
+        for i, chk in enumerate(self.checkboxes):
+            if chk.isChecked(): result.append(self.data_list[i])
+        return result
+
 class AddSoldierDialog(QDialog):
     def __init__(self, config: dict, is_edit_mode: bool = False, parent=None):
         super().__init__(parent)
         self.config = config
         labels = self.config.get("labels", {})
-
-        if is_edit_mode:
-            title = labels.get("edit_trainee_dialog_title", "Chỉnh sửa thông tin")
-        else:
-            title = labels.get("add_trainee_dialog_title", "Thêm mới")
+        if is_edit_mode: title = labels.get("edit_trainee_dialog_title", "Chỉnh sửa thông tin")
+        else: title = labels.get("add_trainee_dialog_title", "Thêm mới")
         self.setWindowTitle(title)
-
         self.setMinimumWidth(400)
         self.setStyleSheet("""
             QDialog { background-color: #34495e; }
@@ -50,22 +109,17 @@ class AddSoldierDialog(QDialog):
         title_label.setAlignment(Qt.AlignCenter)
         title_label.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
         main_layout.addWidget(title_label)
-
         form_layout = QFormLayout()
         form_layout.setRowWrapPolicy(QFormLayout.WrapAllRows)
         form_layout.setLabelAlignment(Qt.AlignRight)
         form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-
         self.name_input = QLineEdit()
         self.class_name_input = QLineEdit()
         self.inputs = [self.name_input, self.class_name_input]
-
         name_prompt = labels.get("trainee_name_prompt", "Họ và Tên:")
         class_prompt = labels.get("trainee_class_prompt", "Đơn vị:")
-
         form_layout.addRow(name_prompt, self.name_input)
         form_layout.addRow(class_prompt, self.class_name_input)
-
         main_layout.addLayout(form_layout)
         buttons = QDialogButtonBox()
         ok_button = buttons.addButton("Hoàn tất", QDialogButtonBox.AcceptRole)
@@ -76,24 +130,16 @@ class AddSoldierDialog(QDialog):
         main_layout.addWidget(buttons)
         self.default_style = "border: 1px solid #4a6278;"
         self.error_style = "border: 2px solid #e74c3c;"
-
     def get_data(self):
         return {"name": self.name_input.text().strip(), "class_name": self.class_name_input.text().strip()}
-
     def validate_and_accept(self):
-        for field in self.inputs:
-            field.setStyleSheet(self.default_style)
+        for field in self.inputs: field.setStyleSheet(self.default_style)
         data = self.get_data()
-        if data["name"]:
-            self.accept()
+        if data["name"]: self.accept()
         else:
             self.inputs[0].setStyleSheet(self.error_style)
             QMessageBox.warning(self, "Thiếu thông tin", "Vui lòng điền Họ và Tên.")
 
-
-# =============================================================================
-# === LỚP DIALOG HIỂN THỊ ĐỘ CHỤM ===
-# =============================================================================
 class GroupingDisplayDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -106,7 +152,6 @@ class GroupingDisplayDialog(QDialog):
         self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.layout.addWidget(self.image_label)
         self._pixmap = QPixmap()
-
     def update_display(self, image_np: np.ndarray):
         if image_np is None:
             self.image_label.setText("Không có ảnh để hiển thị.")
@@ -121,15 +166,13 @@ class GroupingDisplayDialog(QDialog):
         except Exception as e:
             logging.error(f"Lỗi khi hiển thị ảnh popup: {e}")
             self.image_label.setText("Lỗi khi hiển thị ảnh.")
-
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if not self._pixmap.isNull():
             self.image_label.setPixmap(self._pixmap.scaled(self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
-
 # =============================================================================
-# === LỚP CỬA SỔ QUẢN LÝ CHÍNH ===
+# === MANAGE WINDOW - LOGIC CHÍNH ===
 # =============================================================================
 class ManageWindow(QMainWindow):
     DATA_PAGE = 0
@@ -155,9 +198,16 @@ class ManageWindow(QMainWindow):
 
         self.setup_ui_styles()
         self.connect_signals()
+        
+        # --- CẤU HÌNH CHỌN NHIỀU (MULTI-SELECT) ---
+        self.ui.soldier_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.ui.history_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        
         self.set_panels_state("NO_SOLDIER_SELECTED")
         self.ui.soldier_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ui.history_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        
+        self.load_soldiers()
 
     def setup_ui_styles(self):
         padding = int(10 * self.ui.scale_factor)
@@ -168,17 +218,83 @@ class ManageWindow(QMainWindow):
 
     def connect_signals(self):
         self.ui.add_button.clicked.connect(self.open_add_soldier_dialog)
+        self.ui.import_button.clicked.connect(self.import_excel_handler)
         self.ui.soldier_table.itemSelectionChanged.connect(self.on_soldier_selected)
         self.ui.history_list.itemSelectionChanged.connect(self.on_session_selected)
         self.ui.prev_shot_button.clicked.connect(self.show_previous_shot)
         self.ui.next_shot_button.clicked.connect(self.show_next_shot)
         self.ui.shot_table.itemSelectionChanged.connect(self.on_shot_table_selected)
+        
+        # Context Menu
         self.ui.soldier_table.customContextMenuRequested.connect(self.show_soldier_context_menu)
         self.ui.history_list.customContextMenuRequested.connect(self.show_session_context_menu)
-        self.ui.search_box.textChanged.connect(self.filter_soldiers)
         
+        self.ui.search_box.textChanged.connect(self.filter_soldiers)
         for target_key, button in self.ui.analysis_view_buttons.items():
             button.clicked.connect(lambda checked=False, key=target_key: self.show_grouping_popup(key))
+
+    # --- NHẬP EXCEL (GIỮ NGUYÊN) ---
+    def import_excel_handler(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Chọn file Excel", "", "Excel Files (*.xlsx *.xls *.csv)")
+        if not file_path: return
+        try:
+            if file_path.endswith('.csv'): df_raw = pd.read_csv(file_path, header=None)
+            else: df_raw = pd.read_excel(file_path, header=None)
+            
+            name_keywords = ['họ và tên', 'họ tên', 'tên chiến sĩ', 'họ & tên', 'ho va ten']
+            unit_keywords = ['đơn vị', 'đv', 'lớp', 'trung đội', 'đại đội', 'don vi']
+            header_row_idx = -1; name_col_idx = -1; unit_col_idx = -1
+            rows_to_scan = min(50, df_raw.shape[0])
+            
+            for r in range(rows_to_scan):
+                row_values = []
+                for cell in df_raw.iloc[r]:
+                    cell_str = str(cell).strip().lower()
+                    cell_str = unicodedata.normalize('NFC', cell_str)
+                    row_values.append(cell_str)
+                for c, val in enumerate(row_values):
+                    if not val or val == 'nan': continue
+                    if any(kw in val for kw in name_keywords):
+                        header_row_idx = r; name_col_idx = c; break 
+                if header_row_idx != -1:
+                    for c, val in enumerate(row_values):
+                        if c == name_col_idx: continue
+                        if any(kw in val for kw in unit_keywords):
+                            unit_col_idx = c; break
+                    break
+
+            if header_row_idx == -1:
+                QMessageBox.warning(self, "Không nhận diện được", "Không tìm thấy cột 'Họ và tên'.")
+                return
+
+            data_to_import = []
+            total_rows = df_raw.shape[0]
+            for i in range(header_row_idx + 1, total_rows):
+                row = df_raw.iloc[i]
+                raw_name = str(row[name_col_idx]).strip()
+                if not raw_name or raw_name.lower() == 'nan': continue
+                raw_unit = ""
+                if unit_col_idx != -1:
+                    val = str(row[unit_col_idx]).strip()
+                    if val and val.lower() != 'nan': raw_unit = val
+                clean_name = " ".join([w.capitalize() for w in raw_name.split()])
+                data_to_import.append({'name': clean_name, 'class_name': raw_unit})
+
+            if not data_to_import:
+                QMessageBox.information(self, "Rỗng", "Không có dữ liệu nào dưới dòng tiêu đề.")
+                return
+
+            preview_dialog = ExcelPreviewDialog(data_to_import, self)
+            if preview_dialog.exec() == QDialog.Accepted:
+                selected_data = preview_dialog.get_selected_data()
+                count = 0
+                for item in selected_data:
+                    if self.db.add_soldier(item['name'], item['class_name']): count += 1
+                QMessageBox.information(self, "Thành công", f"Đã nhập {count} người.")
+                self.load_soldiers()
+        except Exception as e:
+            logging.error(f"Lỗi nhập Excel: {e}")
+            QMessageBox.critical(self, "Lỗi", f"Có lỗi xảy ra:\n{e}")
 
     def filter_soldiers(self):
         search_text = self.ui.search_box.text().lower()
@@ -213,7 +329,6 @@ class ManageWindow(QMainWindow):
         labels = self.config.get("labels", {})
         trainee_term = labels.get("trainee", "Người học")
         msg = ""
-
         if state == "NO_SOLDIER_SELECTED":
             self.ui.center_stack.setCurrentIndex(self.MESSAGE_PAGE)
             self.ui.right_stack.setCurrentIndex(self.MESSAGE_PAGE)
@@ -236,23 +351,35 @@ class ManageWindow(QMainWindow):
             self.ui.center_stack.setCurrentIndex(self.DATA_PAGE)
             self.ui.right_stack.setCurrentIndex(self.DATA_PAGE)
 
+    # --- NÂNG CẤP: XỬ LÝ CHỌN NHIỀU NGƯỜI ---
     def on_soldier_selected(self):
-        selected_items = self.ui.soldier_table.selectedItems()
-        if not selected_items:
+        selected_rows = set()
+        for item in self.ui.soldier_table.selectedItems():
+            selected_rows.add(item.row())
+        
+        if not selected_rows:
             self.current_soldier_id = None
             self.set_panels_state("NO_SOLDIER_SELECTED")
             return
 
-        name_item = self.ui.soldier_table.item(selected_items[0].row(), 0)
-        soldier_id = name_item.data(Qt.UserRole)
-        soldier_name = name_item.text()
-
-        if soldier_id is not None and self.current_soldier_id != soldier_id:
-            self.current_soldier_id = soldier_id
-            labels = self.config.get("labels", {})
-            title_prefix = labels.get("history_title_prefix", "Lịch sử của")
-            self.ui.history_box.setTitle(f"{title_prefix} {soldier_name}")
-            self.load_shooting_history(self.current_soldier_id)
+        # Nếu chỉ chọn 1 người -> Hiện chi tiết như cũ
+        if len(selected_rows) == 1:
+            row = list(selected_rows)[0]
+            name_item = self.ui.soldier_table.item(row, 0)
+            soldier_id = name_item.data(Qt.UserRole)
+            soldier_name = name_item.text()
+            if soldier_id is not None and self.current_soldier_id != soldier_id:
+                self.current_soldier_id = soldier_id
+                labels = self.config.get("labels", {})
+                title_prefix = labels.get("history_title_prefix", "Lịch sử của")
+                self.ui.history_box.setTitle(f"{title_prefix} {soldier_name}")
+                self.load_shooting_history(self.current_soldier_id)
+        # Nếu chọn nhiều người -> Ẩn chi tiết, chỉ cho phép xóa
+        else:
+            self.current_soldier_id = None
+            self.ui.history_list.clear()
+            self.ui.history_box.setTitle(f"Đã chọn {len(selected_rows)} người")
+            self.set_panels_state("NO_SESSIONS")
 
     def load_shooting_history(self, soldier_id):
         self.ui.history_list.clear()
@@ -276,40 +403,41 @@ class ManageWindow(QMainWindow):
         except Exception as e:
             logging.error(f"Lỗi khi tải lịch sử bắn: {e}")
 
+    # --- NÂNG CẤP: XỬ LÝ CHỌN NHIỀU PHIÊN TẬP ---
     def on_session_selected(self):
         selected_items = self.ui.history_list.selectedItems()
         if not selected_items:
             self.current_session_id = None
             self.set_panels_state("SOLDIER_SELECTED")
             return
-        session_item = selected_items[0]
-        session_id = session_item.data(Qt.UserRole)
-        if session_id is not None:
-            self.current_session_id = session_id
-            self.set_panels_state("SHOW_DATA")
-            self.load_session_details(self.current_session_id)
+        
+        if len(selected_items) == 1:
+            session_id = selected_items[0].data(Qt.UserRole)
+            if session_id is not None:
+                self.current_session_id = session_id
+                self.set_panels_state("SHOW_DATA")
+                self.load_session_details(self.current_session_id)
+        else:
+            self.current_session_id = None
+            # Reset bảng dữ liệu khi chọn nhiều phiên (tránh hiểu nhầm)
+            self.ui.analysis_summary_label.setText(f"Đã chọn {len(selected_items)} phiên tập - Vui lòng nhấn chuột phải để Xóa")
+            self.ui.shot_table.setRowCount(0)
+            self.ui.result_image.clear()
+            for r in range(3):
+                self.ui.analysis_target_table.item(r, 1).setText("--")
+                self.ui.analysis_target_table.item(r, 2).setText("--")
 
     def load_session_details(self, session_id):
         logging.info(f"Đang tải chi tiết cho phiên ID: {session_id}")
         self.current_shots = self.db.get_shots_for_session(session_id)
         total_shots = len(self.current_shots)
         
-        # --- FIX: Xử lý dữ liệu điểm số an toàn ---
         hit_shots = []
         for s in self.current_shots:
-            # Chuẩn hóa score về int, mặc định là 0
-            try:
-                # Ép kiểu an toàn, xử lý cả trường hợp None hoặc chuỗi rỗng
-                score_val = int(s.get('score') or 0)
-            except (ValueError, TypeError):
-                score_val = 0
-            
-            # Cập nhật lại vào dict để dùng hiển thị sau này (quan trọng)
+            try: score_val = int(s.get('score') or 0)
+            except (ValueError, TypeError): score_val = 0
             s['score'] = score_val
-            
-            if score_val > 0:
-                hit_shots.append(s)
-        # ------------------------------------------
+            if score_val > 0: hit_shots.append(s)
 
         total_hits = len(hit_shots)
         valid_scores = [s['score'] for s in hit_shots]
@@ -349,10 +477,8 @@ class ManageWindow(QMainWindow):
             try:
                 ts_obj = datetime.strptime(shot['timestamp'], '%Y-%m-%d %H:%M:%S')
                 formatted_ts = ts_obj.strftime('%H:%M:%S')
-            except (ValueError, TypeError):
-                formatted_ts = shot['timestamp']
+            except (ValueError, TypeError): formatted_ts = shot['timestamp']
 
-            # Sử dụng score đã được chuẩn hóa ở trên
             items = [
                 QTableWidgetItem(str(shot['shot_number'])), 
                 QTableWidgetItem(formatted_ts), 
@@ -399,8 +525,7 @@ class ManageWindow(QMainWindow):
             
     def on_shot_table_selected(self):
         selected_rows = self.ui.shot_table.selectionModel().selectedRows()
-        if not selected_rows:
-            return
+        if not selected_rows: return
         selected_row_index = selected_rows[0].row()
         if self.current_shot_index != selected_row_index:
             self.current_shot_index = selected_row_index
@@ -424,6 +549,10 @@ class ManageWindow(QMainWindow):
         self.ui.soldier_table.setRowCount(0)
         try:
             soldiers = self.db.get_all_soldiers()
+            # --- MỚI: CẬP NHẬT TỔNG SỐ ---
+            total = len(soldiers) if soldiers else 0
+            self.ui.total_count_label.setText(f"Tổng số: {total}")
+            # -----------------------------
             if not soldiers:
                 self.ui.soldier_table.setRowCount(0)
                 self.set_panels_state("NO_SOLDIER_SELECTED")
@@ -440,18 +569,29 @@ class ManageWindow(QMainWindow):
         except Exception as e:
             logging.error(f"Lỗi khi tải danh sách người học: {e}", exc_info=True)
 
+    # --- NÂNG CẤP: MENU NGỮ CẢNH HỖ TRỢ XÓA NHIỀU ---
     def show_soldier_context_menu(self, pos):
-        item = self.ui.soldier_table.itemAt(pos)
-        if not item: return
-        row = item.row()
-        soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
-        soldier_name = self.ui.soldier_table.item(row, 0).text()
-        if soldier_id is None: return
+        selected_rows = set()
+        for item in self.ui.soldier_table.selectedItems():
+            selected_rows.add(item.row())
+        if not selected_rows: return
+
         menu = QMenu(self)
-        edit_action = menu.addAction("Sửa thông tin")
-        edit_action.triggered.connect(lambda: self.edit_soldier(row))
-        delete_action = menu.addAction("Xóa người này")
-        delete_action.triggered.connect(lambda: self.delete_soldier(soldier_id, soldier_name))
+        if len(selected_rows) == 1:
+            row = list(selected_rows)[0]
+            soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
+            edit_action = menu.addAction("Sửa thông tin")
+            edit_action.triggered.connect(lambda: self.edit_soldier(row))
+            delete_action = menu.addAction("Xóa người này")
+            delete_action.triggered.connect(lambda: self.delete_multiple_soldiers([soldier_id]))
+        else:
+            soldier_ids = []
+            for r in selected_rows:
+                sid = self.ui.soldier_table.item(r, 0).data(Qt.UserRole)
+                if sid: soldier_ids.append(sid)
+            delete_action = menu.addAction(f"Xóa {len(soldier_ids)} người đã chọn")
+            delete_action.triggered.connect(lambda: self.delete_multiple_soldiers(soldier_ids))
+        
         menu.exec(self.ui.soldier_table.mapToGlobal(pos))
 
     def edit_soldier(self, row):
@@ -460,41 +600,47 @@ class ManageWindow(QMainWindow):
         dialog = AddSoldierDialog(self.config, is_edit_mode=True, parent=self)
         dialog.name_input.setText(current_data["name"])
         dialog.class_name_input.setText(current_data["class_name"])
-
         if dialog.exec() == QDialog.Accepted:
             new_data = dialog.get_data()
             if self.db.update_soldier(soldier_id, **new_data):
                 QMessageBox.information(self, "Thành công", "Đã cập nhật thông tin.")
-                selected_id = self.current_soldier_id
-                self.load_soldiers()
-                if selected_id is not None:
-                    for i in range(self.ui.soldier_table.rowCount()):
-                        if self.ui.soldier_table.item(i, 0).data(Qt.UserRole) == selected_id:
-                            self.ui.soldier_table.selectRow(i)
-                            break
-            else:
-                QMessageBox.critical(self, "Lỗi", "Không thể cập nhật thông tin.")
+                if self.current_soldier_id == soldier_id: self.load_soldiers()
+                else: self.load_soldiers()
+            else: QMessageBox.critical(self, "Lỗi", "Không thể cập nhật thông tin.")
 
-    def delete_soldier(self, soldier_id, soldier_name):
-        reply = QMessageBox.warning(self, "Xác nhận Xóa", f"Bạn có chắc chắn muốn xóa '{soldier_name}'?\nTOÀN BỘ lịch sử bắn của người này cũng sẽ bị xóa vĩnh viễn.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+    # --- HÀM XÓA NHIỀU NGƯỜI ---
+    def delete_multiple_soldiers(self, soldier_ids):
+        count = len(soldier_ids)
+        if count == 0: return
+        reply = QMessageBox.warning(self, "Xác nhận Xóa", 
+                                    f"Bạn có chắc chắn muốn xóa {count} người được chọn?\n"
+                                    "TOÀN BỘ dữ liệu lịch sử của họ sẽ bị mất vĩnh viễn.",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
-            if self.db.delete_soldier(soldier_id):
-                QMessageBox.information(self, "Thành công", f"Đã xóa '{soldier_name}'.")
-                self.load_soldiers()
-                self.set_panels_state("NO_SOLDIER_SELECTED")
-            else:
-                QMessageBox.critical(self, "Lỗi", "Không thể xóa người này.")
+            deleted_count = 0
+            for sid in soldier_ids:
+                if self.db.delete_soldier(sid): deleted_count += 1
+            QMessageBox.information(self, "Thành công", f"Đã xóa {deleted_count} người.")
+            self.load_soldiers()
+            self.set_panels_state("NO_SOLDIER_SELECTED")
 
+    # --- NÂNG CẤP: MENU NGỮ CẢNH PHIÊN TẬP ---
     def show_session_context_menu(self, pos):
-        item = self.ui.history_list.itemAt(pos)
-        if not item: return
-        session_id = item.data(Qt.UserRole)
-        session_name = item.text().split('\n')[0]
+        selected_items = self.ui.history_list.selectedItems()
+        if not selected_items: return
+
         menu = QMenu(self)
-        edit_action = menu.addAction("Đổi tên phiên")
-        edit_action.triggered.connect(lambda: self.edit_session_name(session_id))
-        delete_action = menu.addAction("Xóa phiên")
-        delete_action.triggered.connect(lambda: self.delete_session(session_id, session_name))
+        if len(selected_items) == 1:
+            session_id = selected_items[0].data(Qt.UserRole)
+            edit_action = menu.addAction("Đổi tên phiên")
+            edit_action.triggered.connect(lambda: self.edit_session_name(session_id))
+            delete_action = menu.addAction("Xóa phiên")
+            delete_action.triggered.connect(lambda: self.delete_multiple_sessions([session_id]))
+        else:
+            session_ids = [item.data(Qt.UserRole) for item in selected_items]
+            delete_action = menu.addAction(f"Xóa {len(session_ids)} phiên đã chọn")
+            delete_action.triggered.connect(lambda: self.delete_multiple_sessions(session_ids))
+        
         menu.exec(self.ui.history_list.mapToGlobal(pos))
 
     def edit_session_name(self, session_id):
@@ -507,25 +653,27 @@ class ManageWindow(QMainWindow):
             stripped_name = new_name.strip()
             if not stripped_name: continue
             if self.db.session_name_exists(stripped_name, soldier_id=self.current_soldier_id, exclude_session_id=session_id):
-                QMessageBox.warning(self, "Tên bị trùng", f"Người này đã có phiên tập tên '{stripped_name}'.\nVui lòng chọn một tên khác.")
+                QMessageBox.warning(self, "Tên bị trùng", f"Phiên tập '{stripped_name}' đã tồn tại.")
                 current_name = stripped_name
                 continue
             if self.db.update_session_name(session_id, stripped_name):
                 QMessageBox.information(self, "Thành công", "Đã đổi tên phiên tập.")
                 self.load_shooting_history(self.current_soldier_id)
-                for i in range(self.ui.history_list.count()):
-                    if self.ui.history_list.item(i).data(Qt.UserRole) == session_id:
-                        self.ui.history_list.setCurrentRow(i)
-                        break
+                break
             else:
                 QMessageBox.critical(self, "Lỗi", "Không thể đổi tên phiên tập.")
             break
 
-    def delete_session(self, session_id, session_name):
-        reply = QMessageBox.warning(self, "Xác nhận Xóa", f"Bạn có chắc chắn muốn xóa phiên '{session_name}' không?\nToàn bộ dữ liệu của phiên này sẽ bị xóa vĩnh viễn.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+    # --- HÀM XÓA NHIỀU PHIÊN ---
+    def delete_multiple_sessions(self, session_ids):
+        count = len(session_ids)
+        reply = QMessageBox.warning(self, "Xác nhận Xóa", 
+                                    f"Bạn có chắc chắn muốn xóa {count} phiên tập này không?\n"
+                                    "Dữ liệu không thể phục hồi.",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
-            if self.db.delete_session(session_id):
-                QMessageBox.information(self, "Thành công", f"Đã xóa phiên '{session_name}'.")
-                self.load_shooting_history(self.current_soldier_id)
-            else:
-                QMessageBox.critical(self, "Lỗi", "Không thể xóa phiên tập.")
+            deleted = 0
+            for sid in session_ids:
+                if self.db.delete_session(sid): deleted += 1
+            QMessageBox.information(self, "Thành công", f"Đã xóa {deleted} phiên tập.")
+            self.load_shooting_history(self.current_soldier_id)

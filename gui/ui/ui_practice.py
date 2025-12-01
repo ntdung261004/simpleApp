@@ -3,7 +3,7 @@
 import cv2
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QFrame, QSizePolicy,
-    QGraphicsDropShadowEffect, QGroupBox, QComboBox, QApplication, QStackedWidget
+    QGraphicsDropShadowEffect, QGroupBox, QComboBox, QApplication, QStackedWidget, QLineEdit
 )
 import logging
 from PySide6.QtGui import QFont, QImage, QPixmap, QPainter, QColor
@@ -85,9 +85,14 @@ class MainGui(QWidget):
             VideoLabel {{ background-color: #212f3d; border: 1px solid #4a6278; border-radius: {scale_size(8)}px; color: #95a5a6; font-size: {scale_font(24)}px; }}
             #controlsPanel {{ padding: {scale_size(10)}px; }}
             #zoomValueLabel {{ font-size: {scale_font(13)}px; font-weight: bold; color: #1abc9c; min-width: {scale_size(45)}px; }}
-            QComboBox {{ border: 1px solid #4a6278; border-radius: {scale_size(4)}px; padding: {scale_size(5)}px; background-color: #5d6d7e; min-width: {scale_size(100)}px; }} /* Giảm min-width 1 chút để vừa hàng */
+            QComboBox {{ border: 1px solid #4a6278; border-radius: {scale_size(4)}px; padding: {scale_size(5)}px; background-color: #5d6d7e; min-width: {scale_size(100)}px; }}
             QComboBox::drop-down {{ border: none; }}
             QComboBox QAbstractItemView {{ background-color: #5d6d7e; color: #ecf0f1; }}
+            
+            /* Style cho ô hiển thị tên người tập */
+            QLineEdit {{ background-color: #34495e; border: 1px solid #4a6278; border-radius: {scale_size(4)}px; padding: {scale_size(5)}px; color: #ecf0f1; font-weight: bold; }}
+            QLineEdit:read-only {{ background-color: #2c3e50; color: #bdc3c7; }}
+            
             #refreshButton {{ background-color: #5d6d7e; border: 1px solid #4a6278; padding: {scale_size(5)}px {scale_size(10)}px; border-radius: {scale_size(4)}px; min-width: {scale_size(30)}px; }}
             #refreshButton:hover {{ background-color: #718090; }}
             QGroupBox {{ font-size: {scale_font(14)}px; font-weight: bold; border: 1px solid #4a6278; border-radius: {scale_size(8)}px; margin-top: {scale_size(10)}px; }}
@@ -216,12 +221,21 @@ class MainGui(QWidget):
         session_box = QGroupBox("Quản lý Lần bắn")
         session_layout = QVBoxLayout(session_box)
         
+        # --- THAY ĐỔI: Sử dụng LineEdit + Button thay cho ComboBox ---
         row1 = QHBoxLayout()
         self.soldier_select_label = QLabel()
-        self.soldier_selector = QComboBox()
+        self.soldier_display = QLineEdit()
+        self.soldier_display.setReadOnly(True)
+        self.soldier_display.setPlaceholderText("Chưa chọn...")
+        
+        self.btn_select_soldier = QPushButton("Chọn")
+        self.btn_select_soldier.setFixedWidth(scale_size(80))
+        
         row1.addWidget(self.soldier_select_label)
-        row1.addWidget(self.soldier_selector, 1)
+        row1.addWidget(self.soldier_display, 1)
+        row1.addWidget(self.btn_select_soldier)
         session_layout.addLayout(row1)
+        # -------------------------------------------------------------
 
         row_trigger = QHBoxLayout()
         self.trigger_selector = QComboBox()
@@ -262,18 +276,14 @@ class MainGui(QWidget):
             col_layout = QVBoxLayout(panel)
             col_layout.setContentsMargins(scale_size(10), scale_size(10), scale_size(10), scale_size(10))
             
-            # 1. Header: Tiêu đề + Chọn Nguồn + Chọn Cò (MỚI: Gom vào 1 dòng)
             header_widget = QWidget(); header_lo = QHBoxLayout(header_widget); header_lo.setContentsMargins(0,0,0,0)
             
             lbl_title = QLabel(title); lbl_title.setProperty("class", "panel-title")
             
-            # Nguồn Camera
             cmb_source = QComboBox(); cmb_source.setToolTip("Chọn nguồn Camera")
-            # cmb_source.setFixedWidth(scale_size(100)) # Có thể bỏ fixed width nếu muốn tự co giãn
             
-            # Chọn Cò (Chuyển từ dưới lên đây)
             cmb_trigger = QComboBox(); cmb_trigger.setToolTip("Chọn phím cò")
-            cmb_trigger.setFixedWidth(scale_size(140)) # Đặt kích thước vừa phải
+            cmb_trigger.setFixedWidth(scale_size(140))
             
             header_lo.addWidget(lbl_title)
             header_lo.addStretch()
@@ -285,21 +295,29 @@ class MainGui(QWidget):
             
             col_layout.addWidget(header_widget)
             
-            # 2. Session Control: Chỉ còn Người tập + Nút Bắt đầu
+            # --- THAY ĐỔI: Session Control cho Dual Mode ---
             sess_widget = QWidget(); sess_lo = QHBoxLayout(sess_widget); sess_lo.setContentsMargins(0,0,0,0)
             
-            cmb_soldier = QComboBox(); cmb_soldier.setMinimumWidth(150)
+            txt_soldier = QLineEdit()
+            txt_soldier.setReadOnly(True)
+            txt_soldier.setPlaceholderText("Chưa chọn...")
+            
+            btn_select = QPushButton("...")
+            btn_select.setFixedWidth(scale_size(40))
+            
             btn_session = QPushButton("Bắt đầu"); btn_session.setMinimumWidth(80)
             
-            sess_lo.addWidget(QLabel("Người tập:")); sess_lo.addWidget(cmb_soldier, 1); sess_lo.addWidget(btn_session)
+            sess_lo.addWidget(QLabel("Người:")); 
+            sess_lo.addWidget(txt_soldier, 1); 
+            sess_lo.addWidget(btn_select); 
+            sess_lo.addWidget(btn_session)
             
             col_layout.addWidget(sess_widget)
+            # -----------------------------------------------
 
-            # 3. Camera View
             cam_view = VideoLabel(); cam_view.setText(f"Kết nối {title}")
             col_layout.addWidget(cam_view, 5) 
             
-            # 4. Controls (Giữ nguyên)
             ctrl_widget = QWidget(); ctrl_lo = QHBoxLayout(ctrl_widget); ctrl_lo.setContentsMargins(0,0,0,0)
             btn_refresh = QPushButton("Làm mới")
             sld_zoom = QSlider(Qt.Horizontal); sld_zoom.setRange(10,50); sld_zoom.setValue(10)
@@ -309,17 +327,17 @@ class MainGui(QWidget):
             ctrl_lo.addWidget(btn_refresh); ctrl_lo.addWidget(QLabel("Zoom:")); ctrl_lo.addWidget(sld_zoom); ctrl_lo.addWidget(lbl_zoom); ctrl_lo.addWidget(btn_calib)
             col_layout.addWidget(ctrl_widget)
             
-            # 5. Results
             grp_res = QGroupBox("Kết quả"); res_lo = QVBoxLayout(grp_res)
             lbl_score = QLabel("Điểm số: --"); lbl_score.setStyleSheet("font-size: 16px; font-weight: bold; color: #e74c3c;"); lbl_score.setAlignment(Qt.AlignCenter)
             img_res = VideoLabel(); img_res.setText("Ảnh KQ")
             res_lo.addWidget(lbl_score); res_lo.addWidget(img_res, 1)
             col_layout.addWidget(grp_res, 4)
             
-            # Map Attributes (Giữ nguyên tên biến để Logic không bị lỗi)
+            # Map Attributes (THAY ĐỔI: cmb_soldier -> txt_soldier + btn_select)
             setattr(self, f"{prefix}_view", cam_view)
             setattr(self, f"{prefix}_source", cmb_source)
-            setattr(self, f"{prefix}_soldier_selector", cmb_soldier)
+            setattr(self, f"{prefix}_soldier_display", txt_soldier) # Mới
+            setattr(self, f"{prefix}_btn_select", btn_select)      # Mới
             setattr(self, f"{prefix}_session_btn", btn_session)
             setattr(self, f"{prefix}_refresh", btn_refresh)
             setattr(self, f"{prefix}_zoom", sld_zoom)
