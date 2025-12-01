@@ -31,7 +31,6 @@ root_logger.addHandler(file_handler)
 
 logging.info("--- Application Started ---")
 
-# Hàm check_or_request_license (giữ nguyên)
 def check_or_request_license() -> bool:
     license_file_path = os.path.join(APP_DATA_DIR, 'license.key')
 
@@ -94,7 +93,9 @@ class ApplicationController(QMainWindow):
         self.connect_signals()
         
         self.processing_thread.start()
-        self.bt_trigger.start_global_listener()
+        
+        # --- SỬA ĐỔI: Đã xóa dòng self.bt_trigger.start_global_listener() ---
+        # Trigger sẽ được PracticeWindow tự động kích hoạt khi cần.
     
     def _load_config(self) -> dict:
         config_filename = "config.json"
@@ -156,9 +157,6 @@ class ApplicationController(QMainWindow):
 
         self.practice_screen.request_processing.connect(self.processing_worker.process_image)
         self.processing_worker.finished.connect(self.practice_screen.on_processing_finished)
-        
-        # --- QUAN TRỌNG: ĐÃ XÓA DÒNG KẾT NỐI trigger CŨ ĐỂ TRÁNH BẮN 2 LẦN ---
-        # Logic trigger hiện tại nằm hoàn toàn trong PracticeWindow
 
     def cleanup_before_exit(self):
         print("INFO: Bắt đầu quá trình dọn dẹp ứng dụng...")
