@@ -2,49 +2,72 @@
 import cv2
 import logging
 import sys
+import time
+from PySide6.QtCore import QThread, Signal, QMutex
 
 logger = logging.getLogger(__name__)
 
 def _get_os_backend():
-    """Lấy backend camera phù hợp với hệ điều hành để tăng tốc độ quét."""
+    """Lấy backend camera phù hợp với hệ điều hành."""
     if sys.platform == "win32":
         return cv2.CAP_DSHOW
     if sys.platform == "darwin":
         return cv2.CAP_AVFOUNDATION
     return cv2.CAP_ANY
 
-class Camera:
+class CameraThread(QThread):
+    # Signal gửi frame (numpy array) về giao diện
+    frame_received = Signal(object) 
+
     def __init__(self, index: int):
+        super().__init__()
         self.index = index
+        self._is_running = True
+        self.cap = None
+        self.mutex = QMutex()
+
+    def run(self):
+        """Hàm chạy trong luồng riêng biệt."""
         api_preference = _get_os_backend()
         self.cap = cv2.VideoCapture(self.index, api_preference)
 
         if not self.cap.isOpened():
-            logger.error(f"CAMERA: Lỗi khi mở camera index {self.index}.")
-        else:
-            logger.info(f"CAMERA: Đã mở thành công camera index {self.index}.")
-            # Cố gắng đặt độ phân giải mong muốn
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            logger.error(f"CAMERA THREAD: Không thể mở camera {self.index}")
+            return
 
-    def isOpened(self) -> bool:
-        return self.cap is not None and self.cap.isOpened()
+        # Cài đặt độ phân giải mong muốn
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        
+        logger.info(f"CAMERA THREAD: Bắt đầu đọc camera {self.index}")
 
-    def read(self):
-        if not self.isOpened():
-            return (False, None)
-        ret, frame = self.cap.read()
-        return (ret, frame)
+        while self._is_running:
+            ret, frame = self.cap.read()
+            if ret:
+                # Gửi frame về giao diện thông qua Signal
+                self.frame_received.emit(frame)
+            else:
+                # Nếu mất kết nối camera, thử lại sau một chút để tránh spam CPU
+                time.sleep(0.1)
+            
+            # Giới hạn FPS khoảng 30-60 để không ngốn CPU quá mức (tùy chọn)
+            time.sleep(0.015) 
 
-    def release(self):
-        if self.isOpened():
-            self.cap.release()
-            logger.info(f"CAMERA: Đã giải phóng camera index {self.index}.")
+        # Dọn dẹp khi vòng lặp kết thúc
+        self.cap.release()
+        logger.info(f"CAMERA THREAD: Đã dừng camera {self.index}")
+
+    def stop(self):
+        """Dừng luồng an toàn."""
+        self._is_running = False
+        self.quit()
+        self.wait()
+
+    def is_active(self):
+        return self._is_running and self.cap is not None and self.cap.isOpened()
 
 def find_available_cameras(max_cameras_to_check=5) -> list[int]:
-    """
-    Quét và trả về một danh sách các chỉ số (index) của các camera khả dụng.
-    """
+    """Giữ lại hàm này để PracticeWindow sử dụng quét thiết bị."""
     logger.info("CAMERA: Bắt đầu quét các camera...")
     available_cameras = []
     api_preference = _get_os_backend()
@@ -53,5 +76,4 @@ def find_available_cameras(max_cameras_to_check=5) -> list[int]:
         if cap.isOpened():
             available_cameras.append(i)
             cap.release()
-    logger.info(f"CAMERA: Các camera tìm thấy: {available_cameras}")
     return available_cameras

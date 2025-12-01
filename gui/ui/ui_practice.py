@@ -17,7 +17,7 @@ class VideoLabel(QLabel):
         super().__init__(parent)
         self._pixmap = QPixmap()
         self.setScaledContents(False)
-        self.aspect_ratio = 3.0 / 4.0  # Tỷ lệ dọc 3:4
+        self.aspect_ratio = 3.0 / 4.0
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setAlignment(Qt.AlignCenter)
         self._is_calibrating = False
@@ -85,7 +85,7 @@ class MainGui(QWidget):
             VideoLabel {{ background-color: #212f3d; border: 1px solid #4a6278; border-radius: {scale_size(8)}px; color: #95a5a6; font-size: {scale_font(24)}px; }}
             #controlsPanel {{ padding: {scale_size(10)}px; }}
             #zoomValueLabel {{ font-size: {scale_font(13)}px; font-weight: bold; color: #1abc9c; min-width: {scale_size(45)}px; }}
-            QComboBox {{ border: 1px solid #4a6278; border-radius: {scale_size(4)}px; padding: {scale_size(5)}px; background-color: #5d6d7e; min-width: {scale_size(120)}px; }}
+            QComboBox {{ border: 1px solid #4a6278; border-radius: {scale_size(4)}px; padding: {scale_size(5)}px; background-color: #5d6d7e; min-width: {scale_size(100)}px; }} /* Giảm min-width 1 chút để vừa hàng */
             QComboBox::drop-down {{ border: none; }}
             QComboBox QAbstractItemView {{ background-color: #5d6d7e; color: #ecf0f1; }}
             #refreshButton {{ background-color: #5d6d7e; border: 1px solid #4a6278; padding: {scale_size(5)}px {scale_size(10)}px; border-radius: {scale_size(4)}px; min-width: {scale_size(30)}px; }}
@@ -114,7 +114,6 @@ class MainGui(QWidget):
         self.mode_selector.addItem("Chế độ 2 Camera")
         self.mode_selector.setFixedWidth(200)
 
-        # Nút Về Menu (Dùng chung)
         self.back_button = QPushButton("Về Menu")
         self.back_button.setObjectName("danger")
         self.back_button.setFixedWidth(scale_size(150))
@@ -131,12 +130,10 @@ class MainGui(QWidget):
         self.main_stack = QStackedWidget()
         root_layout.addWidget(self.main_stack)
 
-        # PAGE 1: 1 CAMERA
         self.page_single = QWidget()
         self._setup_original_single_ui(self.page_single, scale_size, scale_font)
         self.main_stack.addWidget(self.page_single)
 
-        # PAGE 2: 2 CAMERA
         self.page_dual = QWidget()
         self._setup_dual_ui(self.page_dual, scale_size, scale_font)
         self.main_stack.addWidget(self.page_dual)
@@ -183,15 +180,23 @@ class MainGui(QWidget):
 
         controls_panel = QWidget()
         controls_layout = QHBoxLayout(controls_panel)
+        
+        self.single_cam_source = QComboBox()
+        self.single_cam_source.setToolTip("Chọn nguồn Camera")
+        self.single_cam_source.setMinimumWidth(scale_size(150))
+        
         self.refresh_button = QPushButton("Làm mới")
         self.refresh_button.setObjectName("refreshButton")
+        
+        controls_layout.addWidget(QLabel("Nguồn:"))
+        controls_layout.addWidget(self.single_cam_source)
         controls_layout.addWidget(self.refresh_button)
         controls_layout.addStretch(1)
         
         self.zoom_slider = QSlider(Qt.Horizontal)
         self.zoom_slider.setMinimum(10); self.zoom_slider.setMaximum(50); self.zoom_slider.setValue(10)
         self.zoom_value_label = QLabel("1.0x")
-        controls_layout.addWidget(QLabel("Khoảng cách:"))
+        controls_layout.addWidget(QLabel("Zoom:"))
         controls_layout.addWidget(self.zoom_slider, 2)
         controls_layout.addWidget(self.zoom_value_label)
         controls_layout.addStretch(1)
@@ -211,7 +216,6 @@ class MainGui(QWidget):
         session_box = QGroupBox("Quản lý Lần bắn")
         session_layout = QVBoxLayout(session_box)
         
-        # Hàng 1: Người tập
         row1 = QHBoxLayout()
         self.soldier_select_label = QLabel()
         self.soldier_selector = QComboBox()
@@ -219,14 +223,12 @@ class MainGui(QWidget):
         row1.addWidget(self.soldier_selector, 1)
         session_layout.addLayout(row1)
 
-        # --- THÊM: Hàng 2: Chọn Cò ---
         row_trigger = QHBoxLayout()
-        self.trigger_selector = QComboBox() # Combo chọn cò
+        self.trigger_selector = QComboBox()
         row_trigger.addWidget(QLabel("Chọn Cò:"))
         row_trigger.addWidget(self.trigger_selector, 1)
         session_layout.addLayout(row_trigger)
         
-        # Hàng 3: Nút Bắt đầu
         row2 = QHBoxLayout()
         self.session_button = QPushButton("Bắt đầu")
         row2.addWidget(self.session_button)
@@ -255,43 +257,49 @@ class MainGui(QWidget):
         layout.setContentsMargins(0,0,0,0)
         layout.setSpacing(scale_size(10))
 
-        # Helper tạo cột dọc
         def create_vertical_column(title, prefix):
             panel = self._create_styled_panel()
             col_layout = QVBoxLayout(panel)
             col_layout.setContentsMargins(scale_size(10), scale_size(10), scale_size(10), scale_size(10))
             
-            # 1. Header (Tên Cam + Chọn Nguồn)
+            # 1. Header: Tiêu đề + Chọn Nguồn + Chọn Cò (MỚI: Gom vào 1 dòng)
             header_widget = QWidget(); header_lo = QHBoxLayout(header_widget); header_lo.setContentsMargins(0,0,0,0)
+            
             lbl_title = QLabel(title); lbl_title.setProperty("class", "panel-title")
+            
+            # Nguồn Camera
             cmb_source = QComboBox(); cmb_source.setToolTip("Chọn nguồn Camera")
-            header_lo.addWidget(lbl_title); header_lo.addStretch(); header_lo.addWidget(QLabel("Nguồn:")); header_lo.addWidget(cmb_source)
+            # cmb_source.setFixedWidth(scale_size(100)) # Có thể bỏ fixed width nếu muốn tự co giãn
+            
+            # Chọn Cò (Chuyển từ dưới lên đây)
+            cmb_trigger = QComboBox(); cmb_trigger.setToolTip("Chọn phím cò")
+            cmb_trigger.setFixedWidth(scale_size(140)) # Đặt kích thước vừa phải
+            
+            header_lo.addWidget(lbl_title)
+            header_lo.addStretch()
+            header_lo.addWidget(QLabel("Nguồn:"))
+            header_lo.addWidget(cmb_source)
+            header_lo.addSpacing(scale_size(10))
+            header_lo.addWidget(QLabel("Cò:"))
+            header_lo.addWidget(cmb_trigger)
+            
             col_layout.addWidget(header_widget)
             
-            # 2. Session Control (Riêng biệt)
-            sess_widget = QWidget(); sess_lo = QVBoxLayout(sess_widget); sess_lo.setContentsMargins(0,0,0,0) # Đổi thành VBox để xếp dòng
+            # 2. Session Control: Chỉ còn Người tập + Nút Bắt đầu
+            sess_widget = QWidget(); sess_lo = QHBoxLayout(sess_widget); sess_lo.setContentsMargins(0,0,0,0)
             
-            # Dòng: Người tập + Nút
-            row_s = QHBoxLayout()
             cmb_soldier = QComboBox(); cmb_soldier.setMinimumWidth(150)
             btn_session = QPushButton("Bắt đầu"); btn_session.setMinimumWidth(80)
-            row_s.addWidget(QLabel("Người tập:")); row_s.addWidget(cmb_soldier, 1); row_s.addWidget(btn_session)
             
-            # --- THÊM: Dòng Chọn Cò ---
-            row_t = QHBoxLayout()
-            cmb_trigger = QComboBox()
-            row_t.addWidget(QLabel("Chọn Cò:   ")); row_t.addWidget(cmb_trigger, 1)
-            
-            sess_lo.addLayout(row_s)
-            sess_lo.addLayout(row_t)
+            sess_lo.addWidget(QLabel("Người tập:")); sess_lo.addWidget(cmb_soldier, 1); sess_lo.addWidget(btn_session)
             
             col_layout.addWidget(sess_widget)
 
-            # 3. View
+            # 3. Camera View
             cam_view = VideoLabel(); cam_view.setText(f"Kết nối {title}")
             col_layout.addWidget(cam_view, 5) 
             
-            # 4. Controls
+            # 4. Controls (Giữ nguyên)
             ctrl_widget = QWidget(); ctrl_lo = QHBoxLayout(ctrl_widget); ctrl_lo.setContentsMargins(0,0,0,0)
             btn_refresh = QPushButton("Làm mới")
             sld_zoom = QSlider(Qt.Horizontal); sld_zoom.setRange(10,50); sld_zoom.setValue(10)
@@ -301,14 +309,14 @@ class MainGui(QWidget):
             ctrl_lo.addWidget(btn_refresh); ctrl_lo.addWidget(QLabel("Zoom:")); ctrl_lo.addWidget(sld_zoom); ctrl_lo.addWidget(lbl_zoom); ctrl_lo.addWidget(btn_calib)
             col_layout.addWidget(ctrl_widget)
             
-            # 5. Result
+            # 5. Results
             grp_res = QGroupBox("Kết quả"); res_lo = QVBoxLayout(grp_res)
             lbl_score = QLabel("Điểm số: --"); lbl_score.setStyleSheet("font-size: 16px; font-weight: bold; color: #e74c3c;"); lbl_score.setAlignment(Qt.AlignCenter)
             img_res = VideoLabel(); img_res.setText("Ảnh KQ")
             res_lo.addWidget(lbl_score); res_lo.addWidget(img_res, 1)
             col_layout.addWidget(grp_res, 4)
             
-            # Map Attributes
+            # Map Attributes (Giữ nguyên tên biến để Logic không bị lỗi)
             setattr(self, f"{prefix}_view", cam_view)
             setattr(self, f"{prefix}_source", cmb_source)
             setattr(self, f"{prefix}_soldier_selector", cmb_soldier)
@@ -318,7 +326,7 @@ class MainGui(QWidget):
             setattr(self, f"{prefix}_calib", btn_calib)
             setattr(self, f"{prefix}_score", lbl_score)
             setattr(self, f"{prefix}_result_img", img_res)
-            setattr(self, f"{prefix}_trigger", cmb_trigger) # Thêm map cho trigger
+            setattr(self, f"{prefix}_trigger", cmb_trigger)
             
             return panel
 
