@@ -12,7 +12,6 @@ from PySide6.QtGui import QPixmap, QKeyEvent
 from ..ui.ui_practice import MainGui
 from utils.audio import AudioManager
 from utils.camera import find_available_cameras, CameraThread
-from core.triggers import BluetoothTrigger
 from core.worker import ProcessingWorker
 from core.database import DatabaseManager
 from config import APP_DATA_DIR
@@ -22,26 +21,24 @@ logger = logging.getLogger(__name__)
 class PracticeWindow(QMainWindow):
     request_processing = Signal(np.ndarray, object, str)
 
-    def __init__(self, worker: ProcessingWorker, trigger: BluetoothTrigger, config: dict):
+    def __init__(self, worker: ProcessingWorker, config: dict):
         super().__init__()
         self.config = config
         self.setWindowTitle(self.config.get("labels", {}).get("app_title", "Phần Mềm Bắn Súng"))
         
-        # Thiết lập focus mạnh để nhận phím ngay lập tức
         self.setFocusPolicy(Qt.StrongFocus) 
 
         self.gui = MainGui(self.config)
         self.setCentralWidget(self.gui)
         
         self.worker = worker
-        self.bt_trigger = trigger
         self.db_manager = DatabaseManager()
         self.audio_manager = AudioManager()
         
         # --- STATE ---
         self.current_mode = 0 
         self.cameras = {1: None, 2: None}
-        self.cam_indices = {1: 0, 2: 1}
+        self.cam_indices = {1: 0, 2: 1} # Mặc định: Cam 1 là 0, Cam 2 là 1
         self.zoom_levels = {1: 1.0, 2: 1.0}
         self.calib_centers = {1: None, 2: None}
         self.is_calib_mode = {1: False, 2: False}
@@ -57,15 +54,14 @@ class PracticeWindow(QMainWindow):
         self.save_dir = os.path.join(APP_DATA_DIR, "captured_images")
         os.makedirs(self.save_dir, exist_ok=True)
         
-        try: self.cam_indices[1] = int(self.config.get("camera_index", 0))
-        except: pass
-
+        # [ĐÃ XÓA]: Đoạn code try...except đọc camera_index từ config đã được gỡ bỏ.
+        
         self._init_connections()
         self.populate_soldier_selectors()
         self.populate_trigger_selectors()
         self.reset_ui_state()
 
-    # --- XỬ LÝ PHÍM (TRIGGER) ---
+    # --- CÁC HÀM KHÁC GIỮ NGUYÊN ---
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
         trigger_action = None
@@ -79,30 +75,26 @@ class PracticeWindow(QMainWindow):
             trigger_action = 'DOWN'
 
         if trigger_action:
-            # Chấp nhận sự kiện để ngăn nó lan ra hệ điều hành (nếu có thể)
             event.accept()
-            logger.info(f"Bắn: {trigger_action}")
+            logger.info(f"Trigger kích hoạt: {trigger_action}")
             self.handle_trigger_signal(trigger_action)
         else:
             super().keyPressEvent(event)
 
     def mousePressEvent(self, event):
-        # Lấy lại focus khi click chuột để tránh mất tín hiệu phím
         self.setFocus()
         super().mousePressEvent(event)
 
     def populate_trigger_selectors(self):
-        triggers = [("Cò L (Nút Lên/Enter)", "UP"), ("Cò N (Nút Xuống/Space)", "DOWN")]
+        triggers = [("Cò L (Nút Lên)", "UP"), ("Cò N (Nút Xuống)", "DOWN")]
         if hasattr(self.gui, 'trigger_selector'):
             self.gui.trigger_selector.clear()
             for txt, val in triggers: self.gui.trigger_selector.addItem(txt, val)
             self.gui.trigger_selector.setCurrentIndex(0)
-
         if hasattr(self.gui, 'dual_cam1_trigger'):
             self.gui.dual_cam1_trigger.clear()
             for txt, val in triggers: self.gui.dual_cam1_trigger.addItem(txt, val)
             self.gui.dual_cam1_trigger.setCurrentIndex(0)
-
         if hasattr(self.gui, 'dual_cam2_trigger'):
             self.gui.dual_cam2_trigger.clear()
             for txt, val in triggers: self.gui.dual_cam2_trigger.addItem(txt, val)
@@ -111,8 +103,6 @@ class PracticeWindow(QMainWindow):
     def _init_connections(self):
         self.gui.mode_selector.currentIndexChanged.connect(self.on_change_mode)
         self.gui.back_button.clicked.connect(self.close_and_reset)
-        
-        # Single
         self.gui.session_button.clicked.connect(lambda: self.toggle_session(0))
         self.gui.soldier_selector.currentIndexChanged.connect(lambda: self._reset_session_ui(0))
         self.gui.zoom_slider.valueChanged.connect(lambda v: self.set_zoom(1, v))
@@ -120,8 +110,6 @@ class PracticeWindow(QMainWindow):
         self.gui.calibrate_button.clicked.connect(lambda: self.toggle_calib(1))
         self.gui.camera_view_label.clicked.connect(lambda p: self.set_center(1, p))
         self.gui.single_cam_source.currentIndexChanged.connect(lambda i: self.change_cam_source(1, i))
-
-        # Dual Cam 1
         if hasattr(self.gui, 'dual_cam1_session_btn'):
             self.gui.dual_cam1_session_btn.clicked.connect(lambda: self.toggle_session(1))
             self.gui.dual_cam1_soldier_selector.currentIndexChanged.connect(lambda: self._reset_session_ui(1))
@@ -130,8 +118,6 @@ class PracticeWindow(QMainWindow):
             self.gui.dual_cam1_calib.clicked.connect(lambda: self.toggle_calib(1))
             self.gui.dual_cam1_view.clicked.connect(lambda p: self.set_center(1, p))
             self.gui.dual_cam1_source.currentIndexChanged.connect(lambda i: self.change_cam_source(1, i))
-
-        # Dual Cam 2
         if hasattr(self.gui, 'dual_cam2_session_btn'):
             self.gui.dual_cam2_session_btn.clicked.connect(lambda: self.toggle_session(2))
             self.gui.dual_cam2_soldier_selector.currentIndexChanged.connect(lambda: self._reset_session_ui(2))
@@ -145,7 +131,6 @@ class PracticeWindow(QMainWindow):
         self.gui.soldier_selector.clear()
         if hasattr(self.gui, 'dual_cam1_soldier_selector'): self.gui.dual_cam1_soldier_selector.clear()
         if hasattr(self.gui, 'dual_cam2_soldier_selector'): self.gui.dual_cam2_soldier_selector.clear()
-        
         soldiers = self.db_manager.get_all_soldiers()
         if soldiers:
             for s in soldiers:
@@ -162,26 +147,22 @@ class PracticeWindow(QMainWindow):
     def populate_camera_sources(self):
         available = find_available_cameras()
         if not available: available = [0, 1]
-        
         self.gui.single_cam_source.clear()
         if hasattr(self.gui, 'dual_cam1_source'):
             self.gui.dual_cam1_source.clear()
             self.gui.dual_cam2_source.clear()
-            
         for idx in available:
             text = f"Camera {idx}"
             self.gui.single_cam_source.addItem(text, idx)
             if hasattr(self.gui, 'dual_cam1_source'):
                 self.gui.dual_cam1_source.addItem(text, idx)
                 self.gui.dual_cam2_source.addItem(text, idx)
-        
         self._sync_combo_selection(1)
         self._sync_combo_selection(2)
 
     def _sync_combo_selection(self, cam_id):
         current_idx = self.cam_indices.get(cam_id)
         if current_idx is None: return
-
         if cam_id == 1:
             idx_single = self.gui.single_cam_source.findData(current_idx)
             if idx_single >= 0: self.gui.single_cam_source.setCurrentIndex(idx_single)
@@ -199,9 +180,7 @@ class PracticeWindow(QMainWindow):
             combo = self.gui.single_cam_source
         elif self.current_mode == 1:
             combo = self.gui.dual_cam1_source if cam_id == 1 else self.gui.dual_cam2_source
-        
         if not combo: return
-
         new_idx = combo.itemData(combo_idx)
         if new_idx is not None and new_idx != self.cam_indices[cam_id]:
             self.cam_indices[cam_id] = new_idx
@@ -225,7 +204,6 @@ class PracticeWindow(QMainWindow):
             current_zoom_2 = int(self.zoom_levels[2] * 10)
             if hasattr(self.gui, 'dual_cam2_zoom'):
                 self.gui.dual_cam2_zoom.setValue(current_zoom_2)
-
         if idx == 1 and (self.cameras[2] is None or not self.cameras[2].is_active()):
             self.refresh_cam(2)
 
@@ -248,7 +226,7 @@ class PracticeWindow(QMainWindow):
         center = self.calib_centers[cam_id] if self.calib_centers[cam_id] else (w//2, h//2)
         self.shot_points[cam_id] = center
         display = zoomed.copy()
-        cv2.drawMarker(display, center, (0,0,255), cv2.MARKER_CROSS, 30, 2)
+        cv2.drawMarker(display, center, (0,0,255), cv2.MARKER_CROSS, 15, 1)
         pix = self.gui._convert_cv_to_pixmap(display)
         if self.current_mode == 0:
             if cam_id == 1: self.gui.camera_view_label.setPixmap(pix)
@@ -264,7 +242,6 @@ class PracticeWindow(QMainWindow):
             self.cameras[cam_id].stop()
             self.cameras[cam_id].deleteLater()
             self.cameras[cam_id] = None
-
         try:
             self.cameras[cam_id] = CameraThread(idx)
             if cam_id == 1:
@@ -302,7 +279,6 @@ class PracticeWindow(QMainWindow):
         self.is_calib_mode[cam_id] = s
         lbl = "Lưu" if s else "Hiệu chỉnh"
         cursor = Qt.CrossCursor if s else Qt.ArrowCursor
-        
         if self.current_mode == 0 and cam_id == 1:
             self.gui.calibrate_button.setText(lbl)
             self.gui.camera_view_label.setCursor(cursor)
@@ -320,11 +296,9 @@ class PracticeWindow(QMainWindow):
     def set_center(self, cam_id, pos):
         if self.current_mode == 0: view = self.gui.camera_view_label
         else: view = self.gui.dual_cam1_view if cam_id==1 else self.gui.dual_cam2_view
-        
         if self.clean_frames[cam_id] is None: return
         h_img, w_img = self.clean_frames[cam_id].shape[:2]
         w_wid, h_wid = view.width(), view.height()
-        
         scale = min(w_wid/w_img, h_wid/h_img)
         dw, dh = int(w_img*scale), int(h_img*scale)
         ox, oy = (w_wid-dw)//2, (h_wid-dh)//2
@@ -332,7 +306,6 @@ class PracticeWindow(QMainWindow):
         cy = int((pos.y() - oy) / scale)
         cx = max(0, min(cx, w_img-1))
         cy = max(0, min(cy, h_img-1))
-        
         self.calib_centers[cam_id] = (cx, cy)
         logger.info(f"Đã đặt tâm ngắm mới cho Cam {cam_id}: ({cx}, {cy})")
         self.toggle_calib(cam_id)
@@ -344,25 +317,20 @@ class PracticeWindow(QMainWindow):
             if session_idx == 0: sel = self.gui.soldier_selector
             elif session_idx == 1: sel = self.gui.dual_cam1_soldier_selector
             else: sel = self.gui.dual_cam2_soldier_selector
-            
             data = sel.currentData()
             if not data: 
                 QMessageBox.warning(self, "Thông báo", "Vui lòng chọn người tập để lưu kết quả.")
                 return
-            
             phys_cam_id = 1 if session_idx in [0, 1] else 2
             if not self.cameras[phys_cam_id] or not self.cameras[phys_cam_id].is_active(): 
                 QMessageBox.warning(self, "Lỗi", f"Camera {phys_cam_id} chưa hoạt động")
                 return
-
             sid = self.db_manager.create_session(data['id'])
             if sid:
                 self.active_session_ids[session_idx] = sid
                 self.session_active_flags[session_idx] = True
                 self.shot_counters[session_idx] = 0
                 self._update_session_btn(session_idx, True)
-            
-            # --- QUAN TRỌNG: Lấy lại Focus cho cửa sổ sau khi bấm nút ---
             self.setFocus()
 
     def finalize_session(self, session_idx):
@@ -427,8 +395,6 @@ class PracticeWindow(QMainWindow):
         self.populate_camera_sources()
         self.refresh_cam(1)
         if self.current_mode == 1: self.refresh_cam(2)
-        
-        # --- Đặt Focus để nhận phím ---
         self.setFocus()
 
     def shutdown_components(self):
@@ -460,7 +426,7 @@ class PracticeWindow(QMainWindow):
             frame_to_save = self.clean_frames[cam_id].copy()
             center = self.shot_points[cam_id]
             if center:
-                cv2.drawMarker(frame_to_save, center, (0, 0, 255), cv2.MARKER_CROSS, 30, 2)
+                cv2.drawMarker(frame_to_save, center, (0, 0, 255), cv2.MARKER_CROSS, 15, 1)
             self.audio_manager.play_sound('shot')
             self._send_to_worker(cam_id, frame_to_save, session_idx)
 

@@ -14,7 +14,7 @@ from gui.windows.main_menu_window import MainMenuWindow
 from gui.windows.practice_window import PracticeWindow
 from gui.windows.manage_window import ManageWindow
 from core.worker import ProcessingWorker
-from core.triggers import BluetoothTrigger
+# [ĐÃ XÓA]: from core.triggers import BluetoothTrigger  <-- Không cần nữa
 from config import APP_DATA_DIR
 from utils.license_manager import verify_key
 
@@ -71,15 +71,17 @@ class ApplicationController(QMainWindow):
         
         self.processing_thread = QThread()
         self.processing_worker = ProcessingWorker(self.config)
-        self.bt_trigger = BluetoothTrigger()
+        
+        # [ĐÃ XÓA]: self.bt_trigger = BluetoothTrigger() <-- Không khởi tạo nữa
         
         self.processing_thread.setObjectName("ProcessingThread")
         self.processing_worker.moveToThread(self.processing_thread)
         
         self.main_menu = MainMenuWindow(self.config)
+        
+        # Cập nhật khởi tạo PracticeWindow (bỏ tham số trigger)
         self.practice_screen = PracticeWindow(
-            worker=self.processing_worker, 
-            trigger=self.bt_trigger,
+            worker=self.processing_worker,
             config=self.config
         )
         self.manage_screen = ManageWindow(self.config)
@@ -93,9 +95,6 @@ class ApplicationController(QMainWindow):
         self.connect_signals()
         
         self.processing_thread.start()
-        
-        # --- SỬA ĐỔI: Đã xóa dòng self.bt_trigger.start_global_listener() ---
-        # Trigger sẽ được PracticeWindow tự động kích hoạt khi cần.
     
     def _load_config(self) -> dict:
         config_filename = "config.json"
@@ -160,8 +159,7 @@ class ApplicationController(QMainWindow):
 
     def cleanup_before_exit(self):
         print("INFO: Bắt đầu quá trình dọn dẹp ứng dụng...")
-        if self.bt_trigger:
-            self.bt_trigger.stop_global_listener()
+        # [ĐÃ XÓA]: Cleanup trigger cũ
         if self.processing_thread.isRunning():
             self.processing_thread.quit()
             if not self.processing_thread.wait(3000):

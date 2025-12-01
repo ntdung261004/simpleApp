@@ -1,5 +1,4 @@
 {
-    "camera_index": 0,
     "yolo_model_name": "my_modelv8m.pt",
     "yolo_confidence_threshold": 0.75,
     "labels": {
