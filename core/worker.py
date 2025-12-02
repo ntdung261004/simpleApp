@@ -124,15 +124,17 @@ class ProcessingWorker(QObject):
             result_data = handle_miss(hit_info, photo_frame)
             target_detected_raw = "Trượt" 
 
-        if result_data.get('score') is not None and result_data.get('score') > 0:
-            final_image_to_save = result_data.get('image')
-            if final_image_to_save is not None:
-                try:
-                    cv2.imwrite(image_path, final_image_to_save)
-                    logger.info(f"Worker: Đã ghi đè ảnh kết quả tại {image_path}")
-                except Exception as e:
-                    logger.error(f"Worker: Lỗi khi ghi đè ảnh kết quả: {e}")
-
+        # --- FIX: LUÔN LƯU ẢNH KẾT QUẢ (DÙ TRÚNG HAY TRƯỢT) ---
+        # Code cũ chỉ lưu khi score > 0, gây ra lỗi mất tâm khi bắn trượt.
+        final_image_to_save = result_data.get('image')
+        if final_image_to_save is not None:
+            try:
+                # Ghi đè file ảnh gốc bằng ảnh đã vẽ tâm
+                cv2.imwrite(image_path, final_image_to_save)
+                logger.info(f"Worker: Đã lưu ảnh kết quả tại {image_path}")
+            except Exception as e:
+                logger.error(f"Worker: Lỗi khi ghi đè ảnh kết quả: {e}")
+        # ------------------------------------------------------
         final_package = {
             'time_str': datetime.now().strftime('%H:%M:%S'),
             'target_name': result_data.get('target'),

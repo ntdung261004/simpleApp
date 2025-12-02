@@ -18,7 +18,7 @@ def _process_generic_hit(hit_info, original_img, original_img_alt, mask, score_f
     if transformed_point:
         score = score_func(transformed_point, original_img, mask)
         cv2.drawMarker(processed_image, (int(transformed_point[0]), int(transformed_point[1])), 
-                       (0, 0, 255), cv2.MARKER_CROSS, 15, 1) # markerSize=20, thickness=1
+                       (0, 0, 255), cv2.MARKER_CROSS, 20, 2) # markerSize=20, thickness=1
     
     # Bước 2: Nếu thất bại, thử Warp với ảnh thay thế (original_img_alt)
     elif original_img_alt is not None:
@@ -29,7 +29,7 @@ def _process_generic_hit(hit_info, original_img, original_img_alt, mask, score_f
             # để đảm bảo hiển thị nhất quán, nhưng tính điểm dựa trên tọa độ đã tìm được.
             score = score_func(transformed_point_alt, original_img_alt, mask)
             cv2.drawMarker(processed_image, (int(transformed_point[0]), int(transformed_point[1])), 
-                       (0, 0, 255), cv2.MARKER_CROSS, 15, 1) # markerSize=15, thickness=1
+                       (0, 0, 255), cv2.MARKER_CROSS, 20, 2) # markerSize=15, thickness=1
 
     # Bước 3: Fallback (Ước lượng tỷ lệ) nếu cả 2 cách trên đều thất bại
     if transformed_point is None:
@@ -43,7 +43,7 @@ def _process_generic_hit(hit_info, original_img, original_img_alt, mask, score_f
             transformed_point = (scaled_x, scaled_y)
             
             score = score_func(transformed_point, original_img, mask)
-            cv2.drawMarker(processed_image, transformed_point, (0, 0, 255), cv2.MARKER_CROSS, 15, 1) # Màu vàng
+            cv2.drawMarker(processed_image, transformed_point, (0, 0, 255), cv2.MARKER_CROSS, 20, 2) # Màu vàng
 
     final_target_name = target_display_name
     if score == 0:
@@ -82,5 +82,5 @@ def handle_hit_bia_so_8(hit_info, original_frame, original_img, original_img_alt
 def handle_miss(hit_info, original_frame):
     processed_image = original_frame.copy()
     shot_point = hit_info['shot_point']
-    cv2.drawMarker(processed_image, shot_point, (0, 0, 255), cv2.MARKER_CROSS, 15, 1)
+    cv2.drawMarker(processed_image, shot_point, (0, 0, 255), cv2.MARKER_CROSS, 15, 2)
     return {'target': 'Trượt', 'score': 0, 'image': processed_image, 'coords': None}
