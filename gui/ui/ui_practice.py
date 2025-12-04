@@ -21,11 +21,23 @@ class VideoLabel(QLabel):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setAlignment(Qt.AlignCenter)
         self._is_calibrating = False
+        
+        # Mặc định viền xám
+        self.default_style = "background-color: #212f3d; border: 1px solid #4a6278; border-radius: 8px; color: #95a5a6;"
+        self.active_style = "background-color: #212f3d; border: 3px solid #2ecc71; border-radius: 8px; color: #95a5a6;"
+        self.setStyleSheet(self.default_style)
 
     def set_calibration_mode(self, active: bool):
         self._is_calibrating = active
         self.setCursor(Qt.CrossCursor if active else Qt.ArrowCursor)
         self.setToolTip("Click để chọn tâm ngắm mới" if active else "")
+
+    def set_active_border(self, is_active: bool):
+        """Thay đổi viền để báo hiệu camera này đang hoạt động hay không."""
+        if is_active:
+            self.setStyleSheet(self.active_style)
+        else:
+            self.setStyleSheet(self.default_style)
 
     def mousePressEvent(self, event):
         if self._is_calibrating and event.button() == Qt.LeftButton:
@@ -82,7 +94,7 @@ class MainGui(QWidget):
             QPushButton:disabled {{ background-color: #7f8c8d; }}
             QSlider::groove:horizontal {{ border: 1px solid #2c3e50; height: {scale_size(4)}px; background: #2c3e50; margin: {scale_size(2)}px 0; border-radius: {scale_size(2)}px; }}
             QSlider::handle:horizontal {{ background: #1abc9c; border: 1px solid #1abc9c; width: {scale_size(18)}px; margin: -{scale_size(7)}px 0; border-radius: {scale_size(9)}px; }}
-            VideoLabel {{ background-color: #212f3d; border: 1px solid #4a6278; border-radius: {scale_size(8)}px; color: #95a5a6; font-size: {scale_font(24)}px; }}
+            VideoLabel {{ font-size: {scale_font(24)}px; }} 
             #controlsPanel {{ padding: {scale_size(10)}px; }}
             #zoomValueLabel {{ font-size: {scale_font(13)}px; font-weight: bold; color: #1abc9c; min-width: {scale_size(45)}px; }}
             QComboBox {{ border: 1px solid #4a6278; border-radius: {scale_size(4)}px; padding: {scale_size(5)}px; background-color: #5d6d7e; min-width: {scale_size(100)}px; }}
@@ -95,6 +107,7 @@ class MainGui(QWidget):
             QGroupBox {{ font-size: {scale_font(14)}px; font-weight: bold; border: 1px solid #4a6278; border-radius: {scale_size(8)}px; margin-top: {scale_size(10)}px; }}
             QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top center; padding: {scale_size(2)}px {scale_size(8)}px; background-color: #415a72; border-radius: {scale_size(4)}px; }}
         """)
+        # Lưu ý: VideoLabel style đã được set trong __init__ của class VideoLabel
 
         margin = scale_size(20)
         spacing = scale_size(15)
@@ -237,12 +250,11 @@ class MainGui(QWidget):
         self.soldier_display.setReadOnly(True)
         self.soldier_display.setPlaceholderText("Chưa chọn...")
         
-        # [CÂN ĐỐI]: Tăng kích thước nút Chọn ở Single Mode
         self.btn_select_soldier = QPushButton("Chọn")
         self.btn_select_soldier.setFixedWidth(scale_size(120)) 
         
         soldier_layout.addWidget(self.soldier_select_label)
-        soldier_layout.addWidget(self.soldier_display, 1) # Vẫn giữ stretch=1 để tự co giãn
+        soldier_layout.addWidget(self.soldier_display, 1) 
         soldier_layout.addWidget(self.btn_select_soldier)
         
         self.session_button = QPushButton("Bắt đầu")
@@ -252,12 +264,6 @@ class MainGui(QWidget):
         row_main_ctrl.addWidget(self.session_button)
         
         session_layout.addLayout(row_main_ctrl)
-        
-        row_trigger = QHBoxLayout()
-        self.trigger_selector = QComboBox()
-        row_trigger.addWidget(QLabel("Chọn Cò:"))
-        row_trigger.addWidget(self.trigger_selector, 1)
-        session_layout.addLayout(row_trigger)
 
         # Result Box
         result_box = QGroupBox("Kết quả mới nhất")
@@ -291,14 +297,12 @@ class MainGui(QWidget):
             header_widget = QWidget(); header_lo = QHBoxLayout(header_widget); header_lo.setContentsMargins(0,0,0,0)
             lbl_title = QLabel(title); lbl_title.setProperty("class", "panel-title")
             cmb_source = QComboBox(); cmb_source.setToolTip("Chọn nguồn Camera")
-            cmb_trigger = QComboBox(); cmb_trigger.setToolTip("Chọn phím cò"); cmb_trigger.setFixedWidth(scale_size(140))
+            
             header_lo.addWidget(lbl_title); header_lo.addStretch()
             header_lo.addWidget(QLabel("Nguồn:")); header_lo.addWidget(cmb_source)
-            header_lo.addSpacing(scale_size(10))
-            header_lo.addWidget(QLabel("Cò:")); header_lo.addWidget(cmb_trigger)
             col_layout.addWidget(header_widget)
             
-            # --- CÂN ĐỐI: Session Control cho Dual Mode ---
+            # Session Control
             ctrl_area = QHBoxLayout()
             ctrl_area.setContentsMargins(0,0,0,0)
             
@@ -308,21 +312,18 @@ class MainGui(QWidget):
             
             txt_soldier = QLineEdit(); txt_soldier.setReadOnly(True); txt_soldier.setPlaceholderText("Chưa chọn...")
             
-            # [CÂN ĐỐI]: Tăng kích thước nút Chọn ở Dual Mode (từ 40 -> 100)
             btn_select = QPushButton("Chọn")
             btn_select.setFixedWidth(scale_size(100))
             
-            # Label "Tên" rút gọn
             sess_lo.addWidget(QLabel("Tên:")); sess_lo.addWidget(txt_soldier, 1); sess_lo.addWidget(btn_select)
             
             btn_session = QPushButton("Bắt đầu")
             btn_session.setMinimumWidth(scale_size(110))
             
-            ctrl_area.addWidget(soldier_container, 1) # Container chiếm phần lớn không gian
+            ctrl_area.addWidget(soldier_container, 1)
             ctrl_area.addWidget(btn_session)
             
             col_layout.addLayout(ctrl_area)
-            # -----------------------------------------------
 
             cam_view = VideoLabel(); cam_view.setText(f"Kết nối {title}")
             col_layout.addWidget(cam_view, 5) 
@@ -352,7 +353,6 @@ class MainGui(QWidget):
             setattr(self, f"{prefix}_calib", btn_calib)
             setattr(self, f"{prefix}_score", lbl_score)
             setattr(self, f"{prefix}_result_img", img_res)
-            setattr(self, f"{prefix}_trigger", cmb_trigger)
             setattr(self, f"{prefix}_soldier_container", soldier_container)
             
             return panel

@@ -20,6 +20,9 @@ from core.worker import ProcessingWorker
 from core.database import DatabaseManager
 from config import APP_DATA_DIR
 
+# --- IMPORT THÊM ---
+from core.triggers import BluetoothTrigger
+
 logger = logging.getLogger(__name__)
 
 # --- CLASS RESULT POPUP (GIỮ NGUYÊN) ---
@@ -154,6 +157,12 @@ class PracticeWindow(QMainWindow):
         self.db_manager = DatabaseManager()
         self.audio_manager = AudioManager()
         
+        # --- KHỞI TẠO VÀ KÍCH HOẠT BLUETOOTH TRIGGER (PYNPUT) ---
+        self.bt_trigger = BluetoothTrigger()
+        self.bt_trigger.triggered.connect(self.execute_shot_logic)
+        self.bt_trigger.start_global_listener()
+        self.bt_trigger.activate()
+        
         self.current_mode = 0 
         self.cameras = {1: None, 2: None}
         self.cam_indices = {1: 0, 2: 1}
@@ -169,6 +178,9 @@ class PracticeWindow(QMainWindow):
         self.shot_counters = {0: 0, 1: 0, 2: 0}
         self.selected_soldiers = {0: None, 1: None, 2: None}
         self.testing_shot_buffer = {0: [], 1: [], 2: []}
+        
+        # --- BIẾN ĐIỀU KHIỂN LOGIC BẮN LUÂN PHIÊN ---
+        self.next_shot_cam_id = 1  # 1: Đến lượt Cam 1, 2: Đến lượt Cam 2
 
         self.save_dir = os.path.join(APP_DATA_DIR, "captured_images")
         os.makedirs(self.save_dir, exist_ok=True)
@@ -177,26 +189,20 @@ class PracticeWindow(QMainWindow):
         except: pass
 
         self._init_connections()
-        self.populate_trigger_selectors()
         self.reset_ui_state()
 
-    # --- HÀM RESET HIỂN THỊ (FIXED: Dùng setPixmap rỗng) ---
+    # --- HÀM RESET HIỂN THỊ ---
     def reset_result_display(self):
-        """Xóa ảnh kết quả và text điểm số về mặc định."""
-        empty = QPixmap() # Ảnh rỗng
-        
-        # Single Mode
+        empty = QPixmap()
         self.gui.score_label.setText("Điểm số: --")
         self.gui.result_image_label.setPixmap(empty)
         self.gui.result_image_label.setText("Ảnh kết quả")
         
-        # Dual Mode - Cam 1
         if hasattr(self.gui, 'dual_cam1_score'):
             self.gui.dual_cam1_score.setText("Điểm số: --")
             self.gui.dual_cam1_result_img.setPixmap(empty)
             self.gui.dual_cam1_result_img.setText("Ảnh kết quả")
             
-        # Dual Mode - Cam 2
         if hasattr(self.gui, 'dual_cam2_score'):
             self.gui.dual_cam2_score.setText("Điểm số: --")
             self.gui.dual_cam2_result_img.setPixmap(empty)
@@ -224,26 +230,20 @@ class PracticeWindow(QMainWindow):
         self.gui.training_type_selector.setEnabled(not any_active)
         self.gui.back_button.setEnabled(not any_active)
 
+    # --- SỰ KIỆN PHÍM BẤM (CHỈ CÒN LẠI ENTER/RETURN ĐỂ TEST) ---
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
-        trigger_action = None
-        if key in [Qt.Key_VolumeUp, Qt.Key_Enter, Qt.Key_Return, Qt.Key_W, Qt.Key_Up]: trigger_action = 'UP'
-        elif key in [Qt.Key_VolumeDown, Qt.Key_Space, Qt.Key_S, Qt.Key_Down]: trigger_action = 'DOWN'
-        if trigger_action:
-            event.accept(); logger.info(f"Trigger: {trigger_action}")
-            self.handle_trigger_signal(trigger_action)
-        else: super().keyPressEvent(event)
+        # logger.info(f"KEY PRESSED CODE: {key}") 
+        
+        # Giữ lại Enter/Return để bạn có thể test trên bàn phím
+        if key in [Qt.Key_Enter, Qt.Key_Return]:
+            event.accept()
+            logger.info("Trigger: BẮN (Nhận tín hiệu Enter)")
+            self.execute_shot_logic()
+        else: 
+            super().keyPressEvent(event)
 
     def mousePressEvent(self, event): self.setFocus(); super().mousePressEvent(event)
-
-    def populate_trigger_selectors(self):
-        triggers = [("Cò L (Nút Lên)", "UP"), ("Cò N (Nút Xuống)", "DOWN")]
-        if hasattr(self.gui, 'trigger_selector'):
-            self.gui.trigger_selector.clear(); [self.gui.trigger_selector.addItem(t, v) for t,v in triggers]; self.gui.trigger_selector.setCurrentIndex(0)
-        if hasattr(self.gui, 'dual_cam1_trigger'):
-            self.gui.dual_cam1_trigger.clear(); [self.gui.dual_cam1_trigger.addItem(t, v) for t,v in triggers]; self.gui.dual_cam1_trigger.setCurrentIndex(0)
-        if hasattr(self.gui, 'dual_cam2_trigger'):
-            self.gui.dual_cam2_trigger.clear(); [self.gui.dual_cam2_trigger.addItem(t, v) for t,v in triggers]; self.gui.dual_cam2_trigger.setCurrentIndex(1)
 
     def _init_connections(self):
         self.gui.mode_selector.currentIndexChanged.connect(self.on_change_mode)
@@ -339,38 +339,30 @@ class PracticeWindow(QMainWindow):
             self.gui.single_cam_source.blockSignals(False)
             if hasattr(self.gui, 'dual_cam1_source'): self.gui.dual_cam1_source.blockSignals(False)
 
-    # --- FIX: TỰ ĐỘNG BẬT/TẮT CAM KHI CHUYỂN CHẾ ĐỘ ---
     def on_change_mode(self, idx):
         self.current_mode = idx
         self.gui.main_stack.setCurrentIndex(idx)
-        
-        # Reset kết quả để tránh nhầm lẫn
         self.reset_result_display()
         
-        # Đồng bộ Zoom
+        self.next_shot_cam_id = 1 
+        self.update_active_cam_indicator() # Reset viền
+        
         if idx == 0:
             current_zoom_1 = int(self.zoom_levels[1] * 10)
             self.gui.zoom_slider.setValue(current_zoom_1)
-            # Về chế độ 1 -> Tắt Cam 2 để tiết kiệm tài nguyên
             self.stop_cam(2)
-            
         elif idx == 1:
             current_zoom_1 = int(self.zoom_levels[1] * 10)
             if hasattr(self.gui, 'dual_cam1_zoom'): self.gui.dual_cam1_zoom.setValue(current_zoom_1)
             current_zoom_2 = int(self.zoom_levels[2] * 10)
             if hasattr(self.gui, 'dual_cam2_zoom'): self.gui.dual_cam2_zoom.setValue(current_zoom_2)
-            
-            # Vào chế độ 2 -> Bật Cam 2 (Force Refresh)
             self.refresh_cam(2)
 
-    # --- HÀM DỪNG CAM AN TOÀN (MỚI) ---
     def stop_cam(self, cam_id):
         if self.cameras[cam_id] is not None:
             self.cameras[cam_id].stop()
             self.cameras[cam_id].deleteLater()
             self.cameras[cam_id] = None
-            
-            # Xóa màn hình hiển thị
             if cam_id == 2 and hasattr(self.gui, 'dual_cam2_view'):
                 self.gui.dual_cam2_view.setText("Đã tắt")
                 self.gui.dual_cam2_view.setPixmap(QPixmap())
@@ -391,7 +383,11 @@ class PracticeWindow(QMainWindow):
         center = self.calib_centers[cam_id] if self.calib_centers[cam_id] else (w//2, h//2)
         self.shot_points[cam_id] = center
         display = zoomed.copy()
-        cv2.drawMarker(display, center, (0,0,255), cv2.MARKER_CROSS, 20, 1)
+        
+        # --- HOÀN TÁC: Luôn vẽ tâm màu đỏ ---
+        color = (0, 0, 255) 
+        cv2.drawMarker(display, center, color, cv2.MARKER_CROSS, 20, 1)
+        
         pix = self.gui._convert_cv_to_pixmap(display)
         if self.current_mode == 0:
             if cam_id == 1: self.gui.camera_view_label.setPixmap(pix)
@@ -401,10 +397,9 @@ class PracticeWindow(QMainWindow):
 
     def refresh_cam(self, cam_id):
         idx = self.cam_indices[cam_id]
-        # Dừng thread cũ trước khi tạo mới
         if self.cameras[cam_id] is not None:
             self.cameras[cam_id].stop(); self.cameras[cam_id].deleteLater(); self.cameras[cam_id] = None
-            QApplication.processEvents() # Đảm bảo việc dừng hoàn tất
+            QApplication.processEvents()
             
         try:
             self.cameras[cam_id] = CameraThread(idx)
@@ -462,9 +457,7 @@ class PracticeWindow(QMainWindow):
                 sid = -1; self.testing_shot_buffer[session_idx] = []
             
             if sid:
-                # [FIX]: Reset hiển thị ngay khi bắt đầu phiên mới
                 self.reset_result_display()
-                
                 self.active_session_ids[session_idx] = sid
                 self.session_active_flags[session_idx] = True
                 self.shot_counters[session_idx] = 0
@@ -501,6 +494,9 @@ class PracticeWindow(QMainWindow):
 
     def reset_ui_state(self):
         self.gui.clear_video_feed("Chờ Camera...")
+        self.next_shot_cam_id = 1 
+        self.update_active_cam_indicator() # Reset viền
+        
         for i in [0, 1, 2]:
             if self.session_active_flags[i]:
                 sid = self.active_session_ids[i]
@@ -516,6 +512,11 @@ class PracticeWindow(QMainWindow):
         self.setFocus()
 
     def shutdown_components(self):
+        # Dừng luồng listener khi đóng cửa sổ
+        if self.bt_trigger:
+            self.bt_trigger.deactivate()
+            self.bt_trigger.stop_global_listener()
+
         for cam_id in [1, 2]:
             if self.cameras[cam_id]: self.cameras[cam_id].stop(); self.cameras[cam_id].deleteLater(); self.cameras[cam_id] = None
         self.reset_ui_state()
@@ -524,17 +525,38 @@ class PracticeWindow(QMainWindow):
         self.shutdown_components()
         self.close()
 
-    def handle_trigger_signal(self, key_type):
-        if self.current_mode == 0: 
-            sel = self.gui.trigger_selector.currentData()
-            if sel == key_type: self.capture_single_cam(1, session_idx=0)
-        elif self.current_mode == 1: 
-            if hasattr(self.gui, 'dual_cam1_trigger'):
-                sel1 = self.gui.dual_cam1_trigger.currentData()
-                if sel1 == key_type: self.capture_single_cam(1, session_idx=1)
-            if hasattr(self.gui, 'dual_cam2_trigger'):
-                sel2 = self.gui.dual_cam2_trigger.currentData()
-                if sel2 == key_type: self.capture_single_cam(2, session_idx=2)
+    # --- HÀM CẬP NHẬT VIỀN XANH CHO CAMERA ---
+    def update_active_cam_indicator(self):
+        if self.current_mode == 0:
+            return 
+        
+        if self.current_mode == 1:
+            if hasattr(self.gui, 'dual_cam1_view') and hasattr(self.gui, 'dual_cam2_view'):
+                # Cam 1 active nếu next_shot là 1
+                self.gui.dual_cam1_view.set_active_border(self.next_shot_cam_id == 1)
+                # Cam 2 active nếu next_shot là 2
+                self.gui.dual_cam2_view.set_active_border(self.next_shot_cam_id == 2)
+
+    @Slot() # Slot nhận tín hiệu từ BluetoothTrigger
+    def execute_shot_logic(self):
+        # 1. Chế độ 1 Camera (Single)
+        if self.current_mode == 0:
+            self.capture_single_cam(1, session_idx=0)
+
+        # 2. Chế độ 2 Camera (Dual)
+        elif self.current_mode == 1:
+            target_cam = self.next_shot_cam_id
+            
+            # Thực hiện bắn ở Camera đang đến lượt
+            self.capture_single_cam(target_cam, session_idx=target_cam)
+            
+            # Đảo lượt bắn (Luân phiên 1 -> 2 -> 1)
+            self.next_shot_cam_id = 2 if self.next_shot_cam_id == 1 else 1
+            
+            # Cập nhật viền ngay lập tức
+            self.update_active_cam_indicator()
+            
+            logger.info(f"Đã bắn Cam {target_cam}. Lượt tiếp theo: Cam {self.next_shot_cam_id}")
 
     def capture_single_cam(self, cam_id, session_idx):
         if self.clean_frames[cam_id] is not None:
@@ -605,7 +627,6 @@ class PracticeWindow(QMainWindow):
                     popup = ResultPopup(self.testing_shot_buffer[session_idx], camera_name=cam_title, parent=self)
                     popup.exec()
                     
-                    # [FIX]: Reset hiển thị sau khi đóng popup
                     self.reset_result_display()
                     
                     self.testing_shot_buffer[session_idx] = []
