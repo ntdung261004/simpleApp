@@ -24,10 +24,11 @@ from core.triggers import BluetoothTrigger
 logger = logging.getLogger(__name__)
 
 # --- CLASS RESULT POPUP (GIỮ NGUYÊN) ---
+# ... (Giữ nguyên code class ResultPopup) ...
 class ResultPopup(QDialog):
     def __init__(self, shots_data, camera_name="", parent=None):
         super().__init__(parent)
-        self.setWindowTitle("KẾT QUẢ KIỂM TRA")
+        self.setWindowTitle("KẾT QUẢ LUYỆN TẬP")
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
         self.setMinimumSize(700, 650)
         self.setStyleSheet("background-color: #2c3e50; color: white;")
@@ -44,14 +45,10 @@ class ResultPopup(QDialog):
             layout.addWidget(self.lbl_cam)
 
         total_score = sum(s['score'] for s in self.shots_data)
-        if total_score < 15:
-            rank = "KHÔNG ĐẠT"; color = "#95a5a6"
-        elif 15 <= total_score <= 18:
-            rank = "ĐẠT"; color = "#f39c12"
-        elif 19 <= total_score <= 23:
-            rank = "KHÁ"; color = "#3498db"
-        else:
-            rank = "GIỎI"; color = "#2ecc71"
+        if total_score < 15: rank = "KHÔNG ĐẠT"; color = "#95a5a6"
+        elif 15 <= total_score <= 18: rank = "ĐẠT"; color = "#f39c12"
+        elif 19 <= total_score <= 23: rank = "KHÁ"; color = "#3498db"
+        else: rank = "GIỎI"; color = "#2ecc71"
 
         header_layout = QHBoxLayout()
         self.lbl_score = QLabel(f"TỔNG ĐIỂM: {total_score}/30")
@@ -108,41 +105,10 @@ class ResultPopup(QDialog):
         if self.current_idx < len(self.shots_data) - 1: self.current_idx += 1; self.update_view()
     def resizeEvent(self, event): self.update_view(); super().resizeEvent(event)
 
-# --- CLASS SELECT SOLDIER (GIỮ NGUYÊN) ---
-class SelectSoldierDialog(QDialog):
-    def __init__(self, soldiers_list, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Chọn Người Tập")
-        self.setMinimumSize(600, 500)
-        self.setStyleSheet("QDialog { background-color: #2c3e50; color: white; } QLineEdit { padding: 8px; border-radius: 4px; border: 1px solid #7f8c8d; background: #34495e; color: white; } QTableWidget { background-color: #34495e; gridline-color: #7f8c8d; color: white; border: none; } QHeaderView::section { background-color: #2c3e50; color: white; padding: 4px; border: 1px solid #7f8c8d; } QTableWidget::item:selected { background-color: #1abc9c; color: white; }")
-        self.selected_soldier = None; self.soldiers_list = soldiers_list
-        layout = QVBoxLayout(self)
-        self.search_box = QLineEdit(); self.search_box.setPlaceholderText("🔍 Tìm kiếm tên hoặc đơn vị...")
-        self.search_box.textChanged.connect(self.filter_list); layout.addWidget(self.search_box)
-        self.table = QTableWidget(); self.table.setColumnCount(2); self.table.setHorizontalHeaderLabels(["Họ Tên", "Đơn vị"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch); self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.doubleClicked.connect(self.accept_selection); layout.addWidget(self.table)
-        self.populate_table(self.soldiers_list)
-        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel); btn_box.accepted.connect(self.accept_selection); btn_box.rejected.connect(self.reject); layout.addWidget(btn_box)
-    def populate_table(self, data):
-        self.table.setRowCount(len(data))
-        for r, s in enumerate(data):
-            self.table.setItem(r, 0, QTableWidgetItem(s['name'])); self.table.setItem(r, 1, QTableWidgetItem(s.get('class_name', '')))
-            self.table.item(r, 0).setData(Qt.UserRole, s) 
-    def filter_list(self):
-        text = self.search_box.text().lower()
-        for r in range(self.table.rowCount()):
-            name = self.table.item(r, 0).text().lower(); unit = self.table.item(r, 1).text().lower()
-            self.table.setRowHidden(r, text not in name and text not in unit)
-    def accept_selection(self):
-        rows = self.table.selectedItems()
-        if rows: self.selected_soldier = self.table.item(rows[0].row(), 0).data(Qt.UserRole); self.accept()
-        else: QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn một người từ danh sách.")
-
 # --- PRACTICE WINDOW CHÍNH ---
 class PracticeWindow(QMainWindow):
     request_processing = Signal(np.ndarray, object, str)
+    back_to_menu_signal = Signal()
 
     def __init__(self, worker: ProcessingWorker, config: dict):
         super().__init__()
@@ -160,6 +126,7 @@ class PracticeWindow(QMainWindow):
         self.bt_trigger.start_global_listener()
         self.bt_trigger.activate()
         
+        self.is_free_practice = False
         self.current_mode = 0 
         self.cameras = {1: None, 2: None}
         self.cam_indices = {1: 0, 2: 1}
@@ -173,12 +140,8 @@ class PracticeWindow(QMainWindow):
         self.active_session_ids = {0: None, 1: None, 2: None}
         self.session_active_flags = {0: False, 1: False, 2: False}
         self.shot_counters = {0: 0, 1: 0, 2: 0}
-        self.selected_soldiers = {0: None, 1: None, 2: None}
         self.testing_shot_buffer = {0: [], 1: [], 2: []}
-        
-        # Biến đếm số shot đang xử lý để tránh bắn lố
         self.pending_shots = {0: 0, 1: 0, 2: 0}
-        
         self.next_shot_cam_id = 1 
 
         self.save_dir = os.path.join(APP_DATA_DIR, "captured_images")
@@ -188,8 +151,170 @@ class PracticeWindow(QMainWindow):
         except: pass
 
         self._init_connections()
+        self.gui.stack.setCurrentWidget(self.gui.page_dashboard)
+
+    def start_camera(self):
+        logger.info("PracticeWindow: Start (Dashboard Mode)")
         self.populate_camera_sources()
-        self.reset_ui_state()
+        self.gui.stack.setCurrentWidget(self.gui.page_dashboard)
+        self.setFocus()
+
+    def _init_connections(self):
+        self.gui.btn_create_session.clicked.connect(self.on_session_practice_clicked)
+        self.gui.btn_free_practice.clicked.connect(self.on_free_practice_clicked)
+        self.gui.btn_back_main.clicked.connect(self.back_to_menu_signal.emit)
+
+        self.gui.btn_new_session.clicked.connect(self.on_new_session_clicked)
+        self.gui.btn_continue_session.clicked.connect(self.on_continue_session_clicked)
+        self.gui.btn_back_dashboard_session.clicked.connect(self.on_back_to_dashboard)
+
+        self.gui.back_to_dashboard_btn.clicked.connect(self.on_return_to_dashboard)
+        self.gui.mode_selector.currentIndexChanged.connect(self.on_change_mode)
+        self.gui.shooting_mode_selector.currentIndexChanged.connect(self.on_change_shooting_mode)
+        
+        self.gui.session_button.clicked.connect(lambda: self.toggle_session(0))
+        self.gui.zoom_slider.valueChanged.connect(lambda v: self.set_zoom(1, v))
+        self.gui.refresh_button.clicked.connect(lambda: self.on_manual_refresh(1))
+        self.gui.calibrate_button.clicked.connect(lambda: self.toggle_calib(1))
+        self.gui.camera_view_label.clicked.connect(lambda p: self.set_center(1, p))
+        self.gui.single_cam_source.currentIndexChanged.connect(lambda i: self.change_cam_source(1, i))
+        
+        if hasattr(self.gui, 'dual_cam1_session_btn'):
+            self.gui.dual_cam1_session_btn.clicked.connect(lambda: self.toggle_session(1))
+            self.gui.dual_cam1_zoom.valueChanged.connect(lambda v: self.set_zoom(1, v))
+            self.gui.dual_cam1_refresh.clicked.connect(lambda: self.on_manual_refresh(1))
+            self.gui.dual_cam1_calib.clicked.connect(lambda: self.toggle_calib(1))
+            self.gui.dual_cam1_view.clicked.connect(lambda p: self.set_center(1, p))
+            self.gui.dual_cam1_source.currentIndexChanged.connect(lambda i: self.change_cam_source(1, i))
+            
+        if hasattr(self.gui, 'dual_cam2_session_btn'):
+            self.gui.dual_cam2_session_btn.clicked.connect(lambda: self.toggle_session(2))
+            self.gui.dual_cam2_zoom.valueChanged.connect(lambda v: self.set_zoom(2, v))
+            self.gui.dual_cam2_refresh.clicked.connect(lambda: self.on_manual_refresh(2))
+            self.gui.dual_cam2_calib.clicked.connect(lambda: self.toggle_calib(2))
+            self.gui.dual_cam2_view.clicked.connect(lambda p: self.set_center(2, p))
+            self.gui.dual_cam2_source.currentIndexChanged.connect(lambda i: self.change_cam_source(2, i))
+
+    def on_session_practice_clicked(self):
+        self.gui.stack.setCurrentWidget(self.gui.page_session_menu)
+
+    def on_back_to_dashboard(self):
+        self.gui.stack.setCurrentWidget(self.gui.page_dashboard)
+
+    def on_new_session_clicked(self):
+        QMessageBox.information(self, "Thông báo", "Chức năng 'Bắt đầu phiên tập mới' sẽ được thực hiện ở bước sau.")
+
+    def on_continue_session_clicked(self):
+        QMessageBox.information(self, "Thông báo", "Chức năng 'Tiếp tục phiên tập đã lưu' sẽ được thực hiện ở bước sau.")
+
+    def on_free_practice_clicked(self):
+        logger.info("Vào chế độ: Luyện tập tự do")
+        self.is_free_practice = True
+        self.populate_camera_sources()
+        self.gui.stack.setCurrentWidget(self.gui.page_view)
+        
+        if self.current_mode == 0: self.refresh_cam(1)
+        else: self.refresh_cam(1); self.refresh_cam(2)
+        
+        self._update_button_visibility()
+
+    def on_return_to_dashboard(self):
+        self.shutdown_components()
+        self.is_free_practice = False
+        self.gui.stack.setCurrentWidget(self.gui.page_dashboard)
+
+    def reset_ui_state(self):
+        self.gui.clear_video_feed("Chờ Camera...")
+        self.next_shot_cam_id = 1 
+        self.update_active_cam_indicator() 
+        for i in [0, 1, 2]:
+            if self.session_active_flags[i]:
+                sid = self.active_session_ids[i]
+                if sid and sid > 0: self.db_manager.end_session(sid)
+                self.session_active_flags[i] = False
+                self.active_session_ids[i] = None
+                self._update_session_btn(i, False)
+                self.shot_counters[i] = 0
+                self.testing_shot_buffer[i] = []
+                self.pending_shots[i] = 0
+                self.reset_result_display(i)
+
+    def _update_button_visibility(self):
+        shooting_mode = self.gui.shooting_mode_selector.currentData()
+        should_hide = self.is_free_practice and (shooting_mode == "SINGLE")
+        
+        def set_visible(btn, visible):
+            if btn: btn.setVisible(visible)
+
+        set_visible(self.gui.session_button, not should_hide)
+        
+        if hasattr(self.gui, 'dual_cam1_session_btn'):
+            set_visible(self.gui.dual_cam1_session_btn, not should_hide)
+            
+        if hasattr(self.gui, 'dual_cam2_session_btn'):
+            set_visible(self.gui.dual_cam2_session_btn, not should_hide)
+
+    def on_change_shooting_mode(self):
+        for idx in [0, 1, 2]:
+            if self.session_active_flags[idx]:
+                self.finalize_session(idx)
+            
+            self.reset_result_display(idx)
+            self.testing_shot_buffer[idx] = []
+            self.pending_shots[idx] = 0
+            self.shot_counters[idx] = 0
+            
+        self._update_button_visibility()
+
+    def on_change_mode(self, idx):
+        self.current_mode = idx
+        self.gui.main_stack.setCurrentIndex(idx)
+        self.reset_result_display()
+        self.next_shot_cam_id = 1 
+        self.update_active_cam_indicator() 
+        self._validate_and_sync_selection(1)
+        self._validate_and_sync_selection(2)
+        
+        if idx == 0: 
+            self.stop_cam(2) 
+            self.refresh_cam(1)
+        elif idx == 1: 
+            if self.cam_indices[1] == self.cam_indices[2]:
+                available_cams = find_available_cameras()
+                for c in available_cams:
+                    if c != self.cam_indices[1]:
+                        self.cam_indices[2] = c
+                        break
+                self._validate_and_sync_selection(2)
+            self.refresh_cam(1)
+            self.refresh_cam(2)
+            
+        self._update_button_visibility()
+
+    def toggle_session(self, session_idx):
+        if self.session_active_flags[session_idx]: self.finalize_session(session_idx)
+        else:
+            sid = -1
+            self.reset_result_display(session_idx)
+            self.active_session_ids[session_idx] = sid
+            self.session_active_flags[session_idx] = True
+            self.shot_counters[session_idx] = 0
+            self.testing_shot_buffer[session_idx] = []
+            self.pending_shots[session_idx] = 0
+            
+            self._update_session_btn(session_idx, True)
+            self.setFocus()
+
+    def finalize_session(self, session_idx):
+        sid = self.active_session_ids[session_idx]
+        if not self.is_free_practice and sid and sid > 0:
+            shot_count = self.db_manager.get_shot_count_for_session(sid)
+            if shot_count == 0: self.db_manager.delete_session(sid)
+            else: self.db_manager.end_session(sid)
+
+        self.session_active_flags[session_idx] = False
+        self.active_session_ids[session_idx] = None
+        self._update_session_btn(session_idx, False)
 
     def reset_result_display(self, session_idx=None):
         empty = QPixmap()
@@ -209,114 +334,45 @@ class PracticeWindow(QMainWindow):
     def _update_session_btn(self, idx, active):
         txt = "KẾT THÚC" if active else "BẮT ĐẦU"
         obj = "danger" if active else ""
-        is_testing = (self.gui.training_type_selector.currentData() == "TEST")
-        if idx == 0: 
-            btn = self.gui.session_button
-            self.gui.btn_select_soldier.setEnabled(not active and not is_testing)
-        elif idx == 1: 
-            btn = self.gui.dual_cam1_session_btn
-            self.gui.dual_cam1_btn_select.setEnabled(not active and not is_testing)
-        else: 
-            btn = self.gui.dual_cam2_session_btn
-            self.gui.dual_cam2_btn_select.setEnabled(not active and not is_testing)
+        if idx == 0: btn = self.gui.session_button
+        elif idx == 1: btn = self.gui.dual_cam1_session_btn
+        else: btn = self.gui.dual_cam2_session_btn
         btn.setText(txt); btn.setObjectName(obj); btn.style().polish(btn)
         
         any_active = any(self.session_active_flags.values())
         self.gui.mode_selector.setEnabled(not any_active)
-        self.gui.training_type_selector.setEnabled(not any_active)
-        self.gui.back_button.setEnabled(not any_active)
+        self.gui.shooting_mode_selector.setEnabled(not any_active)
+        self.gui.back_to_dashboard_btn.setEnabled(not any_active)
 
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
         if key in [Qt.Key_Enter, Qt.Key_Return]:
-            event.accept()
-            logger.info("Trigger: BẮN (Nhận tín hiệu Enter)")
-            self.execute_shot_logic()
+            event.accept(); self.execute_shot_logic()
         else: super().keyPressEvent(event)
 
     def mousePressEvent(self, event): self.setFocus(); super().mousePressEvent(event)
 
-    def _init_connections(self):
-        self.gui.mode_selector.currentIndexChanged.connect(self.on_change_mode)
-        self.gui.back_button.clicked.connect(self.close_and_reset)
-        self.gui.training_type_selector.currentIndexChanged.connect(self.on_change_training_type)
-        self.gui.btn_select_soldier.clicked.connect(lambda: self.open_select_soldier_dialog(0))
-        self.gui.session_button.clicked.connect(lambda: self.toggle_session(0))
-        self.gui.zoom_slider.valueChanged.connect(lambda v: self.set_zoom(1, v))
-        self.gui.refresh_button.clicked.connect(lambda: self.on_manual_refresh(1))
-        self.gui.calibrate_button.clicked.connect(lambda: self.toggle_calib(1))
-        self.gui.camera_view_label.clicked.connect(lambda p: self.set_center(1, p))
-        self.gui.single_cam_source.currentIndexChanged.connect(lambda i: self.change_cam_source(1, i))
-        
-        if hasattr(self.gui, 'dual_cam1_session_btn'):
-            self.gui.dual_cam1_btn_select.clicked.connect(lambda: self.open_select_soldier_dialog(1))
-            self.gui.dual_cam1_session_btn.clicked.connect(lambda: self.toggle_session(1))
-            self.gui.dual_cam1_zoom.valueChanged.connect(lambda v: self.set_zoom(1, v))
-            self.gui.dual_cam1_refresh.clicked.connect(lambda: self.on_manual_refresh(1))
-            self.gui.dual_cam1_calib.clicked.connect(lambda: self.toggle_calib(1))
-            self.gui.dual_cam1_view.clicked.connect(lambda p: self.set_center(1, p))
-            self.gui.dual_cam1_source.currentIndexChanged.connect(lambda i: self.change_cam_source(1, i))
-            
-        if hasattr(self.gui, 'dual_cam2_session_btn'):
-            self.gui.dual_cam2_btn_select.clicked.connect(lambda: self.open_select_soldier_dialog(2))
-            self.gui.dual_cam2_session_btn.clicked.connect(lambda: self.toggle_session(2))
-            self.gui.dual_cam2_zoom.valueChanged.connect(lambda v: self.set_zoom(2, v))
-            self.gui.dual_cam2_refresh.clicked.connect(lambda: self.on_manual_refresh(2))
-            self.gui.dual_cam2_calib.clicked.connect(lambda: self.toggle_calib(2))
-            self.gui.dual_cam2_view.clicked.connect(lambda p: self.set_center(2, p))
-            self.gui.dual_cam2_source.currentIndexChanged.connect(lambda i: self.change_cam_source(2, i))
-
-    def on_change_training_type(self):
-        is_testing = (self.gui.training_type_selector.currentData() == "TEST")
-        if any(self.session_active_flags.values()): self.reset_ui_state()
-        self.gui.soldier_container.setVisible(not is_testing)
-        if hasattr(self.gui, 'dual_cam1_soldier_container'): self.gui.dual_cam1_soldier_container.setVisible(not is_testing)
-        if hasattr(self.gui, 'dual_cam2_soldier_container'): self.gui.dual_cam2_soldier_container.setVisible(not is_testing)
-        self._update_session_btn(0, self.session_active_flags[0])
-        if hasattr(self.gui, 'dual_cam1_session_btn'): self._update_session_btn(1, self.session_active_flags[1])
-        if hasattr(self.gui, 'dual_cam2_session_btn'): self._update_session_btn(2, self.session_active_flags[2])
-
-    def open_select_soldier_dialog(self, session_idx):
-        if self.session_active_flags[session_idx]:
-            QMessageBox.warning(self, "Đang tập", "Vui lòng kết thúc phiên tập trước khi đổi người.")
-            return
-        soldiers = self.db_manager.get_all_soldiers()
-        dialog = SelectSoldierDialog(soldiers, self)
-        if dialog.exec() == QDialog.Accepted and dialog.selected_soldier:
-            self.selected_soldiers[session_idx] = dialog.selected_soldier
-            name_display = f"{dialog.selected_soldier['name']} - {dialog.selected_soldier.get('class_name', '')}"
-            if session_idx == 0: self.gui.soldier_display.setText(name_display)
-            elif session_idx == 1: self.gui.dual_cam1_soldier_display.setText(name_display)
-            elif session_idx == 2: self.gui.dual_cam2_soldier_display.setText(name_display)
-            self._reset_session_ui(session_idx)
-
     def on_manual_refresh(self, cam_id):
-        logger.info("Người dùng nhấn Làm mới: Đang quét lại danh sách thiết bị...")
         self.populate_camera_sources()
         self.refresh_cam(cam_id)
 
     def populate_camera_sources(self):
         available = find_available_cameras()
         if not available: available = [0, 1]
-        
         self.gui.single_cam_source.blockSignals(True)
         if hasattr(self.gui, 'dual_cam1_source'):
             self.gui.dual_cam1_source.blockSignals(True)
             self.gui.dual_cam2_source.blockSignals(True)
-
         combos = [self.gui.single_cam_source]
         if hasattr(self.gui, 'dual_cam1_source'):
             combos.append(self.gui.dual_cam1_source)
             combos.append(self.gui.dual_cam2_source)
-
         for combo in combos:
             combo.clear()
             for idx in available:
                 combo.addItem(f"Camera {idx}", idx)
-        
         self._validate_and_sync_selection(1)
         self._validate_and_sync_selection(2)
-
         self.gui.single_cam_source.blockSignals(False)
         if hasattr(self.gui, 'dual_cam1_source'):
             self.gui.dual_cam1_source.blockSignals(False)
@@ -330,7 +386,6 @@ class PracticeWindow(QMainWindow):
         elif self.current_mode == 1:
             if cam_id == 1 and hasattr(self.gui, 'dual_cam1_source'): combo = self.gui.dual_cam1_source
             elif cam_id == 2 and hasattr(self.gui, 'dual_cam2_source'): combo = self.gui.dual_cam2_source
-        
         if not combo: return
         idx_in_combo = combo.findData(current_idx)
         if idx_in_combo >= 0:
@@ -340,14 +395,12 @@ class PracticeWindow(QMainWindow):
                 combo.setCurrentIndex(0)
                 new_idx = combo.itemData(0)
                 self.cam_indices[cam_id] = new_idx
-                logger.warning(f"Cam {cam_id} (Index cũ {current_idx}) không còn. Chuyển sang {new_idx}")
 
     def change_cam_source(self, cam_id, combo_idx):
         combo = None
         if self.current_mode == 0 and cam_id == 1: combo = self.gui.single_cam_source
         elif self.current_mode == 1: combo = self.gui.dual_cam1_source if cam_id == 1 else self.gui.dual_cam2_source
         if not combo: return
-        
         new_idx = combo.itemData(combo_idx)
         if new_idx is not None and new_idx != self.cam_indices[cam_id]:
             self.cam_indices[cam_id] = new_idx
@@ -362,31 +415,6 @@ class PracticeWindow(QMainWindow):
             if hasattr(self.gui, 'dual_cam1_source'):
                 self.gui.dual_cam1_source.blockSignals(False)
                 self.gui.dual_cam2_source.blockSignals(False)
-
-    def on_change_mode(self, idx):
-        self.current_mode = idx
-        self.gui.main_stack.setCurrentIndex(idx)
-        self.reset_result_display()
-        self.next_shot_cam_id = 1 
-        self.update_active_cam_indicator() 
-        self._validate_and_sync_selection(1)
-        self._validate_and_sync_selection(2)
-
-        if idx == 0: 
-            self.stop_cam(2) 
-            self.refresh_cam(1)
-                
-        elif idx == 1: 
-            if self.cam_indices[1] == self.cam_indices[2]:
-                available_cams = find_available_cameras()
-                for c in available_cams:
-                    if c != self.cam_indices[1]:
-                        self.cam_indices[2] = c
-                        logger.info(f"Tự động gán Cam 2 sang Index {c} để tránh trùng lặp.")
-                        break
-                self._validate_and_sync_selection(2)
-            self.refresh_cam(1)
-            self.refresh_cam(2)
 
     def stop_cam(self, cam_id):
         self.clean_frames[cam_id] = None
@@ -410,7 +438,6 @@ class PracticeWindow(QMainWindow):
         if self.cam_indices[1] == cam_index: affected_cam_ids.append(1)
         if self.cam_indices[2] == cam_index: affected_cam_ids.append(2)
         if not affected_cam_ids: return
-        logger.error(f"Sự cố Camera Index {cam_index} -> Ngắt kết nối các view: {affected_cam_ids}")
         err_msg = "MẤT KẾT NỐI CAMERA!\nVui lòng kiểm tra dây cáp\nvà nhấn 'Làm mới'"
         err_style = "background-color: #34495e; color: #e74c3c; font-weight: bold; border: 2px solid #e74c3c;"
         for cam_id in affected_cam_ids:
@@ -471,7 +498,6 @@ class PracticeWindow(QMainWindow):
             else: self.cameras[cam_id].frame_received.connect(self.handle_camera_frame_2)
             self.cameras[cam_id].error_occurred.connect(self.on_camera_error)
             self.cameras[cam_id].start()
-            logger.info(f"Đã khởi động CameraThread cho Cam {cam_id} (Index {idx})")
         except Exception as e: logger.error(f"Lỗi khởi động camera {cam_id}: {e}")
 
     def crop_to_3_4(self, frame):
@@ -509,72 +535,6 @@ class PracticeWindow(QMainWindow):
         self.calib_centers[cam_id] = (cx, cy)
         self.toggle_calib(cam_id)
 
-    def toggle_session(self, session_idx):
-        if self.session_active_flags[session_idx]: self.finalize_session(session_idx)
-        else:
-            is_testing = (self.gui.training_type_selector.currentData() == "TEST")
-            if not is_testing:
-                data = self.selected_soldiers[session_idx]
-                if not data: QMessageBox.warning(self, "Thông báo", "Vui lòng chọn người tập trước khi bắt đầu."); return
-                sid = self.db_manager.create_session(data['id'])
-            else:
-                sid = -1; self.testing_shot_buffer[session_idx] = []
-                self.pending_shots[session_idx] = 0 
-            
-            if sid:
-                self.reset_result_display(session_idx)
-                self.active_session_ids[session_idx] = sid
-                self.session_active_flags[session_idx] = True
-                self.shot_counters[session_idx] = 0
-                self._update_session_btn(session_idx, True)
-            self.setFocus()
-
-    def finalize_session(self, session_idx):
-        sid = self.active_session_ids[session_idx]
-        if not sid: return
-        if sid > 0:
-            shot_count = self.db_manager.get_shot_count_for_session(sid)
-            if shot_count == 0:
-                reply = QMessageBox.question(self, "Phiên tập trống", "Bạn chưa bắn phát nào. Xóa phiên này không?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-                if reply == QMessageBox.No: return
-                self.db_manager.delete_session(sid)
-            else:
-                default_name = f"Phiên tập #{sid}"; soldier_id = None
-                data = self.selected_soldiers[session_idx]
-                if data: soldier_id = data['id']
-                while True:
-                    name, ok = QInputDialog.getText(self, "Lưu Phiên Tập", "Nhập tên:", QLineEdit.Normal, default_name)
-                    if not ok: return
-                    final_name = name.strip() if name.strip() else default_name
-                    if soldier_id and self.db_manager.session_name_exists(final_name, soldier_id):
-                        QMessageBox.warning(self, "Tên trùng", "Tên đã tồn tại."); continue
-                    self.db_manager.update_session_name(sid, final_name); break
-                self.db_manager.end_session(sid)
-        self.session_active_flags[session_idx] = False
-        self.active_session_ids[session_idx] = None
-        self._update_session_btn(session_idx, False)
-
-    def _reset_session_ui(self, idx):
-        if self.session_active_flags[idx]: self.finalize_session(idx)
-
-    def reset_ui_state(self):
-        self.gui.clear_video_feed("Chờ Camera...")
-        self.next_shot_cam_id = 1 
-        self.update_active_cam_indicator() 
-        for i in [0, 1, 2]:
-            if self.session_active_flags[i]:
-                sid = self.active_session_ids[i]
-                if sid and sid > 0: self.db_manager.end_session(sid)
-                self.session_active_flags[i] = False
-                self.active_session_ids[i] = None
-                self._update_session_btn(i, False)
-
-    def start_camera(self):
-        self.populate_camera_sources()
-        if self.current_mode == 0:
-            self.refresh_cam(1)
-        self.setFocus()
-
     def shutdown_components(self):
         if self.bt_trigger:
             self.bt_trigger.deactivate()
@@ -599,15 +559,13 @@ class PracticeWindow(QMainWindow):
         if self.current_mode == 0:
             self.capture_single_cam(1, session_idx=0)
         elif self.current_mode == 1:
-            # --- Logic Tự Động Chuyển Lượt ---
             target_cam = self.next_shot_cam_id
-            is_testing = (self.gui.training_type_selector.currentData() == "TEST")
+            shooting_mode = self.gui.shooting_mode_selector.currentData()
             
-            if is_testing:
+            if shooting_mode == "BURST_3":
                 current_shots = len(self.testing_shot_buffer[target_cam])
                 pending = self.pending_shots[target_cam]
                 if current_shots + pending >= 3:
-                    # Chuyển sang cam kia nếu chưa đầy
                     other_cam = 2 if target_cam == 1 else 1
                     other_total = len(self.testing_shot_buffer[other_cam]) + self.pending_shots[other_cam]
                     if other_total < 3:
@@ -620,24 +578,21 @@ class PracticeWindow(QMainWindow):
             if success:
                 self.next_shot_cam_id = 2 if target_cam == 1 else 1
                 self.update_active_cam_indicator()
-                logger.info(f"Đã bắn Cam {target_cam}. Lượt tiếp theo: Cam {self.next_shot_cam_id}")
 
     def capture_single_cam(self, cam_id, session_idx):
         if self.clean_frames[cam_id] is None:
-            logger.warning(f"Không thể bắn: Camera {cam_id} không có tín hiệu hình ảnh.")
-            QMessageBox.warning(self, "Lỗi Camera", f"Camera {cam_id} đang mất kết nối hoặc chưa bật.\nVui lòng kiểm tra lại.")
+            QMessageBox.warning(self, "Lỗi Camera", f"Camera {cam_id} đang mất kết nối.")
             return False
         
-        is_testing = (self.gui.training_type_selector.currentData() == "TEST")
-        if is_testing:
+        shooting_mode = self.gui.shooting_mode_selector.currentData()
+        if shooting_mode == "BURST_3":
             current = len(self.testing_shot_buffer[session_idx])
             pending = self.pending_shots[session_idx]
             if current + pending >= 3:
-                return False # Chặn bắn lố
+                return False 
 
         frame_to_save = self.clean_frames[cam_id].copy()
-        
-        if is_testing:
+        if shooting_mode == "BURST_3":
             self.pending_shots[session_idx] += 1
             
         self.audio_manager.play_sound('shot')
@@ -653,42 +608,31 @@ class PracticeWindow(QMainWindow):
             self.request_processing.emit(frame, self.shot_points[cam_id], path)
         except Exception as e:
             logger.error(f"Lỗi chụp ảnh: {e}")
-            if self.gui.training_type_selector.currentData() == "TEST":
-                self.pending_shots[session_idx] = max(0, self.pending_shots[session_idx] - 1)
+            self.pending_shots[session_idx] = max(0, self.pending_shots[session_idx] - 1)
 
     @Slot(dict)
     def on_processing_finished(self, res):
         score = res.get('score')
-        path = res.get('image_path', '')
         session_idx = 0
         try:
-            name = os.path.basename(path)
+            name = os.path.basename(res.get('image_path', ''))
             if name.startswith('s'): session_idx = int(name.split('_')[0][1:])
         except: pass
         
-        is_testing = (self.gui.training_type_selector.currentData() == "TEST")
-        if is_testing:
-            self.pending_shots[session_idx] = max(0, self.pending_shots[session_idx] - 1)
+        self.pending_shots[session_idx] = max(0, self.pending_shots[session_idx] - 1)
 
         if score > 0: self.audio_manager.play_score(score)
         else: self.audio_manager.play_sound('miss')
         
         pix = self.gui._convert_cv_to_pixmap(res.get('result_frame'))
         
-        # --- CẬP NHẬT CHUỖI HIỂN THỊ ---
-        current_shot_no = self.shot_counters[session_idx] + 1
-        score_text = f"Điểm số: {score}"
+        shooting_mode = self.gui.shooting_mode_selector.currentData()
         
-        if is_testing:
+        score_text = f"Điểm: {score}"
+        if shooting_mode == "BURST_3":
              count = len(self.testing_shot_buffer[session_idx]) + 1
              score_text = f"Điểm: {score} (Phát {count}/3)"
-        else:
-             # PRACTICE MODE
-             if self.session_active_flags[session_idx]:
-                 score_text = f"Điểm: {score} | Phát thứ: {current_shot_no}"
-             else:
-                 score_text = f"Điểm: {score}"
-
+        
         if session_idx == 0:
             self.gui.score_label.setText(score_text)
             self.gui.result_image_label.setPixmap(pix)
@@ -704,18 +648,14 @@ class PracticeWindow(QMainWindow):
         QApplication.processEvents()
 
         sid = self.active_session_ids[session_idx]
-        if sid and self.session_active_flags[session_idx]:
-            self.shot_counters[session_idx] += 1
-            if sid > 0:
-                self.db_manager.add_shot(
-                    session_id=sid,
-                    shot_number=self.shot_counters[session_idx],
-                    target_detected=res.get('target_detected_raw'),
-                    score=score,
-                    coords=res.get('coords'),
-                    image_path=path
-                )
-            else:
+        
+        if not self.is_free_practice and sid and sid > 0:
+            pass
+        else:
+            if shooting_mode == "SINGLE":
+                pass
+                
+            elif shooting_mode == "BURST_3":
                 cv_frame = res.get('result_frame')
                 pix_frame = self.gui._convert_cv_to_pixmap(cv_frame)
                 self.testing_shot_buffer[session_idx].append({
@@ -728,14 +668,12 @@ class PracticeWindow(QMainWindow):
                         self.show_test_result(0)
                         
                 elif self.current_mode == 1:
-                    # Kiểm tra xem cả 2 cam đã đủ 3 chưa (kể cả pending)
                     buf1 = len(self.testing_shot_buffer[1])
                     buf2 = len(self.testing_shot_buffer[2])
                     pen1 = self.pending_shots[1]
                     pen2 = self.pending_shots[2]
                     
                     if buf1 >= 3 and buf2 >= 3 and pen1 == 0 and pen2 == 0:
-                        logger.info("Cả 2 Camera đã bắn xong. Hiển thị kết quả lần lượt...")
                         self.show_test_result(1) 
                         self.show_test_result(2) 
                         self.next_shot_cam_id = 1

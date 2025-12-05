@@ -14,7 +14,7 @@ from gui.windows.main_menu_window import MainMenuWindow
 from gui.windows.practice_window import PracticeWindow
 from gui.windows.manage_window import ManageWindow
 from core.worker import ProcessingWorker
-# [ĐÃ XÓA]: from core.triggers import BluetoothTrigger  <-- Không cần nữa
+from core.triggers import BluetoothTrigger
 from config import APP_DATA_DIR
 from utils.license_manager import verify_key
 
@@ -71,17 +71,14 @@ class ApplicationController(QMainWindow):
         
         self.processing_thread = QThread()
         self.processing_worker = ProcessingWorker(self.config)
-        
-        # [ĐÃ XÓA]: self.bt_trigger = BluetoothTrigger() <-- Không khởi tạo nữa
+        self.bt_trigger = BluetoothTrigger()
         
         self.processing_thread.setObjectName("ProcessingThread")
         self.processing_worker.moveToThread(self.processing_thread)
         
         self.main_menu = MainMenuWindow(self.config)
-        
-        # Cập nhật khởi tạo PracticeWindow (bỏ tham số trigger)
         self.practice_screen = PracticeWindow(
-            worker=self.processing_worker,
+            worker=self.processing_worker, 
             config=self.config
         )
         self.manage_screen = ManageWindow(self.config)
@@ -95,6 +92,7 @@ class ApplicationController(QMainWindow):
         self.connect_signals()
         
         self.processing_thread.start()
+        self.bt_trigger.start_global_listener()
     
     def _load_config(self) -> dict:
         config_filename = "config.json"
@@ -150,20 +148,30 @@ class ApplicationController(QMainWindow):
     def connect_signals(self):
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)       
         self.main_menu.stats_button.clicked.connect(self.show_manage_screen)
-        self.practice_screen.gui.back_button.clicked.connect(self.show_main_menu)
-        self.manage_screen.ui.back_button.clicked.connect(self.show_main_menu)
+        
+        # --- KẾT NỐI TÍN HIỆU QUAY VỀ MENU CHÍNH ---
+        self.practice_screen.back_to_menu_signal.connect(self.show_main_menu)
+        self.manage_screen.ui.btn_back_main.clicked.connect(self.show_main_menu)
+        
         self.main_menu.exit_button.clicked.connect(self.close)
 
         self.practice_screen.request_processing.connect(self.processing_worker.process_image)
         self.processing_worker.finished.connect(self.practice_screen.on_processing_finished)
+        
+        # --- SỬA ĐỔI: KẾT NỐI ĐÚNG TÊN SLOT CỦA PRACTICE WINDOW ---
+        self.bt_trigger.triggered.connect(self.practice_screen.execute_shot_logic)
 
     def cleanup_before_exit(self):
         print("INFO: Bắt đầu quá trình dọn dẹp ứng dụng...")
-        # [ĐÃ XÓA]: Cleanup trigger cũ
+        
+        if self.bt_trigger:
+            self.bt_trigger.stop_global_listener()
+
         if self.processing_thread.isRunning():
             self.processing_thread.quit()
             if not self.processing_thread.wait(3000):
                 self.processing_thread.terminate()
+            
         print("INFO: Dọn dẹp hoàn tất.")
 
     def show_main_menu(self):
@@ -172,15 +180,17 @@ class ApplicationController(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.main_menu)
 
     def show_practice_screen(self):
+        # Gọi hàm start_camera() giờ đã tồn tại trong PracticeWindow
         self.practice_screen.start_camera()
         self.stacked_widget.setCurrentWidget(self.practice_screen)
         
     def show_manage_screen(self):
-        self.manage_screen.load_soldiers()
+        self.manage_screen.show_menu()
         self.stacked_widget.setCurrentWidget(self.manage_screen)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+
     icon_path = resource_path("assets/app_icon.ico")
     app_icon = QIcon(icon_path)
     app.setWindowIcon(app_icon)

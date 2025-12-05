@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, QSize, QPoint, Signal
 
 logger = logging.getLogger(__name__)
 
+# --- GIỮ NGUYÊN CLASS VideoLabel ---
 class VideoLabel(QLabel):
     clicked = Signal(QPoint)
     def __init__(self, parent=None):
@@ -22,7 +23,6 @@ class VideoLabel(QLabel):
         self.setAlignment(Qt.AlignCenter)
         self._is_calibrating = False
         
-        # Mặc định viền xám
         self.default_style = "background-color: #212f3d; border: 1px solid #4a6278; border-radius: 8px; color: #95a5a6;"
         self.active_style = "background-color: #212f3d; border: 3px solid #2ecc71; border-radius: 8px; color: #95a5a6;"
         self.setStyleSheet(self.default_style)
@@ -33,7 +33,6 @@ class VideoLabel(QLabel):
         self.setToolTip("Click để chọn tâm ngắm mới" if active else "")
 
     def set_active_border(self, is_active: bool):
-        """Thay đổi viền để báo hiệu camera này đang hoạt động hay không."""
         if is_active:
             self.setStyleSheet(self.active_style)
         else:
@@ -44,11 +43,8 @@ class VideoLabel(QLabel):
             self.clicked.emit(event.pos())
         super().mousePressEvent(event)
 
-    def hasHeightForWidth(self):
-        return True
-
-    def heightForWidth(self, width):
-        return int(width / self.aspect_ratio)
+    def hasHeightForWidth(self): return True
+    def heightForWidth(self, width): return int(width / self.aspect_ratio)
 
     def setPixmap(self, pixmap: QPixmap):
         self._pixmap = pixmap
@@ -77,25 +73,33 @@ class MainGui(QWidget):
         screen_height = screen.height()
         self.scale_factor = screen_height / 1080.0
 
-        def scale_size(base_size):
-            return max(1, int(base_size * self.scale_factor))
-        def scale_font(base_size):
-            return max(9, int(base_size * self.scale_factor))
+        def scale_size(base_size): return max(1, int(base_size * self.scale_factor))
+        def scale_font(base_size): return max(9, int(base_size * self.scale_factor))
 
         self.setStyleSheet(f"""
             QWidget {{ background-color: #2c3e50; color: #ecf0f1; font-family: 'Segoe UI'; }}
             QFrame#panel {{ background-color: #34495e; border-radius: {scale_size(12)}px; border: 1px solid #4a6278; }}
             QLabel#title {{ color: #ecf0f1; padding: {scale_size(10)}px; }}
             QLabel.panel-title {{ font-size: {scale_font(16)}px; font-weight: bold; color: #ecf0f1; padding: {scale_size(8)}px {scale_size(15)}px; background-color: #415a72; border-radius: {scale_size(6)}px; }}
+            
+            QPushButton.menu-btn {{
+                background-color: #34495e; color: #ecf0f1;
+                font-size: {scale_font(18)}px; font-weight: bold;
+                border: 2px solid #4a6278; border-radius: 15px;
+                padding: {scale_size(20)}px;
+                text-align: left; padding-left: 30px;
+            }}
+            QPushButton.menu-btn:hover {{ background-color: #1abc9c; border-color: #16a085; color: white; }}
+            
             QPushButton {{ background-color: #1abc9c; color: white; font-size: {scale_font(14)}px; font-weight: bold; border: none; padding: {scale_size(10)}px {scale_size(20)}px; border-radius: {scale_size(8)}px; }}
             QPushButton:hover {{ background-color: #16a085; }}
             QPushButton#danger {{ background-color: #e74c3c; }}
             QPushButton#danger:hover {{ background-color: #c0392b; }}
             QPushButton:disabled {{ background-color: #7f8c8d; }}
+            
             QSlider::groove:horizontal {{ border: 1px solid #2c3e50; height: {scale_size(4)}px; background: #2c3e50; margin: {scale_size(2)}px 0; border-radius: {scale_size(2)}px; }}
             QSlider::handle:horizontal {{ background: #1abc9c; border: 1px solid #1abc9c; width: {scale_size(18)}px; margin: -{scale_size(7)}px 0; border-radius: {scale_size(9)}px; }}
             VideoLabel {{ font-size: {scale_font(24)}px; }} 
-            #controlsPanel {{ padding: {scale_size(10)}px; }}
             #zoomValueLabel {{ font-size: {scale_font(13)}px; font-weight: bold; color: #1abc9c; min-width: {scale_size(45)}px; }}
             QComboBox {{ border: 1px solid #4a6278; border-radius: {scale_size(4)}px; padding: {scale_size(5)}px; background-color: #5d6d7e; min-width: {scale_size(100)}px; }}
             QComboBox::drop-down {{ border: none; }}
@@ -107,16 +111,125 @@ class MainGui(QWidget):
             QGroupBox {{ font-size: {scale_font(14)}px; font-weight: bold; border: 1px solid #4a6278; border-radius: {scale_size(8)}px; margin-top: {scale_size(10)}px; }}
             QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top center; padding: {scale_size(2)}px {scale_size(8)}px; background-color: #415a72; border-radius: {scale_size(4)}px; }}
         """)
-        # Lưu ý: VideoLabel style đã được set trong __init__ của class VideoLabel
 
+        self.stack = QStackedWidget(self)
+        
+        # Trang 0: Dashboard (Menu chính của Practice)
+        self.page_dashboard = QWidget()
+        self._setup_dashboard(self.page_dashboard, scale_size, scale_font)
+        self.stack.addWidget(self.page_dashboard)
+
+        # Trang 1: Session Menu (Menu con của Luyện tập theo phiên) - NEW
+        self.page_session_menu = QWidget()
+        self._setup_session_menu(self.page_session_menu, scale_size, scale_font)
+        self.stack.addWidget(self.page_session_menu)
+
+        # Trang 2: View Luyện tập (Camera)
+        self.page_view = QWidget()
+        self._setup_practice_view(self.page_view, scale_size, scale_font)
+        self.stack.addWidget(self.page_view)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0,0,0,0)
+        main_layout.addWidget(self.stack)
+
+    def _apply_labels(self):
+        labels = self.config.get("labels", {})
+        trainee_label_text = labels.get("trainee", "Người học")
+        if hasattr(self, 'soldier_select_label'):
+            self.soldier_select_label.setText(f"{trainee_label_text}:")
+
+    # --- SETUP TRANG DASHBOARD ---
+    def _setup_dashboard(self, parent, scale_size, scale_font):
+        layout = QVBoxLayout(parent)
+        layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(scale_size(20))
+        layout.addSpacing(scale_size(60))
+
+        lbl_title = QLabel("CHẾ ĐỘ LUYỆN TẬP")
+        lbl_title.setStyleSheet(f"font-size: {scale_font(32)}px; font-weight: bold; color: #ecf0f1;")
+        lbl_title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl_title)
+        
+        layout.addSpacing(scale_size(40))
+
+        btn_container = QFrame()
+        btn_container.setFixedWidth(scale_size(550))
+        btn_layout = QVBoxLayout(btn_container)
+        btn_layout.setSpacing(scale_size(20))
+
+        # Đổi tên nút thành "Luyện tập theo phiên"
+        self.btn_create_session = QPushButton("1. LUYỆN TẬP THEO PHIÊN")
+        self.btn_create_session.setProperty("class", "menu-btn")
+        self.btn_create_session.setCursor(Qt.PointingHandCursor)
+
+        self.btn_free_practice = QPushButton("2. LUYỆN TẬP TỰ DO")
+        self.btn_free_practice.setProperty("class", "menu-btn")
+        self.btn_free_practice.setCursor(Qt.PointingHandCursor)
+
+        self.btn_back_main = QPushButton("◀  VỀ MENU CHÍNH")
+        self.btn_back_main.setProperty("class", "menu-btn")
+        self.btn_back_main.setObjectName("danger")
+        self.btn_back_main.setCursor(Qt.PointingHandCursor)
+
+        btn_layout.addWidget(self.btn_create_session)
+        btn_layout.addWidget(self.btn_free_practice)
+        btn_layout.addSpacing(10)
+        btn_layout.addWidget(self.btn_back_main)
+
+        layout.addWidget(btn_container, 0, Qt.AlignCenter)
+        layout.addStretch()
+
+    # --- SETUP TRANG MENU CON (LUYỆN TẬP THEO PHIÊN) ---
+    def _setup_session_menu(self, parent, scale_size, scale_font):
+        layout = QVBoxLayout(parent)
+        layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(scale_size(20))
+        layout.addSpacing(scale_size(60))
+
+        lbl_title = QLabel("LUYỆN TẬP THEO PHIÊN")
+        lbl_title.setStyleSheet(f"font-size: {scale_font(32)}px; font-weight: bold; color: #ecf0f1;")
+        lbl_title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl_title)
+        
+        layout.addSpacing(scale_size(40))
+
+        btn_container = QFrame()
+        btn_container.setFixedWidth(scale_size(550))
+        btn_layout = QVBoxLayout(btn_container)
+        btn_layout.setSpacing(scale_size(20))
+
+        self.btn_new_session = QPushButton("BẮT ĐẦU PHIÊN TẬP MỚI")
+        self.btn_new_session.setProperty("class", "menu-btn")
+        self.btn_new_session.setCursor(Qt.PointingHandCursor)
+
+        self.btn_continue_session = QPushButton("TIẾP TỤC PHIÊN TẬP ĐÃ LƯU")
+        self.btn_continue_session.setProperty("class", "menu-btn")
+        self.btn_continue_session.setCursor(Qt.PointingHandCursor)
+
+        self.btn_back_dashboard_session = QPushButton("◀  QUAY LẠI")
+        self.btn_back_dashboard_session.setProperty("class", "menu-btn")
+        self.btn_back_dashboard_session.setObjectName("danger")
+        self.btn_back_dashboard_session.setCursor(Qt.PointingHandCursor)
+
+        btn_layout.addWidget(self.btn_new_session)
+        btn_layout.addWidget(self.btn_continue_session)
+        btn_layout.addSpacing(10)
+        btn_layout.addWidget(self.btn_back_dashboard_session)
+
+        layout.addWidget(btn_container, 0, Qt.AlignCenter)
+        layout.addStretch()
+
+    # --- SETUP TRANG VIEW ---
+    def _setup_practice_view(self, parent, scale_size, scale_font):
         margin = scale_size(20)
         spacing = scale_size(15)
 
-        root_layout = QVBoxLayout(self)
+        root_layout = QVBoxLayout(parent)
         root_layout.setContentsMargins(margin, scale_size(10), margin, margin)
         root_layout.setSpacing(spacing)
 
-        # --- HEADER ---
+        # Header
         header_layout = QHBoxLayout()
         title_label = QLabel("MÀN HÌNH TẬP LUYỆN")
         title_label.setObjectName("title")
@@ -124,31 +237,30 @@ class MainGui(QWidget):
         title_font = QFont('Segoe UI', scale_font(18), QFont.Bold)
         title_label.setFont(title_font)
         
-        self.training_type_selector = QComboBox()
-        self.training_type_selector.addItem("Luyện Tập (Tự do)", "PRACTICE")
-        self.training_type_selector.addItem("Kiểm Tra (3 Phát)", "TEST")
-        self.training_type_selector.setFixedWidth(200)
-        
+        self.shooting_mode_selector = QComboBox()
+        self.shooting_mode_selector.addItem("Bắn từng phát", "SINGLE")
+        self.shooting_mode_selector.addItem("Luyện tập (3 phát)", "BURST_3")
+        self.shooting_mode_selector.setFixedWidth(200)
+
         self.mode_selector = QComboBox()
         self.mode_selector.addItem("Chế độ 1 Camera")
         self.mode_selector.addItem("Chế độ 2 Camera")
         self.mode_selector.setFixedWidth(200)
 
-        self.back_button = QPushButton("Về Menu")
-        self.back_button.setObjectName("danger")
-        self.back_button.setFixedWidth(scale_size(150))
+        self.back_to_dashboard_btn = QPushButton("Kết thúc")
+        self.back_to_dashboard_btn.setObjectName("danger")
+        self.back_to_dashboard_btn.setFixedWidth(scale_size(150))
 
         header_layout.addWidget(title_label)
         header_layout.addStretch()
-        header_layout.addWidget(QLabel("Hình thức:"))
-        header_layout.addWidget(self.training_type_selector)
+        header_layout.addWidget(QLabel("Chế độ bắn:"))
+        header_layout.addWidget(self.shooting_mode_selector)
         header_layout.addWidget(QLabel("Camera:"))
         header_layout.addWidget(self.mode_selector)
-        header_layout.addWidget(self.back_button)
+        header_layout.addWidget(self.back_to_dashboard_btn)
         
         root_layout.addLayout(header_layout)
 
-        # --- STACKED WIDGET ---
         self.main_stack = QStackedWidget()
         root_layout.addWidget(self.main_stack)
 
@@ -159,11 +271,6 @@ class MainGui(QWidget):
         self.page_dual = QWidget()
         self._setup_dual_ui(self.page_dual, scale_size, scale_font)
         self.main_stack.addWidget(self.page_dual)
-
-    def _apply_labels(self):
-        labels = self.config.get("labels", {})
-        trainee_label_text = labels.get("trainee", "Người học")
-        self.soldier_select_label.setText(f"{trainee_label_text}:")
 
     def _create_styled_panel(self) -> QFrame:
         panel = QFrame()
@@ -180,7 +287,6 @@ class MainGui(QWidget):
         layout.setContentsMargins(0,0,0,0)
         layout.setSpacing(scale_size(20))
 
-        # Cột Trái
         left_panel = self._create_styled_panel()
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(scale_size(15), scale_size(15), scale_size(15), scale_size(15))
@@ -202,19 +308,14 @@ class MainGui(QWidget):
 
         controls_panel = QWidget()
         controls_layout = QHBoxLayout(controls_panel)
-        
         self.single_cam_source = QComboBox()
-        self.single_cam_source.setToolTip("Chọn nguồn Camera")
         self.single_cam_source.setMinimumWidth(scale_size(150))
-        
         self.refresh_button = QPushButton("Làm mới")
         self.refresh_button.setObjectName("refreshButton")
-        
         controls_layout.addWidget(QLabel("Nguồn:"))
         controls_layout.addWidget(self.single_cam_source)
         controls_layout.addWidget(self.refresh_button)
         controls_layout.addStretch(1)
-        
         self.zoom_slider = QSlider(Qt.Horizontal)
         self.zoom_slider.setMinimum(10); self.zoom_slider.setMaximum(50); self.zoom_slider.setValue(10)
         self.zoom_value_label = QLabel("1.0x")
@@ -222,57 +323,25 @@ class MainGui(QWidget):
         controls_layout.addWidget(self.zoom_slider, 2)
         controls_layout.addWidget(self.zoom_value_label)
         controls_layout.addStretch(1)
-        
         self.calibrate_button = QPushButton("Hiệu chỉnh tâm")
         controls_layout.addWidget(self.calibrate_button)
         left_layout.addWidget(controls_panel)
-        
         self.zoom_slider.valueChanged.connect(lambda v: self.zoom_value_label.setText(f"{v/10.0:.1f}x"))
 
-        # Cột Phải
         right_panel = self._create_styled_panel()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(scale_size(20), scale_size(20), scale_size(20), scale_size(20))
 
-        # Session Box
         session_box = QGroupBox("Quản lý Lần bắn")
         session_layout = QVBoxLayout(session_box)
-        
-        row_main_ctrl = QHBoxLayout()
-        row_main_ctrl.setContentsMargins(0, 0, 0, 0)
-        
-        self.soldier_container = QWidget()
-        soldier_layout = QHBoxLayout(self.soldier_container)
-        soldier_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.soldier_select_label = QLabel()
-        self.soldier_display = QLineEdit()
-        self.soldier_display.setReadOnly(True)
-        self.soldier_display.setPlaceholderText("Chưa chọn...")
-        
-        self.btn_select_soldier = QPushButton("Chọn")
-        self.btn_select_soldier.setFixedWidth(scale_size(120)) 
-        
-        soldier_layout.addWidget(self.soldier_select_label)
-        soldier_layout.addWidget(self.soldier_display, 1) 
-        soldier_layout.addWidget(self.btn_select_soldier)
-        
         self.session_button = QPushButton("Bắt đầu")
-        self.session_button.setMinimumWidth(scale_size(110))
-        
-        row_main_ctrl.addWidget(self.soldier_container, 1)
-        row_main_ctrl.addWidget(self.session_button)
-        
-        session_layout.addLayout(row_main_ctrl)
+        session_layout.addWidget(self.session_button)
 
-        # Result Box
         result_box = QGroupBox("Kết quả mới nhất")
         result_layout = QVBoxLayout(result_box)
-        
         self.score_label = QLabel("Điểm số: --")
         self.score_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #e74c3c;")
         self.score_label.setAlignment(Qt.AlignCenter)
-        
         result_layout.addWidget(self.score_label)
         result_layout.addWidget(QLabel("Ảnh kết quả:"))
         self.result_image_label = VideoLabel()
@@ -293,38 +362,16 @@ class MainGui(QWidget):
             col_layout = QVBoxLayout(panel)
             col_layout.setContentsMargins(scale_size(10), scale_size(10), scale_size(10), scale_size(10))
             
-            # Header
             header_widget = QWidget(); header_lo = QHBoxLayout(header_widget); header_lo.setContentsMargins(0,0,0,0)
             lbl_title = QLabel(title); lbl_title.setProperty("class", "panel-title")
-            cmb_source = QComboBox(); cmb_source.setToolTip("Chọn nguồn Camera")
-            
+            cmb_source = QComboBox()
             header_lo.addWidget(lbl_title); header_lo.addStretch()
             header_lo.addWidget(QLabel("Nguồn:")); header_lo.addWidget(cmb_source)
             col_layout.addWidget(header_widget)
             
-            # Session Control
-            ctrl_area = QHBoxLayout()
-            ctrl_area.setContentsMargins(0,0,0,0)
-            
-            soldier_container = QWidget()
-            sess_lo = QHBoxLayout(soldier_container); sess_lo.setContentsMargins(0,0,0,0)
-            sess_lo.setSpacing(scale_size(5)) 
-            
-            txt_soldier = QLineEdit(); txt_soldier.setReadOnly(True); txt_soldier.setPlaceholderText("Chưa chọn...")
-            
-            btn_select = QPushButton("Chọn")
-            btn_select.setFixedWidth(scale_size(100))
-            
-            sess_lo.addWidget(QLabel("Tên:")); sess_lo.addWidget(txt_soldier, 1); sess_lo.addWidget(btn_select)
-            
             btn_session = QPushButton("Bắt đầu")
-            btn_session.setMinimumWidth(scale_size(110))
+            col_layout.addWidget(btn_session)
             
-            ctrl_area.addWidget(soldier_container, 1)
-            ctrl_area.addWidget(btn_session)
-            
-            col_layout.addLayout(ctrl_area)
-
             cam_view = VideoLabel(); cam_view.setText(f"Kết nối {title}")
             col_layout.addWidget(cam_view, 5) 
             
@@ -345,16 +392,12 @@ class MainGui(QWidget):
             
             setattr(self, f"{prefix}_view", cam_view)
             setattr(self, f"{prefix}_source", cmb_source)
-            setattr(self, f"{prefix}_soldier_display", txt_soldier)
-            setattr(self, f"{prefix}_btn_select", btn_select)
             setattr(self, f"{prefix}_session_btn", btn_session)
             setattr(self, f"{prefix}_refresh", btn_refresh)
             setattr(self, f"{prefix}_zoom", sld_zoom)
             setattr(self, f"{prefix}_calib", btn_calib)
             setattr(self, f"{prefix}_score", lbl_score)
             setattr(self, f"{prefix}_result_img", img_res)
-            setattr(self, f"{prefix}_soldier_container", soldier_container)
-            
             return panel
 
         col1 = create_vertical_column("CAMERA 1", "dual_cam1")

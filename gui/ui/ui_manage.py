@@ -1,38 +1,12 @@
 # file: gui/ui/ui_manage.py
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QGroupBox, QTableWidget, QTableWidgetItem,
-    QFrame, QSizePolicy, QAbstractItemView, QHeaderView, QListWidget, QStackedWidget,
-    QApplication, QLineEdit
+    QTableWidget, QFrame, QStackedWidget, QApplication, QLineEdit,
+    QHeaderView, QAbstractItemView
 )
-from PySide6.QtGui import QFont, QPixmap, QColor, QPainter
+from PySide6.QtGui import QFont, QColor
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
-
-class VideoLabel(QLabel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._pixmap = QPixmap()
-        self.setAlignment(Qt.AlignCenter)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setText("Chưa có ảnh")
-
-    def setPixmap(self, pixmap: QPixmap):
-        self._pixmap = pixmap
-        self.update()
-
-    def resizeEvent(self, event):
-        self.update()
-        super().resizeEvent(event)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        if not self._pixmap.isNull():
-            scaled_pixmap = self._pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            point = self.rect().center() - scaled_pixmap.rect().center()
-            painter.drawPixmap(point, scaled_pixmap)
-        else:
-            super().paintEvent(event)
 
 class ManageGui(QWidget):
     def __init__(self, config: dict):
@@ -40,36 +14,35 @@ class ManageGui(QWidget):
         self.config = config
         self.setObjectName("ManageWidget")
 
+        # Tính toán tỷ lệ màn hình
         screen = QApplication.primaryScreen().availableGeometry()
-        screen_height = screen.height()
-        self.scale_factor = screen_height / 1080.0
-
-        def scale_font(base_size):
-            return max(9, int(base_size * self.scale_factor))
+        self.scale_factor = screen.height() / 1080.0
 
         self.setStyleSheet(f"""
             #ManageWidget {{
                 background-color: #2c3e50; color: #ecf0f1; font-family: 'Segoe UI';
             }}
-            QFrame#panel {{
-                background-color: #34495e; border-radius: {int(12 * self.scale_factor)}px; border: 1px solid #4a6278;
+            /* Style cho các nút Menu chính (Bao gồm cả nút Về màn hình chính) */
+            QPushButton.menu-btn {{
+                background-color: #34495e; color: #ecf0f1;
+                font-size: {int(18 * self.scale_factor)}px; font-weight: bold;
+                border: 2px solid #4a6278; border-radius: 15px;
+                padding: {int(20 * self.scale_factor)}px;
+                text-align: left; padding-left: 30px;
             }}
-            QLabel#title {{
-                color: #ecf0f1; padding: {int(10 * self.scale_factor)}px;
+            QPushButton.menu-btn:hover {{
+                background-color: #1abc9c; border-color: #16a085; color: white;
             }}
-            QGroupBox {{
-                font-size: {scale_font(14)}px; font-weight: bold; border: 1px solid #4a6278;
-                border-radius: {int(8 * self.scale_factor)}px; margin-top: {int(10 * self.scale_factor)}px; color: #ecf0f1;
+            /* Riêng nút thoát có thể có hiệu ứng hover màu đỏ nhẹ nếu muốn, hoặc giữ nguyên xanh */
+            QPushButton.menu-btn#exitBtn:hover {{
+                background-color: #c0392b; border-color: #e74c3c;
             }}
-            QGroupBox::title {{
-                subcontrol-origin: margin; subcontrol-position: top center;
-                padding: {int(2 * self.scale_factor)}px {int(8 * self.scale_factor)}px;
-                background-color: #415a72; border-radius: {int(4 * self.scale_factor)}px;
-            }}
+            
+            /* Style chung cho nút thường (ở các trang con) */
             QPushButton {{
-                background-color: #1abc9c; color: white; font-size: {scale_font(14)}px; font-weight: bold;
-                border: none; padding: {int(8 * self.scale_factor)}px {int(18 * self.scale_factor)}px;
-                border-radius: {int(8 * self.scale_factor)}px;
+                background-color: #1abc9c; color: white; font-size: {int(14 * self.scale_factor)}px; font-weight: bold;
+                border: none; padding: {int(10 * self.scale_factor)}px {int(20 * self.scale_factor)}px;
+                border-radius: 6px;
             }}
             QPushButton:hover {{ background-color: #16a085; }}
             
@@ -79,290 +52,172 @@ class ManageGui(QWidget):
             QPushButton#danger {{ background-color: #e74c3c; }}
             QPushButton#danger:hover {{ background-color: #c0392b; }}
             
-            QListWidget, QTableWidget {{
-                background-color: #2c3e50; border: 1px solid #4a6278;
-                border-radius: {int(6 * self.scale_factor)}px; gridline-color: #4a6278; color: #ecf0f1;
+            /* Style cho Table */
+            QTableWidget {{
+                background-color: #34495e; border: 1px solid #4a6278;
+                border-radius: 8px; gridline-color: #4a6278; color: #ecf0f1;
+                font-size: {int(14 * self.scale_factor)}px;
             }}
-            QListWidget::item:selected, QTableWidget::item:selected {{
+            QTableWidget::item {{ padding: 5px; }}
+            QTableWidget::item:selected {{
                 background-color: #1abc9c; color: #ffffff;
             }}
             QHeaderView::section {{
-                background-color: #415a72; color: #ecf0f1;
-                padding: {int(4 * self.scale_factor)}px; border: 1px solid #4a6278;
+                background-color: #2c3e50; color: #bdc3c7;
+                padding: 8px; border: none; border-bottom: 2px solid #1abc9c;
+                font-weight: bold; font-size: {int(14 * self.scale_factor)}px;
             }}
-            VideoLabel {{
-                 background-color: #212f3d; border: 1px solid #4a6278;
-                 border-radius: {int(8 * self.scale_factor)}px; color: #95a5a6;
-                 font-size: {scale_font(16)}px;
-            }}
+            
+            /* Thanh tìm kiếm */
             QLineEdit#searchBox {{
-                background-color: #2c3e50;
-                border: 1px solid #4a6278;
-                border-radius: {int(6 * self.scale_factor)}px;
-                padding: {int(6 * self.scale_factor)}px;
-                color: #ecf0f1;
-                font-size: {scale_font(13)}px;
+                background-color: #34495e; border: 1px solid #4a6278;
+                border-radius: 20px; padding: 8px 15px;
+                color: #ecf0f1; font-size: {int(14 * self.scale_factor)}px;
             }}
-            QLineEdit#searchBox:focus {{
-                border: 1px solid #1abc9c;
-            }}
+            QLineEdit#searchBox:focus {{ border: 1px solid #1abc9c; }}
         """)
 
         self.setupUi()
-        self._apply_labels()
 
     def setupUi(self):
-        def scale_font(base_size, weight=QFont.Normal):
-            font = QFont('Segoe UI', max(9, int(base_size * self.scale_factor)))
-            font.setWeight(weight)
-            return font
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        margin = int(20 * self.scale_factor)
-        spacing = int(15 * self.scale_factor)
+        self.main_stack = QStackedWidget()
+        main_layout.addWidget(self.main_stack)
 
-        root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(margin, int(10 * self.scale_factor), margin, margin)
-        root_layout.setSpacing(spacing)
+        # --- TRANG 0: MENU QUẢN LÝ ---
+        self.page_menu = QWidget()
+        self._setup_menu_page()
+        self.main_stack.addWidget(self.page_menu)
 
-        self.title_label = QLabel()
-        self.title_label.setObjectName("title")
-        self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setFont(scale_font(18, QFont.Bold))
-        root_layout.addWidget(self.title_label)
+        # --- TRANG 1: DANH SÁCH NGƯỜI TẬP ---
+        self.page_trainees = QWidget()
+        self._setup_trainee_list_page()
+        self.main_stack.addWidget(self.page_trainees)
 
-        columns_layout = QHBoxLayout()
-        columns_layout.setSpacing(spacing)
-        root_layout.addLayout(columns_layout)
-
-        columns_layout.addWidget(self._create_left_column(), 25)
-        columns_layout.addWidget(self._create_center_column(), 50)
-        columns_layout.addWidget(self._create_right_column(), 25)
-
-    def _apply_labels(self):
-        labels = self.config.get("labels", {})
-        main_title = labels.get("app_title", "Quản lý")
-        self.title_label.setText(main_title.upper())
-        self.soldier_box.setTitle(labels.get("trainee_list_title", "Danh sách Người học"))
-        header_name = labels.get("trainee_list_header_name", "Họ và Tên")
-        header_class = labels.get("trainee_list_header_class", "Đơn vị")
-        self.soldier_table.setHorizontalHeaderLabels([header_name, header_class])
-        self.history_box.setTitle(labels.get("history_title_prefix", "Lịch sử bắn"))
+    def _setup_menu_page(self):
+        layout = QVBoxLayout(self.page_menu)
         
-        trainee_term = labels.get("trainee", "chiến sĩ")
-        self.search_box.setPlaceholderText(f"Tìm kiếm {trainee_term.lower()}...")
+        # 1. Đẩy tiêu đề lên cao hơn bằng cách thêm spacing ở trên ít hơn ở dưới
+        layout.addSpacing(int(60 * self.scale_factor)) 
 
-    def _create_styled_panel(self) -> QFrame:
-        panel = QFrame()
-        panel.setObjectName("panel")
-        shadow = QGraphicsDropShadowEffect(panel)
-        shadow.setBlurRadius(int(15 * self.scale_factor))
-        shadow.setColor(QColor(0, 0, 0, 80))
-        shadow.setOffset(0, int(4 * self.scale_factor))
-        panel.setGraphicsEffect(shadow)
-        return panel
+        # Tiêu đề
+        lbl_title = QLabel("QUẢN LÝ & THỐNG KÊ")
+        lbl_title.setStyleSheet(f"font-size: {int(32 * self.scale_factor)}px; font-weight: bold; color: #ecf0f1;")
+        lbl_title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl_title)
+        
+        layout.addSpacing(int(40 * self.scale_factor))
 
-    def _create_left_column(self) -> QWidget:
-        panel = self._create_styled_panel()
-        margin = int(15 * self.scale_factor)
-        layout = QVBoxLayout(panel)
+        # Container cho các nút menu
+        btn_container = QFrame()
+        btn_container.setFixedWidth(int(550 * self.scale_factor)) # Tăng chiều rộng một chút cho đẹp
+        
+        # Canh giữa container
+        layout.addWidget(btn_container, 0, Qt.AlignCenter)
+        
+        btn_layout = QVBoxLayout(btn_container)
+        btn_layout.setSpacing(int(20 * self.scale_factor))
+
+        # Nút 1
+        self.btn_menu_trainees = QPushButton("1. DANH SÁCH NGƯỜI TẬP")
+        self.btn_menu_trainees.setProperty("class", "menu-btn")
+        self.btn_menu_trainees.setCursor(Qt.PointingHandCursor)
+        
+        # Nút 2
+        self.btn_menu_sessions = QPushButton("2. QUẢN LÝ PHIÊN TẬP")
+        self.btn_menu_sessions.setProperty("class", "menu-btn")
+        self.btn_menu_sessions.setCursor(Qt.PointingHandCursor)
+        
+        # Nút 3
+        self.btn_menu_tests = QPushButton("3. QUẢN LÝ KIỂM TRA")
+        self.btn_menu_tests.setProperty("class", "menu-btn")
+        self.btn_menu_tests.setCursor(Qt.PointingHandCursor)
+
+        # Nút 4: Về màn hình chính (Được thiết kế giống hệt các nút trên)
+        self.btn_back_main = QPushButton("◀  VỀ MÀN HÌNH CHÍNH")
+        self.btn_back_main.setObjectName("exitBtn") # Đặt ID để có thể style riêng (ví dụ hover đỏ)
+        self.btn_back_main.setProperty("class", "menu-btn")
+        self.btn_back_main.setCursor(Qt.PointingHandCursor)
+
+        btn_layout.addWidget(self.btn_menu_trainees)
+        btn_layout.addWidget(self.btn_menu_sessions)
+        btn_layout.addWidget(self.btn_menu_tests)
+        
+        # Thêm một chút khoảng cách trước nút thoát cho thoáng
+        btn_layout.addSpacing(10)
+        btn_layout.addWidget(self.btn_back_main)
+        
+        # Đẩy toàn bộ nội dung lên phía trên (Khoảng trống phía dưới sẽ chiếm hết phần còn lại)
+        layout.addStretch()
+
+    def _setup_trainee_list_page(self):
+        layout = QVBoxLayout(self.page_trainees)
+        margin = int(30 * self.scale_factor)
         layout.setContentsMargins(margin, margin, margin, margin)
-        layout.setSpacing(margin)
+        layout.setSpacing(int(15 * self.scale_factor))
 
-        self.soldier_box = QGroupBox()
-        soldier_layout = QVBoxLayout(self.soldier_box)
-
-        # Thanh tìm kiếm
+        # Header
+        header_layout = QHBoxLayout()
+        lbl_title = QLabel("DANH SÁCH NGƯỜI TẬP")
+        lbl_title.setStyleSheet(f"font-size: {int(20 * self.scale_factor)}px; font-weight: bold; color: #1abc9c;")
+        
         self.search_box = QLineEdit()
         self.search_box.setObjectName("searchBox")
-        soldier_layout.addWidget(self.search_box)
-
-        # --- MỚI: NHÃN HIỂN THỊ TỔNG SỐ ---
+        self.search_box.setPlaceholderText("🔍 Tìm kiếm theo tên hoặc đơn vị...")
+        self.search_box.setFixedWidth(int(350 * self.scale_factor))
+        
         self.total_count_label = QLabel("Tổng số: 0")
-        self.total_count_label.setStyleSheet("color: #95a5a6; font-style: italic; margin-bottom: 5px;")
-        self.total_count_label.setAlignment(Qt.AlignRight)
-        soldier_layout.addWidget(self.total_count_label)
-        # -----------------------------------
+        self.total_count_label.setStyleSheet("font-style: italic; color: #bdc3c7; font-size: 14px;")
 
-        self.soldier_table = QTableWidget(0, 2)
+        header_layout.addWidget(lbl_title)
+        header_layout.addStretch()
+        header_layout.addWidget(self.search_box)
+        header_layout.addSpacing(15)
+        header_layout.addWidget(self.total_count_label)
+        layout.addLayout(header_layout)
+
+        # Table
+        self.soldier_table = QTableWidget(0, 3)
+        self.soldier_table.setHorizontalHeaderLabels(["ID", "Họ và Tên", "Đơn vị"])
         self.soldier_table.verticalHeader().setVisible(False)
         self.soldier_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.soldier_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.soldier_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.soldier_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.soldier_table.setAlternatingRowColors(True)
+        self.soldier_table.setStyleSheet("alternate-background-color: #3b5266;")
+        
         header = self.soldier_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        
-        soldier_layout.addWidget(self.soldier_table)
-        layout.addWidget(self.soldier_box, 1)
-
-        buttons_layout = QHBoxLayout()
-        self.add_button = QPushButton("Thêm mới")
-        
-        self.import_button = QPushButton("Nhập Excel")
-        self.import_button.setObjectName("importBtn")
-        
-        self.back_button = QPushButton("Quay lại")
-        self.back_button.setObjectName("danger")
-        
-        buttons_layout.addWidget(self.add_button)
-        buttons_layout.addWidget(self.import_button)
-        buttons_layout.addWidget(self.back_button)
-        
-        layout.addLayout(buttons_layout)
-        return panel
-        
-    def _create_center_column(self) -> QWidget:
-        panel = self._create_styled_panel()
-        margin = int(15 * self.scale_factor)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(margin, margin, margin, margin)
-
-        self.center_stack = QStackedWidget()
-        layout.addWidget(self.center_stack)
-
-        data_widget = QWidget()
-        data_layout = QVBoxLayout(data_widget)
-        data_layout.setContentsMargins(0, 0, 0, 0)
-        data_layout.setSpacing(margin)
-
-        analysis_box = self._create_analysis_box()
-        shot_list_box = self._create_shot_list_box()
-        shot_preview_box = self._create_shot_preview_box()
-
-        data_layout.addWidget(analysis_box, 2)
-        data_layout.addWidget(shot_list_box, 3)
-        data_layout.addWidget(shot_preview_box, 5)
-
-        message_widget = QWidget()
-        message_layout = QVBoxLayout(message_widget)
-        self.center_message_label = QLabel("...")
-        self.center_message_label.setAlignment(Qt.AlignCenter)
-        font_size = max(9, int(16 * self.scale_factor))
-        self.center_message_label.setStyleSheet(f"font-size: {font_size}px; color: #95a5a6;")
-        message_layout.addWidget(self.center_message_label)
-
-        self.center_stack.addWidget(data_widget)
-        self.center_stack.addWidget(message_widget)
-        return panel
-
-    def _create_analysis_box(self) -> QGroupBox:
-        box = QGroupBox("Phân tích Phiên bắn được chọn")
-        layout = QVBoxLayout(box)
-
-        def scale_font(base_size, weight=QFont.Normal):
-            font = QFont("Segoe UI", max(9, int(base_size * self.scale_factor)))
-            font.setWeight(weight)
-            return font
-
-        self.analysis_summary_label = QLabel("Tổng phát bắn: -- | Tỷ lệ trúng: -- | Điểm trung bình: --")
-        self.analysis_summary_label.setFont(scale_font(10))
-        self.analysis_summary_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.analysis_summary_label)
-
-        self.analysis_target_table = QTableWidget(3, 4)
-        self.analysis_target_table.setHorizontalHeaderLabels(["Loại bia", "Số phát trúng", "Tổng điểm", "Độ chụm"])
-        self.analysis_target_table.verticalHeader().setVisible(False)
-        self.analysis_target_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.analysis_target_table.setFocusPolicy(Qt.NoFocus)
-        self.analysis_target_table.setSelectionMode(QAbstractItemView.NoSelection)
-        self.analysis_target_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.analysis_target_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        
-        row_height = int(32 * self.scale_factor)
-        self.analysis_target_table.verticalHeader().setDefaultSectionSize(row_height)
-        self.analysis_target_table.setFixedHeight(self.analysis_target_table.horizontalHeader().height() + 3 * row_height + 2)
-
-        target_names = ["Bia số 4", "Bia số 7", "Bia số 8"]
-        self.analysis_view_buttons = {}
-        for row, name in enumerate(target_names):
-            name_item = QTableWidgetItem(name)
-            name_item.setFont(scale_font(10, QFont.Bold))
-            name_item.setTextAlignment(Qt.AlignCenter)
-            self.analysis_target_table.setItem(row, 0, name_item)
-            for col in range(1, 3):
-                item = QTableWidgetItem("--")
-                item.setTextAlignment(Qt.AlignCenter)
-                self.analysis_target_table.setItem(row, col, item)
-
-            view_button = QPushButton("Xem")
-            font_size = max(8, int(9 * self.scale_factor))
-            padding = int(4 * self.scale_factor)
-            view_button.setStyleSheet(f"padding: {padding}px {padding*2}px; font-size: {font_size}px;")
-            target_key = ['bia_so_4', 'bia_so_7_8', 'bia_so_8'][row]
-            self.analysis_view_buttons[target_key] = view_button
-            cell_widget = QWidget()
-            cell_layout = QHBoxLayout(cell_widget)
-            cell_layout.setContentsMargins(0,0,0,0)
-            cell_layout.setAlignment(Qt.AlignCenter)
-            cell_layout.addWidget(view_button)
-            self.analysis_target_table.setCellWidget(row, 3, cell_widget)
-        layout.addWidget(self.analysis_target_table)
-        return box
-
-    def _create_shot_list_box(self) -> QGroupBox:
-        box = QGroupBox("Chi tiết từng phát bắn")
-        layout = QVBoxLayout(box)
-        self.shot_table = QTableWidget(0, 4)
-        self.shot_table.setHorizontalHeaderLabels(["Phát", "Thời gian", "Mục tiêu", "Điểm"])
-        self.shot_table.verticalHeader().setVisible(False)
-        self.shot_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.shot_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        header = self.shot_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        layout.addWidget(self.shot_table)
-        return box
+        
+        layout.addWidget(self.soldier_table)
 
-    def _create_shot_preview_box(self) -> QGroupBox:
-        box = QGroupBox("Ảnh kết quả")
-        layout = QVBoxLayout(box)
-        self.result_image = VideoLabel()
-        layout.addWidget(self.result_image, 1)
+        # Footer
+        footer_layout = QHBoxLayout()
+        
+        self.btn_add_trainee = QPushButton("Thêm Mới")
+        self.btn_add_trainee.setCursor(Qt.PointingHandCursor)
+        self.btn_add_trainee.setMinimumWidth(130)
+        self.btn_add_trainee.setMinimumHeight(40)
+        
+        self.btn_import_excel = QPushButton("Nhập Excel")
+        self.btn_import_excel.setObjectName("importBtn")
+        self.btn_import_excel.setCursor(Qt.PointingHandCursor)
+        self.btn_import_excel.setMinimumWidth(130)
+        self.btn_import_excel.setMinimumHeight(40)
+        
+        self.btn_back_to_menu = QPushButton("Quay Lại Menu")
+        self.btn_back_to_menu.setObjectName("danger")
+        self.btn_back_to_menu.setCursor(Qt.PointingHandCursor)
+        self.btn_back_to_menu.setMinimumWidth(130)
+        self.btn_back_to_menu.setMinimumHeight(40)
 
-        nav_layout = QHBoxLayout()
-        self.prev_shot_button = QPushButton("◀ Trước")
-        self.shot_index_label = QLabel("Phát 0/0")
-        self.shot_index_label.setAlignment(Qt.AlignCenter)
-        font_size = max(9, int(14 * self.scale_factor))
-        self.shot_index_label.setStyleSheet(f"font-size: {font_size}px; font-weight: bold;")
-        self.next_shot_button = QPushButton("Sau ▶")
-
-        nav_layout.addWidget(self.prev_shot_button)
-        nav_layout.addWidget(self.shot_index_label, 1)
-        nav_layout.addWidget(self.next_shot_button)
-        layout.addLayout(nav_layout)
-        return box
-
-    def _create_right_column(self) -> QWidget:
-        panel = self._create_styled_panel()
-        margin = int(15 * self.scale_factor)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(margin, margin, margin, margin)
-
-        self.right_stack = QStackedWidget()
-        layout.addWidget(self.right_stack)
-
-        data_widget = QWidget()
-        data_layout = QVBoxLayout(data_widget)
-        data_layout.setContentsMargins(0, 0, 0, 0)
-        data_layout.setSpacing(margin)
-
-        self.history_box = QGroupBox()
-        history_layout = QVBoxLayout(self.history_box)
-        self.history_list = QListWidget()
-        history_layout.addWidget(self.history_list)
-        data_layout.addWidget(self.history_box)
-
-        message_widget = QWidget()
-        message_layout = QVBoxLayout(message_widget)
-        self.right_message_label = QLabel("...")
-        self.right_message_label.setAlignment(Qt.AlignCenter)
-        font_size = max(9, int(16 * self.scale_factor))
-        self.right_message_label.setStyleSheet(f"font-size: {font_size}px; color: #95a5a6;")
-        message_layout.addWidget(self.right_message_label)
-
-        self.right_stack.addWidget(data_widget)
-        self.right_stack.addWidget(message_widget)
-        return panel
+        footer_layout.addWidget(self.btn_add_trainee)
+        footer_layout.addWidget(self.btn_import_excel)
+        footer_layout.addStretch()
+        footer_layout.addWidget(self.btn_back_to_menu)
+        
+        layout.addLayout(footer_layout)
