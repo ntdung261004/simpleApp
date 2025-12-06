@@ -19,7 +19,9 @@ class CameraManager(QObject):
         self.zoom_levels = {1: 1.0, 2: 1.0}
         self.calib_centers = {1: None, 2: None}
         self.is_calib_mode = {1: False, 2: False}
-        self.clean_frames = {1: None, 2: None}
+        
+        # Frame sạch để lưu (Quan trọng: Phải reset về None khi mất kết nối)
+        self.clean_frames = {1: None, 2: None} 
         self.shot_points = {1: None, 2: None}
         self.final_size = (480, 640)
 
@@ -29,13 +31,18 @@ class CameraManager(QObject):
     def start_camera(self, cam_id):
         idx = self.cam_indices.get(cam_id)
         if idx is None: return
+        
+        # Tắt camera cũ trước khi bật mới
         self.stop_camera(cam_id)
         QApplication.processEvents()
+        
         try:
             thread = CameraThread(idx)
             if cam_id == 1: thread.frame_received.connect(self._handle_frame_1)
             else: thread.frame_received.connect(self._handle_frame_2)
+            
             thread.error_occurred.connect(lambda err: self.error_occurred.emit(cam_id, err))
+            
             self.cameras[cam_id] = thread
             thread.start()
             logger.info(f"CameraManager: Đã khởi động Cam {cam_id} (Index {idx})")
@@ -43,12 +50,21 @@ class CameraManager(QObject):
             logger.error(f"CameraManager: Lỗi khởi động Cam {cam_id}: {e}")
 
     def stop_camera(self, cam_id):
-        self.clean_frames[cam_id] = None
+        # QUAN TRỌNG: Xóa frame ngay lập tức để tránh bắn vào ảnh cũ
+        self.clean_frames[cam_id] = None 
+        
         if self.cameras[cam_id] is not None:
-            self.cameras[cam_id].stop(); self.cameras[cam_id].deleteLater(); self.cameras[cam_id] = None
+            logger.info(f"CameraManager: Đang dừng Cam {cam_id}...")
+            self.cameras[cam_id].stop()
+            self.cameras[cam_id].deleteLater()
+            self.cameras[cam_id] = None
 
     def stop_all(self):
         self.stop_camera(1); self.stop_camera(2)
+
+    def is_camera_ready(self, cam_id):
+        """Kiểm tra xem camera có đang hoạt động và có frame hợp lệ không."""
+        return (self.cameras[cam_id] is not None) and (self.clean_frames[cam_id] is not None)
 
     def set_zoom(self, cam_id, value): self.zoom_levels[cam_id] = value / 10.0
 

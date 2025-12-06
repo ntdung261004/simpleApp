@@ -3,7 +3,7 @@ import cv2
 import logging
 import sys
 import time
-from PySide6.QtCore import QThread, Signal, QMutex
+from PySide6.QtCore import QThread, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -23,46 +23,49 @@ class CameraThread(QThread):
         self.index = index
         self._is_running = True
         self.cap = None
-        self.consecutive_failures = 0
-        # Ngưỡng lỗi: 10 frame liên tiếp (~0.3s)
-        self.FAILURE_THRESHOLD = 10 
+        self.last_frame_time = 0.0
+        # Nếu quá 2 giây không có frame -> Báo lỗi
+        self.WATCHDOG_TIMEOUT = 2.0 
 
     def run(self):
         api_preference = _get_os_backend()
         self.cap = cv2.VideoCapture(self.index, api_preference)
 
+        # Cố gắng set độ phân giải
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
         if not self.cap.isOpened():
             logger.error(f"CAMERA {self.index}: Không thể mở thiết bị.")
             self.error_occurred.emit(self.index)
             return
-
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         
         logger.info(f"CAMERA {self.index}: Bắt đầu stream.")
+        self.last_frame_time = time.time()
 
         while self._is_running:
+            # 1. Cơ chế Watchdog: Kiểm tra thời gian trôi qua
+            if time.time() - self.last_frame_time > self.WATCHDOG_TIMEOUT:
+                logger.error(f"Cam {self.index}: WATCHDOG TIMEOUT (Mất kết nối quá lâu).")
+                self.error_occurred.emit(self.index)
+                break
+
             try:
+                # Đọc frame (non-blocking nếu có thể, nhưng OpenCV thường block)
                 ret, frame = self.cap.read()
                 
                 if ret and frame is not None and frame.size > 0:
-                    self.consecutive_failures = 0
+                    self.last_frame_time = time.time() # Cập nhật thời gian sống
                     self.frame_received.emit(frame)
                 else:
-                    self.consecutive_failures += 1
-                    if self.consecutive_failures >= self.FAILURE_THRESHOLD:
-                        logger.error(f"Cam {self.index}: MẤT TÍN HIỆU.")
-                        self.error_occurred.emit(self.index)
-                        break 
+                    # Nếu read trả về False (mất kết nối tức thì)
+                    time.sleep(0.05) # Nghỉ nhẹ để tránh spam CPU
                     
-                    # QUAN TRỌNG: Thêm sleep để tránh ngốn CPU khi chờ/lỗi
-                    time.sleep(0.01)
             except Exception as e:
                 logger.error(f"Cam {self.index}: Lỗi ngoại lệ: {e}")
-                self.consecutive_failures += 1
-                time.sleep(0.01)
+                time.sleep(0.05)
             
-            # Sleep tiêu chuẩn để giữ FPS ổn định (~60fps)
+            # Giới hạn FPS khoảng ~60fps để mượt mà nhưng không ngốn CPU
             time.sleep(0.015)
 
         if self.cap:
@@ -71,13 +74,17 @@ class CameraThread(QThread):
 
     def stop(self):
         self._is_running = False
+        # Chờ luồng kết thúc an toàn
         self.quit()
-        self.wait()
+        self.wait(1000) # Chờ tối đa 1s
+        if self.isRunning():
+            self.terminate() # Cưỡng chế tắt nếu treo
 
     def is_active(self):
         return self._is_running and self.cap is not None and self.cap.isOpened()
 
 def find_available_cameras(max_cameras_to_check=5) -> list[int]:
+    """Quét nhanh các camera khả dụng."""
     available_cameras = []
     api_preference = _get_os_backend()
     for i in range(max_cameras_to_check):

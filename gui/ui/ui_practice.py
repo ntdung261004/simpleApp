@@ -1,12 +1,11 @@
 # file: gui/ui/ui_practice.py
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QFrame, QSizePolicy,
-    QGraphicsDropShadowEffect, QGroupBox, QComboBox, QApplication, QStackedWidget, QLineEdit,
-    QListWidget, QAbstractItemView, QFormLayout
+    QGraphicsDropShadowEffect, QGroupBox, QComboBox, QApplication, QStackedWidget,
+    QFormLayout, QListWidget, QLineEdit, QAbstractItemView
 )
-from PySide6.QtGui import QFont, QImage, QPixmap, QPainter, QColor
-from PySide6.QtCore import Qt, QSize, QPoint, Signal
-import cv2
+from PySide6.QtGui import QFont, QPixmap, QPainter, QColor
+from PySide6.QtCore import Qt, QPoint, Signal
 
 class VideoLabel(QLabel):
     clicked = Signal(QPoint)
@@ -150,10 +149,9 @@ class MainGui(QWidget):
         grp_summary = QGroupBox("Thông tin tổng quát"); sum_layout = QFormLayout(grp_summary); self.lbl_sum_date = QLabel("..."); self.lbl_sum_count = QLabel("0 người"); self.lbl_sum_type = QLabel("Bắn từng phát")
         sum_layout.addRow("Ngày:", self.lbl_sum_date); sum_layout.addRow("Số lượng:", self.lbl_sum_count); sum_layout.addRow("Chế độ:", self.lbl_sum_type); right_col.addWidget(grp_summary); right_col.addStretch()
         
-        # --- ĐỊNH NGHĨA NÚT BẮT ĐẦU LUYỆN TẬP ---
+        # Nút bắt đầu cho chế độ theo phiên (Vẫn giữ vì đây là flow riêng)
         self.btn_start_session = QPushButton("BẮT ĐẦU LUYỆN TẬP")
         self.btn_start_session.setMinimumHeight(scale_size(60))
-        
         self.btn_back_create = QPushButton("QUAY VỀ MENU"); self.btn_back_create.setObjectName("danger"); self.btn_back_create.setMinimumHeight(scale_size(60))
         
         right_col.addWidget(self.btn_start_session); right_col.addSpacing(10); right_col.addWidget(self.btn_back_create)
@@ -197,11 +195,8 @@ class MainGui(QWidget):
         self.main_stack.addWidget(self.page_dual)
 
     def _create_styled_panel(self) -> QFrame:
-        panel = QFrame()
-        panel.setObjectName("panel")
-        shadow_effect = QGraphicsDropShadowEffect(panel)
-        shadow_effect.setColor(QColor(0, 0, 0, 80))
-        shadow_effect.setOffset(0, 5)
+        panel = QFrame(); panel.setObjectName("panel")
+        shadow_effect = QGraphicsDropShadowEffect(panel); shadow_effect.setColor(QColor(0, 0, 0, 80)); shadow_effect.setOffset(0, 5)
         panel.setGraphicsEffect(shadow_effect)
         return panel
 
@@ -224,9 +219,7 @@ class MainGui(QWidget):
         right_panel = self._create_styled_panel(); right_layout = QVBoxLayout(right_panel)
         session_box = QGroupBox("Quản lý Lần bắn"); session_layout = QVBoxLayout(session_box)
         
-        # --- ĐỊNH NGHĨA NÚT BẮT ĐẦU (CHO VIEW SINGLE) ---
-        self.session_button = QPushButton("Bắt đầu")
-        session_layout.addWidget(self.session_button)
+        # --- ĐÃ XÓA SESSION BUTTON Ở ĐÂY ---
         
         result_box = QGroupBox("Kết quả mới nhất"); result_layout = QVBoxLayout(result_box)
         self.score_label = QLabel("Điểm số: --"); self.score_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #e74c3c;"); self.score_label.setAlignment(Qt.AlignCenter)
@@ -242,7 +235,9 @@ class MainGui(QWidget):
             lbl_title = QLabel(title); lbl_title.setProperty("class", "panel-title")
             cmb_source = QComboBox()
             header_lo.addWidget(lbl_title); header_lo.addStretch(); header_lo.addWidget(QLabel("Nguồn:")); header_lo.addWidget(cmb_source); col_layout.addWidget(header_widget)
-            btn_session = QPushButton("Bắt đầu"); col_layout.addWidget(btn_session)
+            
+            # --- ĐÃ XÓA SESSION BUTTON Ở ĐÂY ---
+            
             cam_view = VideoLabel(); cam_view.setText(f"Kết nối {title}"); col_layout.addWidget(cam_view, 5) 
             ctrl_widget = QWidget(); ctrl_lo = QHBoxLayout(ctrl_widget)
             btn_refresh = QPushButton("Làm mới"); sld_zoom = QSlider(Qt.Horizontal); sld_zoom.setRange(10,50); sld_zoom.setValue(10); lbl_zoom = QLabel("1.0x")
@@ -253,14 +248,9 @@ class MainGui(QWidget):
             img_res = VideoLabel(); img_res.setText("Ảnh KQ"); res_lo.addWidget(lbl_score); res_lo.addWidget(img_res, 1); col_layout.addWidget(grp_res, 4)
             
             setattr(self, f"{prefix}_view", cam_view); setattr(self, f"{prefix}_source", cmb_source)
-            setattr(self, f"{prefix}_session_btn", btn_session); setattr(self, f"{prefix}_refresh", btn_refresh)
+            setattr(self, f"{prefix}_refresh", btn_refresh)
             setattr(self, f"{prefix}_zoom", sld_zoom); setattr(self, f"{prefix}_calib", btn_calib)
             setattr(self, f"{prefix}_score", lbl_score); setattr(self, f"{prefix}_result_img", img_res)
             return panel
         col1 = create_vertical_column("CAMERA 1", "dual_cam1"); col2 = create_vertical_column("CAMERA 2", "dual_cam2")
         layout.addWidget(col1); layout.addWidget(col2)
-
-    def _convert_cv_to_pixmap(self, cv_img):
-        if cv_img is None: return QPixmap()
-        rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB); h, w, ch = rgb.shape
-        return QPixmap.fromImage(QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888))

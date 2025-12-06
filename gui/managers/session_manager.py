@@ -65,13 +65,25 @@ class SessionManager(QObject):
     def _reset_counters(self, idx):
         self.shot_counters[idx] = 0; self.testing_buffers[idx] = []; self.pending_shots[idx] = 0
 
-    def check_can_shot(self, cam_id):
+    def reset_burst_state(self, idx):
+        self.testing_buffers[idx] = []
+        self.pending_shots[idx] = 0
+        logger.info(f"SessionManager: Reset burst state for session {idx}")
+
+    def check_can_shot(self, session_idx):
         if self.shooting_mode == "BURST_3":
-            if len(self.testing_buffers[cam_id]) + self.pending_shots[cam_id] >= 3: return False
+            current = len(self.testing_buffers[session_idx])
+            pending = self.pending_shots[session_idx]
+            if current + pending >= 3: 
+                return False
         return True
 
-    def register_pending_shot(self, cam_id):
-        if self.shooting_mode == "BURST_3": self.pending_shots[cam_id] += 1
+    def register_pending_shot(self, session_idx):
+        if self.shooting_mode == "BURST_3": self.pending_shots[session_idx] += 1
+
+    def rollback_pending_shot(self, session_idx):
+        if self.shooting_mode == "BURST_3": 
+            self.pending_shots[session_idx] = max(0, self.pending_shots[session_idx] - 1)
 
     def process_shot_result(self, res, pix_frame):
         score = res.get('score'); image_path = res.get('image_path')
@@ -80,29 +92,35 @@ class SessionManager(QObject):
             name = os.path.basename(image_path)
             if name.startswith('s'): session_idx = int(name.split('_')[0][1:])
         except: pass
-        self.pending_shots[session_idx] = max(0, self.pending_shots[session_idx] - 1)
+        
+        self.rollback_pending_shot(session_idx)
+        
         score_text = f"Điểm: {score}"
         if self.shooting_mode == "BURST_3":
             count = len(self.testing_buffers[session_idx]) + 1
             score_text = f"Điểm: {score} (Phát {count}/3)"
+        
         self.shot_added.emit(session_idx, score, score, score_text)
+        
         sid = self.active_session_ids[session_idx]
         if self.session_active_flags[session_idx] and sid > 0:
             self.shot_counters[session_idx] += 1
             self.db.add_shot(sid, self.shot_counters[session_idx], res.get('target_detected_raw'), score, res.get('coords'), image_path)
+        
         if self.shooting_mode == "BURST_3":
             self.testing_buffers[session_idx].append({'score': score, 'image': pix_frame})
             self._check_burst_completion()
 
     def _check_burst_completion(self):
         if self.current_mode == 0:
-            if len(self.testing_buffers[0]) >= 3: self.burst_completed.emit(0, self.testing_buffers[0]); self._reset_counters(0)
+            if len(self.testing_buffers[0]) >= 3: 
+                self.burst_completed.emit(0, self.testing_buffers[0])
         elif self.current_mode == 1:
             b1 = len(self.testing_buffers[1]); b2 = len(self.testing_buffers[2])
             p1 = self.pending_shots[1]; p2 = self.pending_shots[2]
             if b1 >= 3 and b2 >= 3 and p1 == 0 and p2 == 0:
-                self.burst_completed.emit(1, self.testing_buffers[1]); self.burst_completed.emit(2, self.testing_buffers[2])
-                self._reset_counters(1); self._reset_counters(2)
+                self.burst_completed.emit(1, self.testing_buffers[1])
+                self.burst_completed.emit(2, self.testing_buffers[2])
                 self.next_shot_cam_id = 1; self.auto_switch_camera.emit(1)
 
     def get_auto_switch_target(self, current_target):
