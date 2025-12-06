@@ -2,10 +2,11 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QFrame, QSizePolicy,
     QGraphicsDropShadowEffect, QGroupBox, QComboBox, QApplication, QStackedWidget,
-    QFormLayout, QListWidget, QLineEdit, QAbstractItemView
+    QFormLayout, QListWidget, QLineEdit, QAbstractItemView, QTextEdit
 )
-from PySide6.QtGui import QFont, QPixmap, QPainter, QColor
-from PySide6.QtCore import Qt, QPoint, Signal
+import cv2
+from PySide6.QtGui import QFont, QPixmap, QPainter, QColor, QImage
+from PySide6.QtCore import Qt, QSize, QPoint, Signal
 
 class VideoLabel(QLabel):
     clicked = Signal(QPoint)
@@ -72,6 +73,7 @@ class MainGui(QWidget):
             QPushButton.menu-btn:hover {{ background-color: #1abc9c; border-color: #16a085; color: white; }}
             QPushButton {{ background-color: #1abc9c; color: white; font-size: {scale_font(14)}px; font-weight: bold; border: none; padding: {scale_size(10)}px {scale_size(20)}px; border-radius: {scale_size(8)}px; }}
             QPushButton:hover {{ background-color: #16a085; }}
+            QPushButton:disabled {{ background-color: #7f8c8d; color: #bdc3c7; }} 
             QPushButton#danger {{ background-color: #e74c3c; }}
             QPushButton#danger:hover {{ background-color: #c0392b; }}
             QSlider::groove:horizontal {{ border: 1px solid #2c3e50; height: {scale_size(4)}px; background: #2c3e50; margin: {scale_size(2)}px 0; border-radius: {scale_size(2)}px; }}
@@ -134,64 +136,102 @@ class MainGui(QWidget):
         layout.addWidget(btn_container, 0, Qt.AlignCenter); layout.addStretch()
 
     def _setup_create_session_page(self, parent, scale_size, scale_font):
-        main_layout = QVBoxLayout(parent); main_layout.setContentsMargins(scale_size(30), scale_size(30), scale_size(30), scale_size(30)); main_layout.setSpacing(scale_size(20))
-        lbl_title = QLabel("THIẾT LẬP PHIÊN TẬP MỚI"); lbl_title.setStyleSheet(f"font-size: {scale_font(24)}px; font-weight: bold; color: #ecf0f1; border-bottom: 2px solid #1abc9c; padding-bottom: 10px;"); main_layout.addWidget(lbl_title)
-        content_layout = QHBoxLayout(); content_layout.setSpacing(scale_size(30))
+        main_layout = QVBoxLayout(parent)
+        main_layout.setContentsMargins(scale_size(30), scale_size(30), scale_size(30), scale_size(30))
+        main_layout.setSpacing(scale_size(20))
         
-        left_col = QVBoxLayout(); lbl_name = QLabel("Tên phiên tập:"); self.inp_session_name = QLineEdit(); self.inp_session_name.setPlaceholderText("Nhập tên phiên tập...")
-        lbl_type = QLabel("Chế độ bắn:"); self.cmb_session_type = QComboBox(); self.cmb_session_type.addItem("Bắn từng phát", "SINGLE"); self.cmb_session_type.addItem("Luyện tập (3 phát)", "BURST_3")
-        lbl_list = QLabel("Chọn danh sách chiến sĩ tham gia:"); lbl_hint = QLabel("(Kéo chuột để chọn nhiều)")
+        lbl_title = QLabel("THIẾT LẬP PHIÊN TẬP MỚI")
+        lbl_title.setStyleSheet(f"font-size: {scale_font(24)}px; font-weight: bold; color: #ecf0f1; border-bottom: 2px solid #1abc9c; padding-bottom: 10px;")
+        main_layout.addWidget(lbl_title)
+        
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(scale_size(30))
+        
+        left_col = QVBoxLayout()
+        lbl_name = QLabel("Tên phiên tập:"); self.inp_session_name = QLineEdit(); self.inp_session_name.setPlaceholderText("Nhập tên phiên tập...")
+        lbl_type = QLabel("Chế độ bắn:"); self.cmb_session_type = QComboBox(); self.cmb_session_type.addItem("Bắn từng viên (Tính điểm/viên)", "SINGLE"); self.cmb_session_type.addItem("Bắn loạt (3 viên/lượt)", "BURST_3")
+        lbl_list = QLabel("Chọn danh sách người tập:"); lbl_hint = QLabel("(Kéo chuột để chọn nhiều)")
         self.list_soldiers_select = QListWidget(); self.list_soldiers_select.setSelectionMode(QAbstractItemView.ExtendedSelection); self.list_soldiers_select.setAlternatingRowColors(True)
-        
         left_col.addWidget(lbl_name); left_col.addWidget(self.inp_session_name); left_col.addSpacing(15); left_col.addWidget(lbl_type); left_col.addWidget(self.cmb_session_type); left_col.addSpacing(15); left_col.addWidget(lbl_list); left_col.addWidget(lbl_hint); left_col.addWidget(self.list_soldiers_select)
         
         right_col = QVBoxLayout()
-        grp_summary = QGroupBox("Thông tin tổng quát"); sum_layout = QFormLayout(grp_summary); self.lbl_sum_date = QLabel("..."); self.lbl_sum_count = QLabel("0 người"); self.lbl_sum_type = QLabel("Bắn từng phát")
-        sum_layout.addRow("Ngày:", self.lbl_sum_date); sum_layout.addRow("Số lượng:", self.lbl_sum_count); sum_layout.addRow("Chế độ:", self.lbl_sum_type); right_col.addWidget(grp_summary); right_col.addStretch()
+        grp_summary = QGroupBox("Tổng quan"); sum_layout = QFormLayout(grp_summary); self.lbl_sum_date = QLabel("..."); self.lbl_sum_count = QLabel("0 người"); self.lbl_sum_type = QLabel("Bắn từng phát")
+        sum_layout.addRow("Ngày tạo:", self.lbl_sum_date); sum_layout.addRow("Hình thức:", self.lbl_sum_type); sum_layout.addRow("Số người tập:", self.lbl_sum_count); right_col.addWidget(grp_summary)
         
-        # Nút bắt đầu cho chế độ theo phiên (Vẫn giữ vì đây là flow riêng)
-        self.btn_start_session = QPushButton("BẮT ĐẦU LUYỆN TẬP")
-        self.btn_start_session.setMinimumHeight(scale_size(60))
+        grp_intro = QGroupBox("Mục đích & Ý nghĩa"); intro_layout = QVBoxLayout(grp_intro)
+        intro_text = QLabel("Chức năng này dùng cho một buổi tập thực tế nhằm theo dõi, đánh giá, thống kê kỹ năng, độ chính xác của từng người, thông qua đó làm cơ sở để đưa ra biện pháp huấn luyện hiệu quả.")
+        intro_text.setWordWrap(True); intro_text.setStyleSheet("font-style: italic; color: #ecf0f1; margin: 5px;"); intro_layout.addWidget(intro_text); right_col.addWidget(grp_intro)
+        
+        grp_recommend = QGroupBox("Gợi ý tập luyện"); grp_recommend.setStyleSheet("QGroupBox { border: 1px solid #f39c12; } QGroupBox::title { background-color: #d35400; }"); rec_layout = QVBoxLayout(grp_recommend); rec_layout.setSpacing(10)
+        self.lbl_recommendation = QLabel("..."); self.lbl_recommendation.setWordWrap(True); self.lbl_recommendation.setStyleSheet("font-weight: bold; color: #f1c40f; line-height: 1.5;"); rec_layout.addWidget(self.lbl_recommendation); right_col.addWidget(grp_recommend)
+        
+        right_col.addStretch()
+        self.btn_confirm_setup = QPushButton("XÁC NHẬN TẠO PHIÊN"); self.btn_confirm_setup.setMinimumHeight(scale_size(60))
         self.btn_back_create = QPushButton("QUAY VỀ MENU"); self.btn_back_create.setObjectName("danger"); self.btn_back_create.setMinimumHeight(scale_size(60))
-        
-        right_col.addWidget(self.btn_start_session); right_col.addSpacing(10); right_col.addWidget(self.btn_back_create)
+        right_col.addWidget(self.btn_confirm_setup); right_col.addSpacing(10); right_col.addWidget(self.btn_back_create)
         content_layout.addLayout(left_col, 5); content_layout.addLayout(right_col, 5); main_layout.addLayout(content_layout)
 
     def _setup_practice_view(self, parent, scale_size, scale_font):
         margin = scale_size(20); spacing = scale_size(15)
         root_layout = QVBoxLayout(parent); root_layout.setContentsMargins(margin, scale_size(10), margin, margin); root_layout.setSpacing(spacing)
 
+        # --- HEADER ---
         header_layout = QHBoxLayout()
+        
+        # Nút quay về (NEW)
+        self.btn_back_header = QPushButton("◀")
+        self.btn_back_header.setFixedWidth(scale_size(50))
+        self.btn_back_header.setStyleSheet("background-color: #e74c3c; font-weight: bold;")
+        header_layout.addWidget(self.btn_back_header)
+
         self.lbl_session_info = QLabel("LUYỆN TẬP TỰ DO")
         self.lbl_session_info.setStyleSheet(f"font-size: {scale_font(20)}px; font-weight: bold; color: #1abc9c;")
+        header_layout.addWidget(self.lbl_session_info)
+
+        self.lbl_shooting_mode_fixed = QLabel("")
+        self.lbl_shooting_mode_fixed.setStyleSheet("font-weight: bold; color: #f39c12;")
+        self.lbl_shooting_mode_fixed.setVisible(False)
+        header_layout.addWidget(self.lbl_shooting_mode_fixed)
         
+        header_layout.addStretch()
+        
+        self.lbl_mode_prompt = QLabel("Chế độ bắn:")
+        header_layout.addWidget(self.lbl_mode_prompt)
         self.shooting_mode_selector = QComboBox()
         self.shooting_mode_selector.addItem("Bắn từng phát", "SINGLE")
         self.shooting_mode_selector.addItem("Luyện tập (3 phát)", "BURST_3")
         self.shooting_mode_selector.setFixedWidth(200)
-
+        header_layout.addWidget(self.shooting_mode_selector)
+        
+        # Managed Buttons
+        self.btn_select_trainee = QPushButton("Danh sách người tập")
+        self.btn_select_trainee.setFixedWidth(scale_size(180))
+        self.btn_select_trainee.setVisible(False)
+        header_layout.addWidget(self.btn_select_trainee)
+        
+        self.btn_save_session = QPushButton("Lưu phiên")
+        self.btn_save_session.setFixedWidth(scale_size(120))
+        self.btn_save_session.setVisible(False)
+        header_layout.addWidget(self.btn_save_session)
+        
+        header_layout.addWidget(QLabel("Camera:"))
         self.mode_selector = QComboBox()
         self.mode_selector.addItem("Chế độ 1 Camera")
         self.mode_selector.addItem("Chế độ 2 Camera")
         self.mode_selector.setFixedWidth(200)
-
+        header_layout.addWidget(self.mode_selector)
+        
         self.back_to_dashboard_btn = QPushButton("Kết thúc")
         self.back_to_dashboard_btn.setObjectName("danger")
         self.back_to_dashboard_btn.setFixedWidth(scale_size(150))
-
-        header_layout.addWidget(self.lbl_session_info); header_layout.addStretch(); header_layout.addWidget(QLabel("Chế độ bắn:")); header_layout.addWidget(self.shooting_mode_selector)
-        header_layout.addWidget(QLabel("Camera:")); header_layout.addWidget(self.mode_selector); header_layout.addWidget(self.back_to_dashboard_btn)
+        header_layout.addWidget(self.back_to_dashboard_btn)
         root_layout.addLayout(header_layout)
 
         self.main_stack = QStackedWidget()
         root_layout.addWidget(self.main_stack)
-
-        self.page_single = QWidget()
-        self._setup_original_single_ui(self.page_single, scale_size, scale_font)
+        self.page_single = QWidget(); self._setup_original_single_ui(self.page_single, scale_size, scale_font)
         self.main_stack.addWidget(self.page_single)
-
-        self.page_dual = QWidget()
-        self._setup_dual_ui(self.page_dual, scale_size, scale_font)
+        self.page_dual = QWidget(); self._setup_dual_ui(self.page_dual, scale_size, scale_font)
         self.main_stack.addWidget(self.page_dual)
 
     def _create_styled_panel(self) -> QFrame:
@@ -205,7 +245,6 @@ class MainGui(QWidget):
         left_panel = self._create_styled_panel(); left_layout = QVBoxLayout(left_panel)
         title = QLabel("Đường ngắm trực tiếp"); title.setProperty("class", "panel-title"); title.setAlignment(Qt.AlignCenter); left_layout.addWidget(title)
         self.camera_view_label = VideoLabel(); self.camera_view_label.setText("Vui lòng kết nối camera"); left_layout.addWidget(self.camera_view_label, 1)
-        
         controls_panel = QWidget(); controls_layout = QHBoxLayout(controls_panel)
         self.single_cam_source = QComboBox(); self.single_cam_source.setMinimumWidth(scale_size(150))
         self.refresh_button = QPushButton("Làm mới"); self.refresh_button.setObjectName("refreshButton")
@@ -218,9 +257,15 @@ class MainGui(QWidget):
 
         right_panel = self._create_styled_panel(); right_layout = QVBoxLayout(right_panel)
         session_box = QGroupBox("Quản lý Lần bắn"); session_layout = QVBoxLayout(session_box)
+        self.lbl_current_trainee = QLabel("Người tập: --")
+        self.lbl_current_trainee.setStyleSheet("font-size: 16px; font-weight: bold; color: #f1c40f; margin-bottom: 10px;")
+        self.lbl_current_trainee.setAlignment(Qt.AlignCenter); self.lbl_current_trainee.setVisible(False)
+        session_layout.addWidget(self.lbl_current_trainee)
         
-        # --- ĐÃ XÓA SESSION BUTTON Ở ĐÂY ---
-        
+        self.btn_control_session = QPushButton("BẮT ĐẦU TẬP")
+        self.btn_control_session.setVisible(False); self.btn_control_session.setEnabled(False) # Mặc định disable
+        session_layout.addWidget(self.btn_control_session)
+
         result_box = QGroupBox("Kết quả mới nhất"); result_layout = QVBoxLayout(result_box)
         self.score_label = QLabel("Điểm số: --"); self.score_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #e74c3c;"); self.score_label.setAlignment(Qt.AlignCenter)
         self.result_image_label = VideoLabel(); result_layout.addWidget(self.score_label); result_layout.addWidget(QLabel("Ảnh kết quả:")); result_layout.addWidget(self.result_image_label, 1)
@@ -236,7 +281,12 @@ class MainGui(QWidget):
             cmb_source = QComboBox()
             header_lo.addWidget(lbl_title); header_lo.addStretch(); header_lo.addWidget(QLabel("Nguồn:")); header_lo.addWidget(cmb_source); col_layout.addWidget(header_widget)
             
-            # --- ĐÃ XÓA SESSION BUTTON Ở ĐÂY ---
+            # Thêm Label tên người tập cho từng cam (NEW)
+            lbl_trainee = QLabel("Người tập: Chưa chọn")
+            lbl_trainee.setStyleSheet("color: #f1c40f; font-weight: bold; font-size: 14px;")
+            lbl_trainee.setAlignment(Qt.AlignCenter)
+            lbl_trainee.setVisible(False) # Ẩn mặc định
+            col_layout.addWidget(lbl_trainee)
             
             cam_view = VideoLabel(); cam_view.setText(f"Kết nối {title}"); col_layout.addWidget(cam_view, 5) 
             ctrl_widget = QWidget(); ctrl_lo = QHBoxLayout(ctrl_widget)
@@ -248,9 +298,15 @@ class MainGui(QWidget):
             img_res = VideoLabel(); img_res.setText("Ảnh KQ"); res_lo.addWidget(lbl_score); res_lo.addWidget(img_res, 1); col_layout.addWidget(grp_res, 4)
             
             setattr(self, f"{prefix}_view", cam_view); setattr(self, f"{prefix}_source", cmb_source)
-            setattr(self, f"{prefix}_refresh", btn_refresh)
-            setattr(self, f"{prefix}_zoom", sld_zoom); setattr(self, f"{prefix}_calib", btn_calib)
-            setattr(self, f"{prefix}_score", lbl_score); setattr(self, f"{prefix}_result_img", img_res)
+            setattr(self, f"{prefix}_refresh", btn_refresh); setattr(self, f"{prefix}_zoom", sld_zoom)
+            setattr(self, f"{prefix}_calib", btn_calib); setattr(self, f"{prefix}_score", lbl_score)
+            setattr(self, f"{prefix}_result_img", img_res)
+            setattr(self, f"{prefix}_trainee_lbl", lbl_trainee) # Lưu reference
             return panel
         col1 = create_vertical_column("CAMERA 1", "dual_cam1"); col2 = create_vertical_column("CAMERA 2", "dual_cam2")
         layout.addWidget(col1); layout.addWidget(col2)
+
+    def _convert_cv_to_pixmap(self, img):
+        if img is None: return QPixmap()
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB); h, w, ch = rgb.shape
+        return QPixmap.fromImage(QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888))

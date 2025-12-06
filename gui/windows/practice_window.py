@@ -50,10 +50,7 @@ class PracticeWindow(QMainWindow):
         self.gui.btn_new_session.clicked.connect(self.on_new_session_clicked)
         self.gui.btn_continue_session.clicked.connect(self.on_continue_session_clicked)
         self.gui.btn_back_dashboard_session.clicked.connect(lambda: self.gui.stack.setCurrentWidget(self.gui.page_dashboard))
-        
-        # Nút này giờ đã chắc chắn tồn tại trong ui_practice.py
-        self.gui.btn_start_session.clicked.connect(self.on_confirm_create_session)
-        
+        self.gui.btn_confirm_setup.clicked.connect(self.on_confirm_create_session)
         self.gui.btn_back_create.clicked.connect(lambda: self.gui.stack.setCurrentWidget(self.gui.page_session_menu))
         self.gui.list_soldiers_select.itemSelectionChanged.connect(self.update_create_session_summary)
         self.gui.cmb_session_type.currentIndexChanged.connect(self.update_create_session_summary)
@@ -96,6 +93,17 @@ class PracticeWindow(QMainWindow):
         self.gui.lbl_sum_count.setText(f"{count} người")
         self.gui.lbl_sum_type.setText(self.gui.cmb_session_type.currentText())
         self.gui.lbl_sum_date.setText(datetime.now().strftime("%d/%m/%Y %H:%M"))
+        mode_data = self.gui.cmb_session_type.currentData()
+        rec = "Đề xuất: Mỗi chiến sĩ nên bắn cơ số đạn bằng nhau." if mode_data == "SINGLE" else "Quy định: Mỗi chiến sĩ sẽ thực hiện bắn 1 lượt (3 viên)."
+        self.gui.lbl_recommendation.setText(rec)
 
-    def on_confirm_create_session(self): QMessageBox.information(self, "Thông báo", "Chức năng tạo phiên đang hoàn thiện.")
+    def on_confirm_create_session(self):
+        name = self.gui.inp_session_name.text().strip()
+        if not name: QMessageBox.warning(self, "Thiếu thông tin", "Vui lòng nhập tên phiên tập."); return
+        selected_items = self.gui.list_soldiers_select.selectedItems()
+        if not selected_items: QMessageBox.warning(self, "Thiếu thông tin", "Vui lòng chọn ít nhất một người tập."); return
+        soldiers = [item.data(Qt.UserRole) for item in selected_items]
+        mode = self.gui.cmb_session_type.currentData()
+        self.controller.initialize_managed_session(name, mode, soldiers)
+
     def on_continue_session_clicked(self): QMessageBox.information(self, "Thông báo", "Chức năng tiếp tục phiên đang hoàn thiện.")
