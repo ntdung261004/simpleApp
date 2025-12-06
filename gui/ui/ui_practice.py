@@ -178,7 +178,6 @@ class MainGui(QWidget):
         # --- HEADER ---
         header_layout = QHBoxLayout()
         
-        # Nút quay về (NEW)
         self.btn_back_header = QPushButton("◀")
         self.btn_back_header.setFixedWidth(scale_size(50))
         self.btn_back_header.setStyleSheet("background-color: #e74c3c; font-weight: bold;")
@@ -203,7 +202,7 @@ class MainGui(QWidget):
         self.shooting_mode_selector.setFixedWidth(200)
         header_layout.addWidget(self.shooting_mode_selector)
         
-        # Managed Buttons
+        # --- Nút Chọn Danh Sách Chung (Chỉ hiện khi 1 Cam) ---
         self.btn_select_trainee = QPushButton("Danh sách người tập")
         self.btn_select_trainee.setFixedWidth(scale_size(180))
         self.btn_select_trainee.setVisible(False)
@@ -263,7 +262,7 @@ class MainGui(QWidget):
         session_layout.addWidget(self.lbl_current_trainee)
         
         self.btn_control_session = QPushButton("BẮT ĐẦU TẬP")
-        self.btn_control_session.setVisible(False); self.btn_control_session.setEnabled(False) # Mặc định disable
+        self.btn_control_session.setVisible(False)
         session_layout.addWidget(self.btn_control_session)
 
         result_box = QGroupBox("Kết quả mới nhất"); result_layout = QVBoxLayout(result_box)
@@ -277,15 +276,26 @@ class MainGui(QWidget):
         def create_vertical_column(title, prefix):
             panel = self._create_styled_panel(); col_layout = QVBoxLayout(panel)
             header_widget = QWidget(); header_lo = QHBoxLayout(header_widget)
-            lbl_title = QLabel(title); lbl_title.setProperty("class", "panel-title")
-            cmb_source = QComboBox()
-            header_lo.addWidget(lbl_title); header_lo.addStretch(); header_lo.addWidget(QLabel("Nguồn:")); header_lo.addWidget(cmb_source); col_layout.addWidget(header_widget)
             
-            # Thêm Label tên người tập cho từng cam (NEW)
+            # --- TÍNH NĂNG MỚI: Nút chọn người tích hợp trong Camera ---
+            lbl_title = QLabel(title); lbl_title.setProperty("class", "panel-title")
+            
+            # Nút chọn người tập (thay vì ComboBox cũ)
+            btn_trainee_cam = QPushButton("Chọn người tập"); 
+            btn_trainee_cam.setStyleSheet("background-color: #3498db; font-size: 13px; padding: 5px;")
+            btn_trainee_cam.setVisible(False) # Sẽ hiện khi vào chế độ Managed
+            
+            cmb_source = QComboBox()
+            header_lo.addWidget(lbl_title); header_lo.addStretch()
+            header_lo.addWidget(btn_trainee_cam) # Thêm nút vào header
+            header_lo.addWidget(QLabel("Src:")); header_lo.addWidget(cmb_source)
+            col_layout.addWidget(header_widget)
+            
+            # Label tên người tập (Hiển thị to rõ ràng)
             lbl_trainee = QLabel("Người tập: Chưa chọn")
-            lbl_trainee.setStyleSheet("color: #f1c40f; font-weight: bold; font-size: 14px;")
+            lbl_trainee.setStyleSheet("color: #f1c40f; font-weight: bold; font-size: 16px; margin: 5px;")
             lbl_trainee.setAlignment(Qt.AlignCenter)
-            lbl_trainee.setVisible(False) # Ẩn mặc định
+            lbl_trainee.setVisible(False)
             col_layout.addWidget(lbl_trainee)
             
             cam_view = VideoLabel(); cam_view.setText(f"Kết nối {title}"); col_layout.addWidget(cam_view, 5) 
@@ -301,7 +311,8 @@ class MainGui(QWidget):
             setattr(self, f"{prefix}_refresh", btn_refresh); setattr(self, f"{prefix}_zoom", sld_zoom)
             setattr(self, f"{prefix}_calib", btn_calib); setattr(self, f"{prefix}_score", lbl_score)
             setattr(self, f"{prefix}_result_img", img_res)
-            setattr(self, f"{prefix}_trainee_lbl", lbl_trainee) # Lưu reference
+            setattr(self, f"{prefix}_trainee_lbl", lbl_trainee)
+            setattr(self, f"{prefix}_trainee_btn", btn_trainee_cam) # Lưu ref nút chọn
             return panel
         col1 = create_vertical_column("CAMERA 1", "dual_cam1"); col2 = create_vertical_column("CAMERA 2", "dual_cam2")
         layout.addWidget(col1); layout.addWidget(col2)

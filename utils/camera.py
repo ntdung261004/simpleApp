@@ -76,9 +76,13 @@ class CameraThread(QThread):
         self._is_running = False
         # Chờ luồng kết thúc an toàn
         self.quit()
-        self.wait(1000) # Chờ tối đa 1s
-        if self.isRunning():
-            self.terminate() # Cưỡng chế tắt nếu treo
+        
+        # --- FIX CRASH: Wait kỹ hơn và xử lý terminate đúng cách ---
+        if not self.wait(2000): # Chờ tối đa 2s để luồng tự đóng
+            logger.warning(f"Cam {self.index}: Không phản hồi, buộc dừng (terminate).")
+            self.terminate() # Cưỡng chế tắt
+            self.wait() # QUAN TRỌNG: Chờ cho đến khi terminate hoàn tất trước khi hủy object
+        # -----------------------------------------------------------
 
     def is_active(self):
         return self._is_running and self.cap is not None and self.cap.isOpened()

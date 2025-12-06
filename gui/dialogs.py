@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QColor
 
 class ResultPopup(QDialog):
-    def __init__(self, shots_data, camera_name="", parent=None):
+    def __init__(self, shots_data, camera_name="", allow_retry=True, parent=None):
         super().__init__(parent)
         self.setWindowTitle("KẾT QUẢ LUYỆN TẬP")
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
@@ -42,9 +42,30 @@ class ResultPopup(QDialog):
         self.btn_next = QPushButton("Sau >>"); self.btn_next.setMinimumHeight(40); self.btn_next.clicked.connect(self.next_image)
         nav_layout.addWidget(self.btn_prev); nav_layout.addWidget(self.lbl_index); nav_layout.addWidget(self.btn_next)
         layout.addLayout(nav_layout)
-        btn_continue = QPushButton("TIẾP TỤC"); btn_continue.setStyleSheet("background-color: #1abc9c; font-size: 16px; padding: 10px; font-weight: bold; border-radius: 5px; color: white;")
-        btn_continue.clicked.connect(self.accept); layout.addWidget(btn_continue)
+        
+        # --- Action Buttons ---
+        action_layout = QHBoxLayout()
+        
+        self.btn_retry = QPushButton("BẮN LẠI LOẠT NÀY")
+        self.btn_retry.setStyleSheet("background-color: #e74c3c; font-size: 16px; padding: 10px; font-weight: bold; border-radius: 5px; color: white;")
+        self.btn_retry.clicked.connect(self.on_retry_clicked)
+        
+        # Chỉ hiện nút Bắn lại nếu được phép (Chế độ Managed)
+        self.btn_retry.setVisible(allow_retry)
+        
+        self.btn_continue = QPushButton("TIẾP TỤC"); 
+        self.btn_continue.setStyleSheet("background-color: #1abc9c; font-size: 16px; padding: 10px; font-weight: bold; border-radius: 5px; color: white;")
+        self.btn_continue.clicked.connect(self.accept)
+        
+        action_layout.addWidget(self.btn_retry)
+        action_layout.addSpacing(20)
+        action_layout.addWidget(self.btn_continue)
+        layout.addLayout(action_layout)
+        
         self.update_view()
+
+    def on_retry_clicked(self):
+        self.done(2) 
 
     def update_view(self):
         if not self.shots_data: return
@@ -62,15 +83,15 @@ class ResultPopup(QDialog):
         if self.current_idx < len(self.shots_data) - 1: self.current_idx += 1; self.update_view()
     def resizeEvent(self, event): self.update_view(); super().resizeEvent(event)
 
-# --- POPUP DANH SÁCH NGƯỜI TẬP (UPDATED) ---
 class TraineeSessionPopup(QDialog):
     trainee_selected = Signal(dict)
 
     def __init__(self, session_name, soldiers_data, current_ids, mode_str, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"QUẢN LÝ PHIÊN: {session_name.upper()}")
-        self.setMinimumSize(900, 500)
+        self.setMinimumSize(950, 500)
         self.setStyleSheet("background-color: #2c3e50; color: white;")
+        self.mode_str = mode_str
         
         layout = QVBoxLayout(self)
         
@@ -79,8 +100,7 @@ class TraineeSessionPopup(QDialog):
         lbl_title.setAlignment(Qt.AlignCenter)
         layout.addWidget(lbl_title)
         
-        # Xác định tiêu đề cột kết quả dựa trên mode
-        result_header = "Tổng điểm (Loạt 3)" if mode_str == "BURST_3" else "Số phát đã bắn"
+        result_header = "Số phát / Điểm (Trung bình)" if mode_str == "SINGLE" else "Kết quả loạt"
         
         self.table = QTableWidget(len(soldiers_data), 4)
         self.table.setHorizontalHeaderLabels(["Họ và Tên", "Đơn vị", "Trạng thái", result_header])
@@ -120,29 +140,27 @@ class TraineeSessionPopup(QDialog):
             name_item = QTableWidgetItem(s['name'])
             class_item = QTableWidgetItem(s.get('class_name', ''))
             
+            is_active = (s['id'] in current_ids)
+            is_finished = s.get('finished', False)
+            shot_count = s.get('shot_count', 0)
+            
             status_str = "Đang chờ"
             bg_color = None
             
-            if s.get('finished', False):
-                status_str = "Đã hoàn thành"
-                bg_color = QColor("#27ae60") # Green
-            elif s['id'] in current_ids:
-                status_str = "ĐANG TẬP..."
-                bg_color = QColor("#d35400") # Orange
-                
+            if is_active:
+                status_str = "ĐANG TẬP"
+                bg_color = QColor("#d35400") # Cam
+            elif is_finished or shot_count > 0:
+                status_str = "ĐÃ TẬP"
+                bg_color = QColor("#27ae60") # Xanh lá
+            
             status_item = QTableWidgetItem(status_str)
             status_item.setTextAlignment(Qt.AlignCenter)
             if bg_color: 
                 status_item.setBackground(bg_color)
                 status_item.setForeground(QColor("white"))
             
-            # Hiển thị thông tin kết quả
-            res_text = ""
-            if mode_str == "BURST_3":
-                res_text = f"{s.get('total_score', 0)} điểm"
-            else:
-                res_text = f"{s.get('shot_count', 0)} phát"
-            
+            res_text = s.get('last_result', '')
             result_item = QTableWidgetItem(res_text)
             result_item.setTextAlignment(Qt.AlignCenter)
             
@@ -153,14 +171,17 @@ class TraineeSessionPopup(QDialog):
             
             name_item.setData(Qt.UserRole, s)
             
-            # Auto select nếu đang tập
-            if s['id'] in current_ids:
+            if is_active:
                 self.table.selectRow(row)
 
     def on_select(self):
         selected_rows = self.table.selectedItems()
         if selected_rows:
             soldier_data = selected_rows[0].data(Qt.UserRole)
+            if self.mode_str == "BURST_3" and soldier_data.get('finished', False):
+                QMessageBox.warning(self, "Không thể chọn", 
+                                    f"Chiến sĩ {soldier_data['name']} đã hoàn thành bài bắn loạt.\nKhông thể chọn lại.")
+                return
             self.trainee_selected.emit(soldier_data)
             self.accept()
         else:
