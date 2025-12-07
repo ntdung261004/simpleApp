@@ -102,7 +102,6 @@ class ShootingController(QObject):
             self.ui.btn_select_trainee.setVisible(False)
             
         self.ui.btn_save_session.setVisible(not is_free)
-        # --- ĐỔI TÊN NÚT ---
         self.ui.back_to_dashboard_btn.setText("Kết thúc")
         
         self.ui.lbl_current_trainee.setVisible(not is_free)
@@ -183,7 +182,6 @@ class ShootingController(QObject):
             result_code = p.exec()
             target_ui_idx = 0 if self.sess_manager.current_mode == 0 else idx
             
-            # --- FIX: Mở khóa nút chọn người khi xong ---
             if result_code != 2:
                 self._set_trainee_btn_state(target_ui_idx, True)
 
@@ -199,9 +197,9 @@ class ShootingController(QObject):
                 self.sess_manager.end_session(idx)
                 self.reset_result_display(target_ui_idx)
                 
+                # --- FIX: GỌI HÀM KẾT THÚC TỰ ĐỘNG ĐÚNG LOGIC ---
                 if self.sess_manager.shooting_mode == "BURST_3" and self.sess_manager.are_all_soldiers_finished() and not self.popup_queue:
-                    QMessageBox.information(self.parent_window, "Hoàn tất phiên tập", "Tất cả chiến sĩ trong danh sách đã hoàn thành bài bắn.\nVui lòng xem lại kết quả chi tiết ở chức năng 'Quản lý Thống kê'.")
-                    self.parent_window.on_return_to_dashboard()
+                    self.parent_window.on_auto_finish_session()
                     return
 
                 if self.sess_manager.current_mode == 0 and not self.popup_queue:
@@ -209,8 +207,8 @@ class ShootingController(QObject):
             else:
                 self.sess_manager._reset_counters(idx) 
                 self.sess_manager.reset_burst_state(idx)
-                self._update_result_image(idx, QPixmap())
-                self.update_shot_display(idx, 0, 0, "Điểm số: --")
+                # --- FIX: RESET HÌNH ẢNH TẬP TỰ DO ---
+                self.reset_result_display(target_ui_idx)
                 self._set_trainee_btn_state(target_ui_idx, True)
 
     def stop_practice(self):
@@ -259,8 +257,11 @@ class ShootingController(QObject):
         if self.sess_manager.is_free_practice:
             if idx == 0: self.start_new_session(0)
             else: self.start_new_session(1); self.start_new_session(2)
-        else:
-            if idx == 1: self.update_active_border(self.sess_manager.next_shot_cam_id)
+        
+        # --- FIX: CẬP NHẬT ACTIVE BORDER CHO MỌI TRƯỜNG HỢP ---
+        if idx == 1: 
+            QApplication.processEvents()
+            self.update_active_border(self.sess_manager.next_shot_cam_id)
 
     def handle_shooting_mode_change(self):
         self.sess_manager.shooting_mode = self.ui.shooting_mode_selector.currentData()
@@ -318,14 +319,10 @@ class ShootingController(QObject):
             val = combo.itemData(idx)
             if val is not None: self.cam_manager.cam_indices[cam_id] = val; self.cam_manager.start_camera(cam_id)
 
-    # --- HÀM KHÓA NÚT ĐÃ SỬA ---
     def _set_trainee_btn_state(self, slot, enabled):
         if self.sess_manager.current_mode == 0:
-            # Single Cam mode: slot=0 hoặc 1 đều là nút chung
-            if slot == 0 or slot == 1: 
-                self.ui.btn_select_trainee.setEnabled(enabled)
+            if slot == 0 or slot == 1: self.ui.btn_select_trainee.setEnabled(enabled)
             return
-
         if slot == 1 and hasattr(self.ui, 'dual_cam1_trainee_btn'): self.ui.dual_cam1_trainee_btn.setEnabled(enabled)
         elif slot == 2 and hasattr(self.ui, 'dual_cam2_trainee_btn'): self.ui.dual_cam2_trainee_btn.setEnabled(enabled)
 
@@ -361,7 +358,6 @@ class ShootingController(QObject):
         frame, center = self.cam_manager.get_shot_data(target_cam)
         if frame is None: return
 
-        # --- KHÓA NÚT NGAY LẬP TỨC ---
         if self.sess_manager.is_managed_session:
             self._set_trainee_btn_state(sess_idx, False)
 
@@ -377,7 +373,6 @@ class ShootingController(QObject):
         except Exception as e:
             logger.error(f"Lỗi chụp ảnh: {e}")
             self.sess_manager.rollback_pending_shot(sess_idx)
-            # --- FIX: Nếu lỗi, chỉ mở nút nếu hàng đợi rỗng ---
             if self.sess_manager.is_managed_session and self.sess_manager.pending_shots[sess_idx] == 0:
                 self._set_trainee_btn_state(sess_idx, True)
 
@@ -391,7 +386,6 @@ class ShootingController(QObject):
         pix = self._convert_cv_to_pixmap(res.get('result_frame'))
         score = res.get('score', 0)
         
-        # --- FIX: Cập nhật logic trước để giảm hàng đợi (rollback) ---
         self.sess_manager.process_shot_result(res, pix)
         
         sess_idx = 0
@@ -400,13 +394,9 @@ class ShootingController(QObject):
             if name.startswith('s'): sess_idx = int(name.split('_')[0][1:])
         except: pass
 
-        # --- MỞ KHÓA NÚT NẾU LÀ SINGLE MODE (Burst chờ popup) ---
         if self.sess_manager.is_managed_session:
             is_bursting = self.sess_manager.is_burst_in_progress(sess_idx)
-            # Lúc này pending_shots đã được trừ đi bởi process_shot_result ở trên
             has_pending = self.sess_manager.pending_shots[sess_idx] > 0
-            
-            # Chỉ mở nút khi: Không phải Burst VÀ Hàng đợi đã xử lý hết
             if not is_bursting and not has_pending:
                 if self.sess_manager.shooting_mode == "SINGLE":
                     self._set_trainee_btn_state(sess_idx, True)
@@ -541,4 +531,4 @@ class ShootingController(QObject):
         elif self.sess_manager.current_mode == 1:
             if c == 1: self.ui.dual_cam1_view.setPixmap(empty); self.ui.dual_cam1_view.setText("Đã tắt")
             elif c == 2: self.ui.dual_cam2_view.setPixmap(empty); self.ui.dual_cam2_view.setText("Đã tắt")
-    def _update_button_visibility(self): pass
+    def _update_button_visibility(self): pass 

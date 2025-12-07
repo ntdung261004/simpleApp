@@ -2,7 +2,7 @@
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QTableWidget, QFrame, QStackedWidget, QApplication, QLineEdit,
-    QHeaderView, QAbstractItemView, QComboBox
+    QHeaderView, QAbstractItemView, QComboBox, QScrollArea, QGridLayout
 )
 from PySide6.QtGui import QFont, QColor
 from PySide6.QtCore import Qt
@@ -79,7 +79,19 @@ class ManageGui(QWidget):
             /* Combo box */
             QComboBox {{
                 background-color: #34495e; color: white; border: 1px solid #4a6278;
-                padding: 5px; border-radius: 5px; min-width: 150px;
+                padding: 5px; border-radius: 5px; min-width: 150px; font-weight: bold;
+            }}
+            QComboBox::drop-down {{ border: none; }}
+            
+            /* Card trong báo cáo */
+            QFrame.report-card {{
+                background-color: #34495e; border-radius: 10px; border: 1px solid #4a6278;
+            }}
+            QLabel.card-title {{
+                color: #bdc3c7; font-size: 14px; font-weight: bold;
+            }}
+            QLabel.card-value {{
+                color: #ecf0f1; font-size: 20px; font-weight: bold;
             }}
         """)
 
@@ -107,7 +119,7 @@ class ManageGui(QWidget):
         self._setup_session_list_page()
         self.main_stack.addWidget(self.page_sessions)
 
-        # --- TRANG 3: CHI TIẾT PHIÊN TẬP ---
+        # --- TRANG 3: CHI TIẾT PHIÊN TẬP (DETAIL & REPORT) ---
         self.page_session_detail = QWidget()
         self._setup_session_detail_page()
         self.main_stack.addWidget(self.page_session_detail)
@@ -261,34 +273,127 @@ class ManageGui(QWidget):
         layout = QVBoxLayout(self.page_session_detail)
         margin = int(30 * self.scale_factor)
         layout.setContentsMargins(margin, margin, margin, margin)
-        layout.setSpacing(int(15 * self.scale_factor))
+        layout.setSpacing(int(10 * self.scale_factor))
 
+        # --- HEADER: Title + View Option ---
         header_layout = QHBoxLayout()
         self.lbl_detail_title = QLabel("CHI TIẾT PHIÊN TẬP")
         self.lbl_detail_title.setStyleSheet(f"font-size: {int(20 * self.scale_factor)}px; font-weight: bold; color: #f39c12;")
         
+        self.cmb_view_mode = QComboBox()
+        self.cmb_view_mode.addItem("Danh sách chi tiết", "LIST")
+        self.cmb_view_mode.addItem("Báo cáo tổng quan", "REPORT")
+        self.cmb_view_mode.setFixedWidth(200)
+        self.cmb_view_mode.setStyleSheet("background-color: #34495e; color: white; padding: 5px; font-weight: bold; border: 1px solid #1abc9c;")
+        
+        header_layout.addWidget(self.lbl_detail_title)
+        header_layout.addStretch()
+        header_layout.addWidget(QLabel("Chế độ xem:"))
+        header_layout.addWidget(self.cmb_view_mode)
+        layout.addLayout(header_layout)
+
+        # --- CONTENT STACK ---
+        self.detail_stack = QStackedWidget()
+        layout.addWidget(self.detail_stack)
+
+        # 1. VIEW DANH SÁCH (LIST)
+        self.page_detail_list = QWidget()
+        list_layout = QVBoxLayout(self.page_detail_list)
+        list_layout.setContentsMargins(0, 10, 0, 0)
+        
+        # Sort option
+        sort_layout = QHBoxLayout()
         self.cmb_sort = QComboBox()
         self.cmb_sort.addItem("Sắp xếp: Tên A-Z", "NAME_ASC")
         self.cmb_sort.addItem("Sắp xếp: Điểm cao -> thấp", "SCORE_DESC")
         self.cmb_sort.addItem("Sắp xếp: Điểm thấp -> cao", "SCORE_ASC")
-        
-        header_layout.addWidget(self.lbl_detail_title)
-        header_layout.addStretch()
-        header_layout.addWidget(self.cmb_sort)
-        layout.addLayout(header_layout)
+        sort_layout.addStretch()
+        sort_layout.addWidget(self.cmb_sort)
+        list_layout.addLayout(sort_layout)
 
-        # Bảng chi tiết: Ban đầu 0, 6 (Thêm cột STT)
+        # Table
         self.detail_table = QTableWidget(0, 6)
-        # Header sẽ được set lại trong logic
         self.detail_table.verticalHeader().setVisible(False)
         self.detail_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.detail_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.detail_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.detail_table.setAlternatingRowColors(True)
         self.detail_table.setStyleSheet("alternate-background-color: #3b5266;")
-        
-        layout.addWidget(self.detail_table)
+        list_layout.addWidget(self.detail_table)
+        self.detail_stack.addWidget(self.page_detail_list)
 
+        # 2. VIEW BÁO CÁO (REPORT)
+        self.page_detail_report = QWidget()
+        report_layout = QVBoxLayout(self.page_detail_report)
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; } QWidget { background-color: transparent; }")
+        
+        report_content = QWidget()
+        self.report_inner_layout = QVBoxLayout(report_content)
+        self.report_inner_layout.setSpacing(20)
+        
+        # A. Stats Cards (Dynamic Titles)
+        stats_container = QWidget()
+        stats_layout = QHBoxLayout(stats_container)
+        stats_layout.setContentsMargins(0,0,0,0)
+        stats_layout.setSpacing(15)
+        
+        def create_card(title, title_obj_name, value_obj_name):
+            card = QFrame()
+            card.setProperty("class", "report-card")
+            card.setMinimumHeight(100)
+            cl = QVBoxLayout(card)
+            
+            l1 = QLabel(title)
+            l1.setProperty("class", "card-title")
+            l1.setObjectName(title_obj_name) # Để logic có thể truy cập đổi tên
+            
+            l2 = QLabel("--")
+            l2.setProperty("class", "card-value")
+            l2.setObjectName(value_obj_name)
+            l2.setAlignment(Qt.AlignCenter)
+            
+            cl.addWidget(l1); cl.addWidget(l2)
+            return card, l1, l2
+
+        # Lưu lại tham chiếu Title và Value để đổi tên sau
+        card1, self.lbl_card1_title, self.lbl_card1_value = create_card("TỔNG SỐ NGƯỜI", "c1Title", "c1Value")
+        card2, self.lbl_card2_title, self.lbl_card2_value = create_card("THẺ 2", "c2Title", "c2Value")
+        card3, self.lbl_card3_title, self.lbl_card3_value = create_card("THẺ 3", "c3Title", "c3Value")
+        card4, self.lbl_card4_title, self.lbl_card4_value = create_card("THẺ 4", "c4Title", "c4Value")
+        
+        stats_layout.addWidget(card1); stats_layout.addWidget(card2); stats_layout.addWidget(card3); stats_layout.addWidget(card4)
+        self.report_inner_layout.addWidget(stats_container)
+
+        # B. Charts Container
+        self.charts_container_widget = QWidget()
+        self.charts_layout = QHBoxLayout(self.charts_container_widget)
+        self.charts_container_widget.setMinimumHeight(350)
+        self.report_inner_layout.addWidget(self.charts_container_widget)
+
+        # C. Evaluation
+        eval_group = QFrame()
+        eval_group.setStyleSheet("background-color: #34495e; border-radius: 8px; padding: 10px;")
+        eval_lo = QVBoxLayout(eval_group)
+        
+        lbl_eval_title = QLabel("ĐÁNH GIÁ & KIẾN NGHỊ")
+        lbl_eval_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #f1c40f; margin-bottom: 5px;")
+        self.lbl_rpt_eval = QLabel("...")
+        self.lbl_rpt_eval.setWordWrap(True)
+        self.lbl_rpt_eval.setStyleSheet("font-size: 14px; color: #ecf0f1; line-height: 1.4;")
+        
+        eval_lo.addWidget(lbl_eval_title)
+        eval_lo.addWidget(self.lbl_rpt_eval)
+        self.report_inner_layout.addWidget(eval_group)
+        
+        self.report_inner_layout.addStretch()
+        scroll.setWidget(report_content)
+        report_layout.addWidget(scroll)
+        self.detail_stack.addWidget(self.page_detail_report)
+
+        # --- FOOTER ---
         footer_layout = QHBoxLayout()
         self.btn_view_personal = QPushButton("Xem quá trình cá nhân")
         self.btn_view_personal.setStyleSheet("background-color: #27ae60; color: white;")
