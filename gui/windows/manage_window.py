@@ -1,75 +1,56 @@
-# file: gui/windows/manage_window.py
-
 import logging
 import numpy as np
 import cv2
 import os
 import pandas as pd
 import unicodedata
+from datetime import datetime
 from PySide6.QtWidgets import (
     QMainWindow, QDialog, QFormLayout, QLineEdit,
     QDialogButtonBox, QMessageBox, QTableWidgetItem,
     QVBoxLayout, QWidget, QCheckBox, QHBoxLayout, QPushButton,
     QMenu, QFileDialog, QHeaderView, QLabel, QTableWidget
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap, QImage, QColor, QFont
 
 from gui.ui.ui_manage import ManageGui
+from gui.dialogs import PersonalProcessDialog
 from core.database import DatabaseManager
 from utils.resource_path import resource_path
 
 logger = logging.getLogger(__name__)
 
-# --- GIỮ NGUYÊN CÁC CLASS DIALOG HỖ TRỢ ---
+# ... (Giữ nguyên ExcelPreviewDialog và AddSoldierDialog) ...
 class ExcelPreviewDialog(QDialog):
     def __init__(self, data_list, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Xác nhận nhập dữ liệu")
         self.setMinimumSize(700, 500)
         self.data_list = data_list
-
         layout = QVBoxLayout(self)
-        lbl_info = QLabel(f"<b>Đã tìm thấy {len(data_list)} bản ghi.</b><br>"
-                          "Vui lòng kiểm tra kỹ danh sách bên dưới trước khi nhập.")
+        lbl_info = QLabel(f"<b>Đã tìm thấy {len(data_list)} bản ghi.</b><br>Vui lòng kiểm tra kỹ danh sách bên dưới trước khi nhập.")
         lbl_info.setStyleSheet("font-size: 14px; margin-bottom: 10px;")
         layout.addWidget(lbl_info)
-
         self.table = QTableWidget(len(data_list), 3)
         self.table.setHorizontalHeaderLabels(["Chọn", "Họ và Tên", "Đơn vị"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        
         self.checkboxes = []
         for i, row_data in enumerate(data_list):
-            chk_box = QCheckBox()
-            chk_box.setChecked(True)
-            cell_widget = QWidget()
-            chk_layout = QHBoxLayout(cell_widget)
-            chk_layout.addWidget(chk_box)
-            chk_layout.setAlignment(Qt.AlignCenter)
-            chk_layout.setContentsMargins(0,0,0,0)
-            self.table.setCellWidget(i, 0, cell_widget)
-            self.checkboxes.append(chk_box)
+            chk_box = QCheckBox(); chk_box.setChecked(True)
+            cell_widget = QWidget(); chk_layout = QHBoxLayout(cell_widget); chk_layout.addWidget(chk_box); chk_layout.setAlignment(Qt.AlignCenter); chk_layout.setContentsMargins(0,0,0,0)
+            self.table.setCellWidget(i, 0, cell_widget); self.checkboxes.append(chk_box)
             self.table.setItem(i, 1, QTableWidgetItem(str(row_data.get('name', ''))))
             self.table.setItem(i, 2, QTableWidgetItem(str(row_data.get('class_name', ''))))
-
         layout.addWidget(self.table)
         btn_layout = QHBoxLayout()
-        btn_all = QPushButton("Chọn tất cả")
-        btn_all.clicked.connect(lambda: self.toggle_all(True))
-        btn_none = QPushButton("Bỏ chọn tất cả")
-        btn_none.clicked.connect(lambda: self.toggle_all(False))
-        btn_layout.addWidget(btn_all)
-        btn_layout.addWidget(btn_none)
-        btn_layout.addStretch()
+        btn_all = QPushButton("Chọn tất cả"); btn_all.clicked.connect(lambda: self.toggle_all(True))
+        btn_none = QPushButton("Bỏ chọn tất cả"); btn_none.clicked.connect(lambda: self.toggle_all(False))
+        btn_layout.addWidget(btn_all); btn_layout.addWidget(btn_none); btn_layout.addStretch()
         layout.addLayout(btn_layout)
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
     def toggle_all(self, state):
         for chk in self.checkboxes: chk.setChecked(state)
     def get_selected_data(self):
@@ -83,158 +64,237 @@ class AddSoldierDialog(QDialog):
         super().__init__(parent)
         self.config = config
         labels = self.config.get("labels", {})
-        if is_edit_mode: title = labels.get("edit_trainee_dialog_title", "Chỉnh sửa thông tin")
-        else: title = labels.get("add_trainee_dialog_title", "Thêm mới")
-        self.setWindowTitle(title)
-        self.setMinimumWidth(400)
-        self.setStyleSheet("""
-            QDialog { background-color: #34495e; }
-            QLabel { color: #ecf0f1; font-size: 14px; }
-            QLineEdit { background-color: #2c3e50; border: 1px solid #4a6278; border-radius: 6px; padding: 8px; color: #ecf0f1; font-size: 14px; }
-            QLineEdit:focus { border: 1px solid #1abc9c; }
-            QPushButton { background-color: #1abc9c; color: white; font-size: 14px; font-weight: bold; border: none; padding: 8px 18px; border-radius: 8px; }
-            QPushButton:hover { background-color: #16a085; }
-            QPushButton[objectName="cancelButton"] { background-color: #95a5a6; }
-            QPushButton[objectName="cancelButton"]:hover { background-color: #7f8c8d; }
-        """)
+        title = labels.get("edit_trainee_dialog_title", "Chỉnh sửa thông tin") if is_edit_mode else labels.get("add_trainee_dialog_title", "Thêm mới")
+        self.setWindowTitle(title); self.setMinimumWidth(400)
+        self.setStyleSheet("QDialog { background-color: #34495e; } QLabel { color: #ecf0f1; font-size: 14px; } QLineEdit { background-color: #2c3e50; border: 1px solid #4a6278; border-radius: 6px; padding: 8px; color: #ecf0f1; font-size: 14px; } QLineEdit:focus { border: 1px solid #1abc9c; } QPushButton { background-color: #1abc9c; color: white; font-size: 14px; font-weight: bold; border: none; padding: 8px 18px; border-radius: 8px; } QPushButton:hover { background-color: #16a085; } QPushButton[objectName='cancelButton'] { background-color: #95a5a6; } QPushButton[objectName='cancelButton']:hover { background-color: #7f8c8d; }")
         main_layout = QVBoxLayout(self)
-        title_label = QLabel(self.windowTitle())
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
-        main_layout.addWidget(title_label)
-        form_layout = QFormLayout()
-        form_layout.setRowWrapPolicy(QFormLayout.WrapAllRows)
-        form_layout.setLabelAlignment(Qt.AlignRight)
-        form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-        self.name_input = QLineEdit()
-        self.class_name_input = QLineEdit()
-        self.inputs = [self.name_input, self.class_name_input]
-        name_prompt = labels.get("trainee_name_prompt", "Họ và Tên:")
-        class_prompt = labels.get("trainee_class_prompt", "Đơn vị:")
-        form_layout.addRow(name_prompt, self.name_input)
-        form_layout.addRow(class_prompt, self.class_name_input)
+        title_label = QLabel(self.windowTitle()); title_label.setAlignment(Qt.AlignCenter); title_label.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;"); main_layout.addWidget(title_label)
+        form_layout = QFormLayout(); form_layout.setRowWrapPolicy(QFormLayout.WrapAllRows); form_layout.setLabelAlignment(Qt.AlignRight); form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        self.name_input = QLineEdit(); self.class_name_input = QLineEdit(); self.inputs = [self.name_input, self.class_name_input]
+        form_layout.addRow(labels.get("trainee_name_prompt", "Họ và Tên:"), self.name_input)
+        form_layout.addRow(labels.get("trainee_class_prompt", "Đơn vị:"), self.class_name_input)
         main_layout.addLayout(form_layout)
-        buttons = QDialogButtonBox()
-        ok_button = buttons.addButton("Hoàn tất", QDialogButtonBox.AcceptRole)
-        cancel_button = buttons.addButton("Hủy", QDialogButtonBox.RejectRole)
-        cancel_button.setObjectName("cancelButton")
-        buttons.accepted.connect(self.validate_and_accept)
-        buttons.rejected.connect(self.reject)
-        main_layout.addWidget(buttons)
-        self.default_style = "border: 1px solid #4a6278;"
-        self.error_style = "border: 2px solid #e74c3c;"
-    def get_data(self):
-        return {"name": self.name_input.text().strip(), "class_name": self.class_name_input.text().strip()}
+        buttons = QDialogButtonBox(); ok_button = buttons.addButton("Hoàn tất", QDialogButtonBox.AcceptRole); cancel_button = buttons.addButton("Hủy", QDialogButtonBox.RejectRole); cancel_button.setObjectName("cancelButton")
+        buttons.accepted.connect(self.validate_and_accept); buttons.rejected.connect(self.reject); main_layout.addWidget(buttons)
+        self.default_style = "border: 1px solid #4a6278;"; self.error_style = "border: 2px solid #e74c3c;"
+    def get_data(self): return {"name": self.name_input.text().strip(), "class_name": self.class_name_input.text().strip()}
     def validate_and_accept(self):
         for field in self.inputs: field.setStyleSheet(self.default_style)
-        data = self.get_data()
-        if data["name"]: self.accept()
-        else:
-            self.inputs[0].setStyleSheet(self.error_style)
-            QMessageBox.warning(self, "Thiếu thông tin", "Vui lòng điền Họ và Tên.")
+        if self.name_input.text().strip(): self.accept()
+        else: self.inputs[0].setStyleSheet(self.error_style); QMessageBox.warning(self, "Thiếu thông tin", "Vui lòng điền Họ và Tên.")
 
-# =============================================================================
-# === MANAGE WINDOW - LOGIC CHÍNH ===
-# =============================================================================
 class ManageWindow(QMainWindow):
+    back_to_menu_signal = Signal()
+
     def __init__(self, config: dict):
         super().__init__()
         self.config = config
-        labels = self.config.get("labels", {})
-        app_title = labels.get("app_title", "Quản lý")
-        self.setWindowTitle(app_title)
-
+        self.setWindowTitle(self.config.get("labels", {}).get("app_title", "Quản lý"))
         self.ui = ManageGui(self.config)
         self.setCentralWidget(self.ui)
         self.db = DatabaseManager()
-
+        self.current_detail_data = [] 
+        self.current_session_mode = "SINGLE"
+        self.current_practice_session_id = None
         self.connect_signals()
-        
-        # Mặc định hiển thị trang Menu
         self.show_menu()
 
     def connect_signals(self):
-        # Kết nối các nút ở trang Menu
         self.ui.btn_menu_trainees.clicked.connect(self.show_trainee_list)
-        self.ui.btn_menu_sessions.clicked.connect(self.show_session_management)
-        self.ui.btn_menu_tests.clicked.connect(self.show_test_management)
+        self.ui.btn_menu_sessions.clicked.connect(self.show_session_report)
+        self.ui.btn_back_main.clicked.connect(self.back_to_menu_signal.emit)
         
-        # Kết nối các nút ở trang Danh sách người tập
         self.ui.btn_add_trainee.clicked.connect(self.open_add_soldier_dialog)
         self.ui.btn_import_excel.clicked.connect(self.import_excel_handler)
         self.ui.btn_back_to_menu.clicked.connect(self.show_menu)
         self.ui.search_box.textChanged.connect(self.filter_soldiers)
         
-        # Context Menu cho bảng
         self.ui.soldier_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ui.soldier_table.customContextMenuRequested.connect(self.show_soldier_context_menu)
+        
+        self.ui.btn_back_from_session.clicked.connect(self.show_menu)
+        self.ui.session_table.itemSelectionChanged.connect(self.on_session_selection_changed)
+        self.ui.btn_view_report.clicked.connect(self.show_session_detail)
 
-    # --- ĐIỀU HƯỚNG ---
-    def show_menu(self):
-        self.ui.main_stack.setCurrentWidget(self.ui.page_menu)
+        self.ui.btn_back_to_session_list.clicked.connect(self.show_session_report)
+        self.ui.cmb_sort.currentIndexChanged.connect(self.sort_session_detail)
+        self.ui.detail_table.itemSelectionChanged.connect(self.on_detail_selection_changed)
+        
+        self.ui.btn_view_personal.clicked.connect(self.on_view_personal_process)
 
-    def show_trainee_list(self):
-        self.ui.main_stack.setCurrentWidget(self.ui.page_trainees)
-        self.load_soldiers() # Tải dữ liệu khi vào trang
+    def show_menu(self): self.ui.main_stack.setCurrentWidget(self.ui.page_menu)
+    def show_trainee_list(self): self.ui.main_stack.setCurrentWidget(self.ui.page_trainees); self.load_soldiers()
+    def show_session_report(self): 
+        self.ui.main_stack.setCurrentWidget(self.ui.page_sessions)
+        self.load_session_history()
+        self.ui.btn_view_report.setEnabled(False)
 
-    def show_session_management(self):
-        QMessageBox.information(self, "Thông báo", "Chức năng 'Quản lý Phiên tập' đang được xây dựng (Bước tiếp theo).")
-
-    def show_test_management(self):
-        QMessageBox.information(self, "Thông báo", "Chức năng 'Quản lý Kiểm tra' đang được xây dựng (Bước tiếp theo).")
-
-    # --- LOGIC QUẢN LÝ NGƯỜI TẬP ---
-    def load_soldiers(self):
-        logging.info("Bắt đầu tải danh sách người học...")
-        self.ui.search_box.clear()
-        self.ui.soldier_table.setRowCount(0)
+    def load_session_history(self):
+        logging.info("Tải danh sách lịch sử phiên tập...")
+        self.ui.session_table.setRowCount(0)
         try:
-            soldiers = self.db.get_all_soldiers()
-            total = len(soldiers) if soldiers else 0
-            self.ui.total_count_label.setText(f"Tổng số: {total}")
-            
-            if not soldiers: return
+            sessions = self.db.get_finished_practice_sessions()
+            if not sessions: return
+            self.ui.session_table.setRowCount(len(sessions))
+            for row, s in enumerate(sessions):
+                date_str = s.get('created_at', '')
+                try: dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S"); date_display = dt.strftime("%d/%m/%Y %H:%M")
+                except: date_display = date_str
+                mode_raw = s.get('mode', 'SINGLE'); mode_map = {'SINGLE': 'Từng viên', 'BURST_3': 'Loạt 3'}
+                mode_display = mode_map.get(mode_raw, mode_raw)
+                finished = s.get('finished_soldiers', 0); total = s.get('total_soldiers', 0)
+                prog_display = f"{finished} / {total} người"
+                d_item = QTableWidgetItem(date_display); d_item.setTextAlignment(Qt.AlignCenter); d_item.setData(Qt.UserRole, s)
+                n_item = QTableWidgetItem(s['name'])
+                m_item = QTableWidgetItem(mode_display); m_item.setTextAlignment(Qt.AlignCenter)
+                p_item = QTableWidgetItem(prog_display); p_item.setTextAlignment(Qt.AlignCenter)
+                if total > 0 and finished >= total: p_item.setForeground(QColor("#2ecc71")); p_item.setFont(QFont("Segoe UI", 9, QFont.Bold))
+                self.ui.session_table.setItem(row, 0, d_item); self.ui.session_table.setItem(row, 1, n_item)
+                self.ui.session_table.setItem(row, 2, m_item); self.ui.session_table.setItem(row, 3, p_item)
+        except Exception as e: logging.error(f"Lỗi tải lịch sử phiên: {e}")
 
-            self.ui.soldier_table.setRowCount(total)
-            for row, soldier_data in enumerate(soldiers):
-                id_item = QTableWidgetItem(str(soldier_data['id']))
-                id_item.setTextAlignment(Qt.AlignCenter)
-                id_item.setData(Qt.UserRole, soldier_data['id']) # Lưu ID vào cột 0 luôn cho tiện
-                
-                name_item = QTableWidgetItem(soldier_data['name'])
-                
-                class_name_item = QTableWidgetItem(soldier_data.get('class_name', ''))
-                class_name_item.setTextAlignment(Qt.AlignCenter)
-                
-                self.ui.soldier_table.setItem(row, 0, id_item)
-                self.ui.soldier_table.setItem(row, 1, name_item)
-                self.ui.soldier_table.setItem(row, 2, class_name_item)
-            
-            logging.info(f"Đã tải thành công {total} người học.")
-        except Exception as e:
-            logging.error(f"Lỗi khi tải danh sách người học: {e}", exc_info=True)
+    def on_session_selection_changed(self):
+        self.ui.btn_view_report.setEnabled(len(self.ui.session_table.selectedItems()) > 0)
 
+    def show_session_detail(self):
+        selected_rows = self.ui.session_table.selectedItems()
+        if not selected_rows: return
+        row = selected_rows[0].row()
+        session_data = self.ui.session_table.item(row, 0).data(Qt.UserRole)
+        self.current_session_mode = session_data.get('mode', 'SINGLE')
+        self.current_practice_session_id = session_data['id']
+        self.ui.lbl_detail_title.setText(f"CHI TIẾT: {session_data['name'].upper()}")
+        self.ui.main_stack.setCurrentWidget(self.ui.page_session_detail)
+        self.load_session_detail_data(session_data['id'])
+
+    def load_session_detail_data(self, ps_id):
+        self.current_detail_data = self.db.get_session_report_data(ps_id)
+        self.ui.cmb_sort.blockSignals(True); self.ui.cmb_sort.setCurrentIndex(0); self.ui.cmb_sort.blockSignals(False)
+        self.sort_session_detail()
+
+    def sort_session_detail(self):
+        criteria = self.ui.cmb_sort.currentData()
+        if not self.current_detail_data: self.render_detail_table(); return
+        if criteria == "NAME_ASC": self.current_detail_data.sort(key=lambda x: x['name'])
+        elif criteria == "SCORE_DESC": self.current_detail_data.sort(key=lambda x: x['total_score'], reverse=True)
+        elif criteria == "SCORE_ASC": self.current_detail_data.sort(key=lambda x: x['total_score'])
+        self.render_detail_table()
+
+    def render_detail_table(self):
+        self.ui.detail_table.setRowCount(0)
+        self.ui.btn_view_personal.setEnabled(False)
+        header = self.ui.detail_table.horizontalHeader()
+        
+        # Thêm cột STT/Xếp hạng
+        if self.current_session_mode == "BURST_3":
+            self.ui.detail_table.setColumnCount(5)
+            self.ui.detail_table.setHorizontalHeaderLabels(["STT", "Họ và Tên", "Đơn vị", "Tổng điểm", "Xếp loại"])
+            header.setSectionResizeMode(0, QHeaderView.ResizeToContents) # STT
+            header.setSectionResizeMode(1, QHeaderView.Stretch)
+            header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        else:
+            self.ui.detail_table.setColumnCount(6)
+            self.ui.detail_table.setHorizontalHeaderLabels(["STT", "Họ và Tên", "Đơn vị", "Số phát", "Tổng điểm", "Trung bình"])
+            header.setSectionResizeMode(0, QHeaderView.ResizeToContents) # STT
+            header.setSectionResizeMode(1, QHeaderView.Stretch)
+            header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        
+        if not self.current_detail_data: return
+        
+        self.ui.detail_table.setRowCount(len(self.current_detail_data))
+        for row, p in enumerate(self.current_detail_data):
+            score = p.get('total_score', 0)
+            
+            # --- Cột STT ---
+            stt_item = QTableWidgetItem(str(row + 1))
+            stt_item.setTextAlignment(Qt.AlignCenter)
+            
+            # --- Tên & ID ---
+            name_item = QTableWidgetItem(p['name'])
+            name_item.setData(Qt.UserRole, p) # Lưu toàn bộ info người
+            
+            # --- Đơn vị ---
+            class_item = QTableWidgetItem(p.get('class_name', ''))
+            class_item.setTextAlignment(Qt.AlignCenter)
+            
+            # --- Điểm ---
+            score_item = QTableWidgetItem(str(score))
+            score_item.setTextAlignment(Qt.AlignCenter)
+            score_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
+            if score > 0: score_item.setForeground(QColor("#f1c40f"))
+
+            # Render
+            self.ui.detail_table.setItem(row, 0, stt_item)
+            self.ui.detail_table.setItem(row, 1, name_item)
+            self.ui.detail_table.setItem(row, 2, class_item)
+
+            if self.current_session_mode == "BURST_3":
+                rank = "Không đạt"; color = QColor("#95a5a6")
+                if 15 <= score <= 18: rank = "Đạt"; color = QColor("#f39c12")
+                elif 19 <= score <= 23: rank = "Khá"; color = QColor("#3498db")
+                elif score > 23: rank = "Giỏi"; color = QColor("#2ecc71")
+                
+                rank_item = QTableWidgetItem(rank)
+                rank_item.setTextAlignment(Qt.AlignCenter)
+                rank_item.setForeground(color)
+                rank_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
+                
+                self.ui.detail_table.setItem(row, 3, score_item)
+                self.ui.detail_table.setItem(row, 4, rank_item)
+            else:
+                count = p.get('shot_count', 0)
+                count_item = QTableWidgetItem(str(count)); count_item.setTextAlignment(Qt.AlignCenter)
+                avg = round(score / count, 1) if count > 0 else 0
+                avg_item = QTableWidgetItem(str(avg)); avg_item.setTextAlignment(Qt.AlignCenter)
+                avg_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
+                
+                self.ui.detail_table.setItem(row, 3, count_item)
+                self.ui.detail_table.setItem(row, 4, score_item)
+                self.ui.detail_table.setItem(row, 5, avg_item)
+
+    def on_detail_selection_changed(self):
+        self.ui.btn_view_personal.setEnabled(len(self.ui.detail_table.selectedItems()) > 0)
+
+    def on_view_personal_process(self):
+        selected_rows = self.ui.detail_table.selectedItems()
+        if not selected_rows: return
+        row = selected_rows[0].row()
+        # Dữ liệu người nằm ở cột Tên (index 1)
+        soldier_info = self.ui.detail_table.item(row, 1).data(Qt.UserRole)
+        
+        # Lấy chi tiết shots
+        shots = self.db.get_soldier_session_shots(self.current_practice_session_id, soldier_info['soldier_id'])
+        
+        # Hiển thị Dialog
+        dlg = PersonalProcessDialog(soldier_info, shots, self)
+        dlg.exec()
+
+    # --- LOGIC CŨ GIỮ NGUYÊN ---
+    def load_soldiers(self):
+        self.ui.search_box.clear(); self.ui.soldier_table.setRowCount(0)
+        soldiers = self.db.get_all_soldiers()
+        self.ui.total_count_label.setText(f"Tổng số: {len(soldiers)}")
+        if not soldiers: return
+        self.ui.soldier_table.setRowCount(len(soldiers))
+        for row, s in enumerate(soldiers):
+            id_item = QTableWidgetItem(str(s['id'])); id_item.setTextAlignment(Qt.AlignCenter); id_item.setData(Qt.UserRole, s['id'])
+            self.ui.soldier_table.setItem(row, 0, id_item)
+            self.ui.soldier_table.setItem(row, 1, QTableWidgetItem(s['name']))
+            c_item = QTableWidgetItem(s.get('class_name', '')); c_item.setTextAlignment(Qt.AlignCenter)
+            self.ui.soldier_table.setItem(row, 2, c_item)
     def filter_soldiers(self):
-        search_text = self.ui.search_box.text().lower()
-        for row in range(self.ui.soldier_table.rowCount()):
-            name_item = self.ui.soldier_table.item(row, 1)
-            class_item = self.ui.soldier_table.item(row, 2)
-            name_matches = search_text in name_item.text().lower() if name_item else False
-            class_matches = search_text in class_item.text().lower() if class_item else False
-            self.ui.soldier_table.setRowHidden(row, not (name_matches or class_matches))
-
+        txt = self.ui.search_box.text().lower()
+        for r in range(self.ui.soldier_table.rowCount()):
+            match = txt in self.ui.soldier_table.item(r, 1).text().lower() or txt in self.ui.soldier_table.item(r, 2).text().lower()
+            self.ui.soldier_table.setRowHidden(r, not match)
     def open_add_soldier_dialog(self):
-        dialog = AddSoldierDialog(self.config, parent=self)
-        if dialog.exec() == QDialog.Accepted:
-            data = dialog.get_data()
-            try:
-                self.db.add_soldier(**data)
-                QMessageBox.information(self, "Thành công", f"Đã thêm '{data['name']}'.")
-                self.load_soldiers()
-            except Exception as e:
-                logging.error(f"Lỗi khi thêm người học mới: {e}")
-                QMessageBox.critical(self, "Lỗi", f"Không thể thêm người này.\nLỗi: {e}")
-
+        d = AddSoldierDialog(self.config, parent=self)
+        if d.exec() == QDialog.Accepted: self.db.add_soldier(**d.get_data()); self.load_soldiers()
     def import_excel_handler(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Chọn file Excel", "", "Excel Files (*.xlsx *.xls *.csv)")
         if not file_path: return
@@ -306,7 +366,6 @@ class ManageWindow(QMainWindow):
         menu = QMenu(self)
         if len(selected_rows) == 1:
             row = list(selected_rows)[0]
-            # ID ở cột 0
             soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
             edit_action = menu.addAction("Sửa thông tin")
             edit_action.triggered.connect(lambda: self.edit_soldier(row))
@@ -324,7 +383,6 @@ class ManageWindow(QMainWindow):
 
     def edit_soldier(self, row):
         soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
-        # Cột 1 là Tên, Cột 2 là Đơn vị
         current_data = {
             "name": self.ui.soldier_table.item(row, 1).text(),
             "class_name": self.ui.soldier_table.item(row, 2).text()

@@ -292,10 +292,17 @@ class SessionManager(QObject):
         if self.shooting_mode == "BURST_3":
             if len(self.testing_buffers[session_idx]) + self.pending_shots[session_idx] >= 3: return False
         return True
+    
+    # --- LOGIC MỚI: THEO DÕI HÀNG ĐỢI XỬ LÝ (ÁP DỤNG CẢ SINGLE & BURST) ---
     def register_pending_shot(self, session_idx):
-        if self.shooting_mode == "BURST_3": self.pending_shots[session_idx] += 1
+        # Tăng vô điều kiện để biết đang có bao nhiêu shot cần xử lý
+        self.pending_shots[session_idx] += 1
+        
     def rollback_pending_shot(self, session_idx):
-        if self.shooting_mode == "BURST_3": self.pending_shots[session_idx] = max(0, self.pending_shots[session_idx] - 1)
+        # Giảm vô điều kiện khi xử lý xong hoặc lỗi
+        self.pending_shots[session_idx] = max(0, self.pending_shots[session_idx] - 1)
+    # ---------------------------------------------------------------------
+
     def process_shot_result(self, res, pix_frame):
         score = res.get('score'); image_path = res.get('image_path')
         session_idx = 0
@@ -303,7 +310,9 @@ class SessionManager(QObject):
             name = os.path.basename(image_path); 
             if name.startswith('s'): session_idx = int(name.split('_')[0][1:])
         except: pass
+        
         self.rollback_pending_shot(session_idx)
+        
         if self.is_managed_session:
             current_soldier = self.get_soldier_at_session_idx(session_idx)
             if current_soldier:

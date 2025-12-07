@@ -377,8 +377,9 @@ class ShootingController(QObject):
         except Exception as e:
             logger.error(f"Lỗi chụp ảnh: {e}")
             self.sess_manager.rollback_pending_shot(sess_idx)
-            # Nếu lỗi, mở lại nút
-            if self.sess_manager.is_managed_session: self._set_trainee_btn_state(sess_idx, True)
+            # --- FIX: Nếu lỗi, chỉ mở nút nếu hàng đợi rỗng ---
+            if self.sess_manager.is_managed_session and self.sess_manager.pending_shots[sess_idx] == 0:
+                self._set_trainee_btn_state(sess_idx, True)
 
         if self.sess_manager.current_mode == 1:
             next_cam = self.sess_manager.determine_next_camera_after_shot(target_cam)
@@ -389,6 +390,10 @@ class ShootingController(QObject):
     def on_processing_finished(self, res):
         pix = self._convert_cv_to_pixmap(res.get('result_frame'))
         score = res.get('score', 0)
+        
+        # --- FIX: Cập nhật logic trước để giảm hàng đợi (rollback) ---
+        self.sess_manager.process_shot_result(res, pix)
+        
         sess_idx = 0
         try:
             name = os.path.basename(res.get('image_path', ''))
@@ -398,13 +403,17 @@ class ShootingController(QObject):
         # --- MỞ KHÓA NÚT NẾU LÀ SINGLE MODE (Burst chờ popup) ---
         if self.sess_manager.is_managed_session:
             is_bursting = self.sess_manager.is_burst_in_progress(sess_idx)
-            if not is_bursting and self.sess_manager.shooting_mode == "SINGLE":
-                self._set_trainee_btn_state(sess_idx, True)
+            # Lúc này pending_shots đã được trừ đi bởi process_shot_result ở trên
+            has_pending = self.sess_manager.pending_shots[sess_idx] > 0
+            
+            # Chỉ mở nút khi: Không phải Burst VÀ Hàng đợi đã xử lý hết
+            if not is_bursting and not has_pending:
+                if self.sess_manager.shooting_mode == "SINGLE":
+                    self._set_trainee_btn_state(sess_idx, True)
 
         self._update_result_image(sess_idx, pix)
         if score > 0: self.audio_manager.play_score(score)
         else: self.audio_manager.play_sound('miss')
-        self.sess_manager.process_shot_result(res, pix)
 
     @Slot(int, object)
     def update_camera_feed(self, cam_id, frame):

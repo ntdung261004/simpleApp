@@ -2,7 +2,7 @@
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QTableWidget, QFrame, QStackedWidget, QApplication, QLineEdit,
-    QHeaderView, QAbstractItemView
+    QHeaderView, QAbstractItemView, QComboBox
 )
 from PySide6.QtGui import QFont, QColor
 from PySide6.QtCore import Qt
@@ -22,7 +22,7 @@ class ManageGui(QWidget):
             #ManageWidget {{
                 background-color: #2c3e50; color: #ecf0f1; font-family: 'Segoe UI';
             }}
-            /* Style cho các nút Menu chính (Bao gồm cả nút Về màn hình chính) */
+            /* Style cho các nút Menu chính */
             QPushButton.menu-btn {{
                 background-color: #34495e; color: #ecf0f1;
                 font-size: {int(18 * self.scale_factor)}px; font-weight: bold;
@@ -33,18 +33,18 @@ class ManageGui(QWidget):
             QPushButton.menu-btn:hover {{
                 background-color: #1abc9c; border-color: #16a085; color: white;
             }}
-            /* Riêng nút thoát có thể có hiệu ứng hover màu đỏ nhẹ nếu muốn, hoặc giữ nguyên xanh */
             QPushButton.menu-btn#exitBtn:hover {{
                 background-color: #c0392b; border-color: #e74c3c;
             }}
             
-            /* Style chung cho nút thường (ở các trang con) */
+            /* Style chung cho nút thường */
             QPushButton {{
                 background-color: #1abc9c; color: white; font-size: {int(14 * self.scale_factor)}px; font-weight: bold;
                 border: none; padding: {int(10 * self.scale_factor)}px {int(20 * self.scale_factor)}px;
                 border-radius: 6px;
             }}
             QPushButton:hover {{ background-color: #16a085; }}
+            QPushButton:disabled {{ background-color: #95a5a6; color: #bdc3c7; }}
             
             QPushButton#importBtn {{ background-color: #3498db; }}
             QPushButton#importBtn:hover {{ background-color: #2980b9; }}
@@ -75,6 +75,12 @@ class ManageGui(QWidget):
                 color: #ecf0f1; font-size: {int(14 * self.scale_factor)}px;
             }}
             QLineEdit#searchBox:focus {{ border: 1px solid #1abc9c; }}
+
+            /* Combo box */
+            QComboBox {{
+                background-color: #34495e; color: white; border: 1px solid #4a6278;
+                padding: 5px; border-radius: 5px; min-width: 150px;
+            }}
         """)
 
         self.setupUi()
@@ -95,14 +101,21 @@ class ManageGui(QWidget):
         self.page_trainees = QWidget()
         self._setup_trainee_list_page()
         self.main_stack.addWidget(self.page_trainees)
+        
+        # --- TRANG 2: BÁO CÁO PHIÊN TẬP (LIST) ---
+        self.page_sessions = QWidget()
+        self._setup_session_list_page()
+        self.main_stack.addWidget(self.page_sessions)
+
+        # --- TRANG 3: CHI TIẾT PHIÊN TẬP ---
+        self.page_session_detail = QWidget()
+        self._setup_session_detail_page()
+        self.main_stack.addWidget(self.page_session_detail)
 
     def _setup_menu_page(self):
         layout = QVBoxLayout(self.page_menu)
-        
-        # 1. Đẩy tiêu đề lên cao hơn bằng cách thêm spacing ở trên ít hơn ở dưới
         layout.addSpacing(int(60 * self.scale_factor)) 
 
-        # Tiêu đề
         lbl_title = QLabel("QUẢN LÝ & THỐNG KÊ")
         lbl_title.setStyleSheet(f"font-size: {int(32 * self.scale_factor)}px; font-weight: bold; color: #ecf0f1;")
         lbl_title.setAlignment(Qt.AlignCenter)
@@ -110,46 +123,31 @@ class ManageGui(QWidget):
         
         layout.addSpacing(int(40 * self.scale_factor))
 
-        # Container cho các nút menu
         btn_container = QFrame()
-        btn_container.setFixedWidth(int(550 * self.scale_factor)) # Tăng chiều rộng một chút cho đẹp
-        
-        # Canh giữa container
+        btn_container.setFixedWidth(int(550 * self.scale_factor))
         layout.addWidget(btn_container, 0, Qt.AlignCenter)
         
         btn_layout = QVBoxLayout(btn_container)
         btn_layout.setSpacing(int(20 * self.scale_factor))
 
-        # Nút 1
         self.btn_menu_trainees = QPushButton("1. DANH SÁCH NGƯỜI TẬP")
         self.btn_menu_trainees.setProperty("class", "menu-btn")
         self.btn_menu_trainees.setCursor(Qt.PointingHandCursor)
         
-        # Nút 2
-        self.btn_menu_sessions = QPushButton("2. QUẢN LÝ PHIÊN TẬP")
+        self.btn_menu_sessions = QPushButton("2. BÁO CÁO PHIÊN TẬP")
         self.btn_menu_sessions.setProperty("class", "menu-btn")
         self.btn_menu_sessions.setCursor(Qt.PointingHandCursor)
-        
-        # Nút 3
-        self.btn_menu_tests = QPushButton("3. QUẢN LÝ KIỂM TRA")
-        self.btn_menu_tests.setProperty("class", "menu-btn")
-        self.btn_menu_tests.setCursor(Qt.PointingHandCursor)
 
-        # Nút 4: Về màn hình chính (Được thiết kế giống hệt các nút trên)
         self.btn_back_main = QPushButton("◀  VỀ MÀN HÌNH CHÍNH")
-        self.btn_back_main.setObjectName("exitBtn") # Đặt ID để có thể style riêng (ví dụ hover đỏ)
+        self.btn_back_main.setObjectName("exitBtn") 
         self.btn_back_main.setProperty("class", "menu-btn")
         self.btn_back_main.setCursor(Qt.PointingHandCursor)
 
         btn_layout.addWidget(self.btn_menu_trainees)
         btn_layout.addWidget(self.btn_menu_sessions)
-        btn_layout.addWidget(self.btn_menu_tests)
         
-        # Thêm một chút khoảng cách trước nút thoát cho thoáng
         btn_layout.addSpacing(10)
         btn_layout.addWidget(self.btn_back_main)
-        
-        # Đẩy toàn bộ nội dung lên phía trên (Khoảng trống phía dưới sẽ chiếm hết phần còn lại)
         layout.addStretch()
 
     def _setup_trainee_list_page(self):
@@ -158,7 +156,6 @@ class ManageGui(QWidget):
         layout.setContentsMargins(margin, margin, margin, margin)
         layout.setSpacing(int(15 * self.scale_factor))
 
-        # Header
         header_layout = QHBoxLayout()
         lbl_title = QLabel("DANH SÁCH NGƯỜI TẬP")
         lbl_title.setStyleSheet(f"font-size: {int(20 * self.scale_factor)}px; font-weight: bold; color: #1abc9c;")
@@ -178,7 +175,6 @@ class ManageGui(QWidget):
         header_layout.addWidget(self.total_count_label)
         layout.addLayout(header_layout)
 
-        # Table
         self.soldier_table = QTableWidget(0, 3)
         self.soldier_table.setHorizontalHeaderLabels(["ID", "Họ và Tên", "Đơn vị"])
         self.soldier_table.verticalHeader().setVisible(False)
@@ -192,32 +188,118 @@ class ManageGui(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.Stretch)
-        
         layout.addWidget(self.soldier_table)
 
-        # Footer
         footer_layout = QHBoxLayout()
-        
         self.btn_add_trainee = QPushButton("Thêm Mới")
         self.btn_add_trainee.setCursor(Qt.PointingHandCursor)
-        self.btn_add_trainee.setMinimumWidth(130)
-        self.btn_add_trainee.setMinimumHeight(40)
+        self.btn_add_trainee.setMinimumWidth(130); self.btn_add_trainee.setMinimumHeight(40)
         
         self.btn_import_excel = QPushButton("Nhập Excel")
         self.btn_import_excel.setObjectName("importBtn")
         self.btn_import_excel.setCursor(Qt.PointingHandCursor)
-        self.btn_import_excel.setMinimumWidth(130)
-        self.btn_import_excel.setMinimumHeight(40)
+        self.btn_import_excel.setMinimumWidth(130); self.btn_import_excel.setMinimumHeight(40)
         
         self.btn_back_to_menu = QPushButton("Quay Lại Menu")
         self.btn_back_to_menu.setObjectName("danger")
         self.btn_back_to_menu.setCursor(Qt.PointingHandCursor)
-        self.btn_back_to_menu.setMinimumWidth(130)
-        self.btn_back_to_menu.setMinimumHeight(40)
+        self.btn_back_to_menu.setMinimumWidth(130); self.btn_back_to_menu.setMinimumHeight(40)
 
         footer_layout.addWidget(self.btn_add_trainee)
         footer_layout.addWidget(self.btn_import_excel)
         footer_layout.addStretch()
         footer_layout.addWidget(self.btn_back_to_menu)
+        layout.addLayout(footer_layout)
+
+    def _setup_session_list_page(self):
+        layout = QVBoxLayout(self.page_sessions)
+        margin = int(30 * self.scale_factor)
+        layout.setContentsMargins(margin, margin, margin, margin)
+        layout.setSpacing(int(15 * self.scale_factor))
+
+        header_layout = QHBoxLayout()
+        lbl_title = QLabel("LỊCH SỬ CÁC PHIÊN TẬP")
+        lbl_title.setStyleSheet(f"font-size: {int(20 * self.scale_factor)}px; font-weight: bold; color: #1abc9c;")
+        header_layout.addWidget(lbl_title)
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+
+        self.session_table = QTableWidget(0, 4)
+        self.session_table.setHorizontalHeaderLabels(["Ngày tạo", "Tên phiên", "Hình thức", "Tiến độ"])
+        self.session_table.verticalHeader().setVisible(False)
+        self.session_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.session_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.session_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.session_table.setAlternatingRowColors(True)
+        self.session_table.setStyleSheet("alternate-background-color: #3b5266;")
         
+        header = self.session_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        layout.addWidget(self.session_table)
+
+        footer_layout = QHBoxLayout()
+        self.btn_view_report = QPushButton("Xem báo cáo")
+        self.btn_view_report.setStyleSheet("background-color: #3498db; color: white;")
+        self.btn_view_report.setCursor(Qt.PointingHandCursor)
+        self.btn_view_report.setMinimumWidth(130); self.btn_view_report.setMinimumHeight(40)
+        self.btn_view_report.setEnabled(False) 
+
+        self.btn_back_from_session = QPushButton("Quay Lại Menu")
+        self.btn_back_from_session.setObjectName("danger")
+        self.btn_back_from_session.setCursor(Qt.PointingHandCursor)
+        self.btn_back_from_session.setMinimumWidth(130); self.btn_back_from_session.setMinimumHeight(40)
+        
+        footer_layout.addStretch()
+        footer_layout.addWidget(self.btn_view_report)
+        footer_layout.addWidget(self.btn_back_from_session)
+        layout.addLayout(footer_layout)
+
+    def _setup_session_detail_page(self):
+        layout = QVBoxLayout(self.page_session_detail)
+        margin = int(30 * self.scale_factor)
+        layout.setContentsMargins(margin, margin, margin, margin)
+        layout.setSpacing(int(15 * self.scale_factor))
+
+        header_layout = QHBoxLayout()
+        self.lbl_detail_title = QLabel("CHI TIẾT PHIÊN TẬP")
+        self.lbl_detail_title.setStyleSheet(f"font-size: {int(20 * self.scale_factor)}px; font-weight: bold; color: #f39c12;")
+        
+        self.cmb_sort = QComboBox()
+        self.cmb_sort.addItem("Sắp xếp: Tên A-Z", "NAME_ASC")
+        self.cmb_sort.addItem("Sắp xếp: Điểm cao -> thấp", "SCORE_DESC")
+        self.cmb_sort.addItem("Sắp xếp: Điểm thấp -> cao", "SCORE_ASC")
+        
+        header_layout.addWidget(self.lbl_detail_title)
+        header_layout.addStretch()
+        header_layout.addWidget(self.cmb_sort)
+        layout.addLayout(header_layout)
+
+        # Bảng chi tiết: Ban đầu 0, 6 (Thêm cột STT)
+        self.detail_table = QTableWidget(0, 6)
+        # Header sẽ được set lại trong logic
+        self.detail_table.verticalHeader().setVisible(False)
+        self.detail_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.detail_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.detail_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.detail_table.setAlternatingRowColors(True)
+        self.detail_table.setStyleSheet("alternate-background-color: #3b5266;")
+        
+        layout.addWidget(self.detail_table)
+
+        footer_layout = QHBoxLayout()
+        self.btn_view_personal = QPushButton("Xem quá trình cá nhân")
+        self.btn_view_personal.setStyleSheet("background-color: #27ae60; color: white;")
+        self.btn_view_personal.setMinimumWidth(180); self.btn_view_personal.setMinimumHeight(40)
+        self.btn_view_personal.setEnabled(False)
+
+        self.btn_back_to_session_list = QPushButton("Quay lại")
+        self.btn_back_to_session_list.setObjectName("danger")
+        self.btn_back_to_session_list.setMinimumWidth(130); self.btn_back_to_session_list.setMinimumHeight(40)
+
+        footer_layout.addStretch()
+        footer_layout.addWidget(self.btn_view_personal)
+        footer_layout.addWidget(self.btn_back_to_session_list)
         layout.addLayout(footer_layout)

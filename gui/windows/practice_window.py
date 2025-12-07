@@ -153,7 +153,7 @@ class PracticeWindow(QMainWindow):
                 if ps_id: self.db_manager.delete_practice_session(ps_id)
                 self.on_return_to_dashboard()
 
-    # --- LOGIC KẾT THÚC PHIÊN (FINISH) ---
+    # --- LOGIC KẾT THÚC PHIÊN (FINISH) ĐÃ SỬA ---
     def on_finish_session_clicked(self):
         if not self.sess_manager.is_managed_session:
             self.on_return_to_dashboard()
@@ -190,8 +190,16 @@ class PracticeWindow(QMainWindow):
             msg += "\n\nBạn có chắc chắn muốn kết thúc phiên không?"
             reply = QMessageBox.warning(self, "Chưa hoàn thành", msg, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply == QMessageBox.No: return
+            
+        # --- CẬP NHẬT TRẠNG THÁI IS_FINISHED VÀO DB ---
+        ps_id = self.sess_manager.managed_session_data.get('ps_id')
+        if ps_id:
+            if self.db_manager.mark_practice_session_finished(ps_id):
+                QMessageBox.information(self, "Hoàn tất", "Phiên tập đã kết thúc.\nDữ liệu đã được lưu vào Báo cáo.")
+            else:
+                QMessageBox.critical(self, "Lỗi", "Không thể cập nhật trạng thái kết thúc vào CSDL.")
+        # -----------------------------------------------
 
-        QMessageBox.information(self, "Hoàn tất", "Phiên tập đã kết thúc.\nVui lòng xem lại thống kê ở chức năng Quản lý.")
         self.on_return_to_dashboard()
 
     # --- LOGIC LƯU PHIÊN (SAVE) ---

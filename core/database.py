@@ -116,31 +116,92 @@ class DatabaseManager:
         except: return None
 
     def get_unfinished_practice_sessions(self) -> list:
-        """Lấy danh sách phiên với thống kê chính xác số người đã bắn."""
         try:
             self.cursor.execute("SELECT * FROM practice_sessions WHERE is_finished = 0 ORDER BY created_at DESC")
             sessions = [dict(zip([c[0] for c in self.cursor.description], row)) for row in self.cursor.fetchall()]
-            
             for s in sessions:
                 ps_id = s['id']
-                # Tổng số người tham gia
                 self.cursor.execute("SELECT COUNT(DISTINCT soldier_id) FROM sessions WHERE practice_session_id = ?", (ps_id,))
                 s['total_soldiers'] = self.cursor.fetchone()[0]
-                
-                # --- FIX: Đếm số người ĐÃ TẬP (Có ít nhất 1 phát bắn) ---
-                # Logic: Tìm các session thuộc practice_session này MÀ ID của nó có xuất hiện trong bảng shots
-                sql_trained = """
-                    SELECT COUNT(DISTINCT s.soldier_id)
-                    FROM sessions s
-                    JOIN shots sh ON s.id = sh.session_id
-                    WHERE s.practice_session_id = ?
-                """
+                sql_trained = "SELECT COUNT(DISTINCT s.soldier_id) FROM sessions s JOIN shots sh ON s.id = sh.session_id WHERE s.practice_session_id = ?"
                 self.cursor.execute(sql_trained, (ps_id,))
-                s['finished_soldiers'] = self.cursor.fetchone()[0] # Dùng trường này để hiển thị "Đã tập"
-                
+                s['finished_soldiers'] = self.cursor.fetchone()[0]
             return sessions
         except sqlite3.Error as e:
             logger.error(f"Lỗi lấy danh sách phiên: {e}"); return []
+
+    def get_finished_practice_sessions(self) -> list:
+        """Lấy danh sách phiên ĐÃ kết thúc (Báo cáo)."""
+        try:
+            self.cursor.execute("SELECT * FROM practice_sessions WHERE is_finished = 1 ORDER BY created_at DESC")
+            sessions = [dict(zip([c[0] for c in self.cursor.description], row)) for row in self.cursor.fetchall()]
+            for s in sessions:
+                ps_id = s['id']
+                self.cursor.execute("SELECT COUNT(DISTINCT soldier_id) FROM sessions WHERE practice_session_id = ?", (ps_id,))
+                s['total_soldiers'] = self.cursor.fetchone()[0]
+                sql_trained = "SELECT COUNT(DISTINCT s.soldier_id) FROM sessions s JOIN shots sh ON s.id = sh.session_id WHERE s.practice_session_id = ?"
+                self.cursor.execute(sql_trained, (ps_id,))
+                s['finished_soldiers'] = self.cursor.fetchone()[0]
+            return sessions
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi lấy lịch sử phiên: {e}"); return []
+            
+    def get_session_report_data(self, practice_session_id: int) -> list:
+        try:
+            query = """
+                SELECT sol.id as soldier_id, sol.name, sol.class_name, MAX(s.id) as session_id
+                FROM sessions s
+                JOIN soldiers sol ON s.soldier_id = sol.id
+                WHERE s.practice_session_id = ?
+                GROUP BY sol.id
+            """
+            self.cursor.execute(query, (practice_session_id,))
+            participants = [dict(zip([c[0] for c in self.cursor.description], row)) for row in self.cursor.fetchall()]
+            for p in participants:
+                sid = p['session_id']
+                self.cursor.execute("SELECT COUNT(*), SUM(score) FROM shots WHERE session_id = ?", (sid,))
+                res = self.cursor.fetchone()
+                p['shot_count'] = res[0] if res[0] else 0
+                p['total_score'] = res[1] if res[1] else 0
+            return participants
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi lấy chi tiết báo cáo: {e}"); return []
+
+    # --- MỚI: LẤY CHI TIẾT CÁC PHÁT BẮN CỦA 1 NGƯỜI TRONG 1 PHIÊN ---
+    def get_soldier_session_shots(self, practice_session_id: int, soldier_id: int) -> list:
+        try:
+            # Tìm session_id của người đó trong phiên tập đó (lấy phiên mới nhất nếu có nhiều lượt)
+            query_session = """
+                SELECT id FROM sessions 
+                WHERE practice_session_id = ? AND soldier_id = ?
+                ORDER BY id DESC LIMIT 1
+            """
+            self.cursor.execute(query_session, (practice_session_id, soldier_id))
+            row = self.cursor.fetchone()
+            if not row: return []
+            session_id = row[0]
+
+            # Lấy danh sách các phát bắn
+            query_shots = """
+                SELECT * FROM shots 
+                WHERE session_id = ?
+                ORDER BY shot_number ASC
+            """
+            self.cursor.execute(query_shots, (session_id,))
+            shots = [dict(zip([c[0] for c in self.cursor.description], r)) for r in self.cursor.fetchall()]
+            return shots
+        except Exception as e:
+            logger.error(f"Lỗi lấy chi tiết shots: {e}"); return []
+    # ---------------------------------------------------------------
+
+    def mark_practice_session_finished(self, ps_id: int):
+        try:
+            self.cursor.execute("UPDATE practice_sessions SET is_finished = 1 WHERE id = ?", (ps_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Lỗi mark practice session finished: {e}")
+            return False
 
     def delete_practice_session(self, ps_id: int):
         try:
@@ -169,9 +230,7 @@ class DatabaseManager:
         except: pass
 
     def get_session_details_for_resume(self, practice_session_id: int) -> list:
-        """Lấy danh sách người tập, tự động loại bỏ trùng lặp (lấy phiên mới nhất)."""
         try:
-            # --- FIX: GROUP BY soldier_id và lấy MAX(s.id) để tránh trùng lặp ---
             query = """
                 SELECT MAX(s.id) as db_session_id, sol.id as soldier_id, sol.name, sol.class_name, s.is_finished 
                 FROM sessions s
@@ -182,14 +241,11 @@ class DatabaseManager:
             """
             self.cursor.execute(query, (practice_session_id,))
             rows = [dict(zip([c[0] for c in self.cursor.description], row)) for row in self.cursor.fetchall()]
-            
-            # Tính lại điểm
             for row in rows:
                 self.cursor.execute("SELECT count(*), sum(score) FROM shots WHERE session_id = ?", (row['db_session_id'],))
                 res = self.cursor.fetchone()
                 row['shot_count'] = res[0] if res[0] else 0
                 row['total_score'] = res[1] if res[1] else 0
-                
             return rows
         except sqlite3.Error as e:
             logger.error(f"Lỗi lấy chi tiết resume: {e}"); return []

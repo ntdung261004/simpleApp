@@ -87,8 +87,15 @@ class ApplicationController(QMainWindow):
     def connect_signals(self):
         self.main_menu.practice_button.clicked.connect(self.show_practice)       
         self.main_menu.stats_button.clicked.connect(self.show_manage)
+        
         self.practice_screen.back_to_menu_signal.connect(self.show_menu)
+        
+        # --- KẾT NỐI TÍN HIỆU QUAY VỀ TỪ QUẢN LÝ ---
+        self.manage_screen.back_to_menu_signal.connect(self.show_menu)
+        # Nút con "Quay lại Menu" trong các trang con cũng gọi show_menu
         self.manage_screen.ui.btn_back_to_menu.clicked.connect(self.show_menu)
+        # -------------------------------------------
+        
         self.main_menu.exit_button.clicked.connect(self.close)
         self.practice_screen.request_processing.connect(self.processing_worker.process_image)
 
