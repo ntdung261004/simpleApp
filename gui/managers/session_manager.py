@@ -29,9 +29,9 @@ class SessionManager(QObject):
         self.free_soldier_id = self._get_or_create_free_soldier()
         
         self.managed_session_data = {
-            'name': "", 'soldiers': [], 'current_soldier_idx': -1
+            'name': "", 'soldiers': [], 'current_soldier_idx': -1, 'ps_id': None,
+            'is_resumed': False # Cờ đánh dấu xem đây là phiên mới hay phiên load lại
         }
-        
         self.active_soldiers = {1: None, 2: None}
 
     def _get_or_create_free_soldier(self):
@@ -40,75 +40,166 @@ class SessionManager(QObject):
             if s['name'] == "Khách (Tự do)": return s['id']
         return self.db.add_soldier("Khách (Tự do)", "Hệ thống")
 
-    def setup_managed_session(self, name, mode, soldiers):
+    def has_anyone_practiced(self):
+        if not self.is_managed_session: return False
+        for s in self.managed_session_data['soldiers']:
+            if s.get('shot_count', 0) > 0: return True
+        return False
+
+    def are_all_soldiers_finished(self):
+        if not self.is_managed_session: return False
+        if not self.managed_session_data['soldiers']: return False
+        for s in self.managed_session_data['soldiers']:
+            if not s.get('finished', False): return False
+        return True
+
+    # --- SETUP (TẠO MỚI) ---
+    def setup_managed_session(self, name, mode, soldiers, ps_id=None):
         self.is_managed_session = True
         self.is_free_practice = False
         self.shooting_mode = mode
-        self.managed_session_data['name'] = name
-        self.managed_session_data['soldiers'] = []
+        self.managed_session_data = {
+            'name': name, 'soldiers': [], 'current_soldier_idx': -1, 'ps_id': ps_id,
+            'is_resumed': False # Đây là phiên mới
+        }
         self.active_soldiers = {1: None, 2: None}
+        self.next_shot_cam_id = 1
         
-        for s in soldiers:
-            sid = self.db.create_session(s['id'], exercise_name=name)
-            soldier_entry = s.copy()
-            soldier_entry['db_session_id'] = sid
-            soldier_entry['finished'] = False
-            soldier_entry['last_result'] = ""
-            soldier_entry['shot_count'] = 0
-            soldier_entry['total_score'] = 0
+        if ps_id is None:
+            new_ps_id = self.db.create_practice_session(name, mode)
+            self.managed_session_data['ps_id'] = new_ps_id
+            for s in soldiers:
+                sid = self.db.create_session(s['id'], practice_session_id=new_ps_id)
+                soldier_entry = s.copy()
+                # Lưu initial_shot_count = 0 vì mới tinh
+                soldier_entry.update({
+                    'db_session_id': sid, 'finished': False, 'last_result': "", 
+                    'shot_count': 0, 'total_score': 0,
+                    'initial_shot_count': 0, 'initial_total_score': 0
+                })
+                self.managed_session_data['soldiers'].append(soldier_entry)
+
+    # --- RESUME (TIẾP TỤC) ---
+    def resume_managed_session(self, ps_id, name, mode):
+        self.is_managed_session = True
+        self.is_free_practice = False
+        self.shooting_mode = mode
+        self.managed_session_data = {
+            'name': name, 'soldiers': [], 'current_soldier_idx': -1, 'ps_id': ps_id,
+            'is_resumed': True # Đánh dấu là phiên load lại
+        }
+        self.active_soldiers = {1: None, 2: None}
+        self.next_shot_cam_id = 1
+        
+        details = self.db.get_session_details_for_resume(ps_id)
+        for row in details:
+            s_count = row['shot_count']
+            s_score = row['total_score']
+            soldier_entry = {
+                'id': row['soldier_id'], 'name': row['name'], 'class_name': row['class_name'],
+                'db_session_id': row['db_session_id'], 'finished': bool(row['is_finished']),
+                'shot_count': s_count, 'total_score': s_score,
+                'initial_shot_count': s_count, 'initial_total_score': s_score, # Snapshot trạng thái lúc load
+                'last_result': "" 
+            }
+            if s_count > 0:
+                if mode == "SINGLE":
+                    avg = round(s_score / s_count, 1) if s_count > 0 else 0
+                    soldier_entry['last_result'] = f"{s_count} phát - {s_score} điểm (TB: {avg})"
+                else:
+                    soldier_entry['last_result'] = f"Loạt 3: {s_score} điểm"
             self.managed_session_data['soldiers'].append(soldier_entry)
 
+    # --- ROLLBACK (QUAN TRỌNG) ---
+    def rollback_session_changes(self):
+        """Hoàn tác về trạng thái ban đầu (xóa các shot mới)."""
+        if not self.is_managed_session: return
+
+        logger.info("Thực hiện Rollback: Xóa dữ liệu mới phát sinh trong phiên này...")
+        for s in self.managed_session_data['soldiers']:
+            current = s['shot_count']
+            initial = s.get('initial_shot_count', 0)
+            
+            if current > initial:
+                # 1. Xóa trong DB: Xóa các shot có số thứ tự lớn hơn số ban đầu
+                try:
+                    # Query này giả định shot_number tăng dần và đúng logic
+                    self.db.cursor.execute(
+                        "DELETE FROM shots WHERE session_id = ? AND shot_number > ?", 
+                        (s['db_session_id'], initial)
+                    )
+                    self.db.conn.commit()
+                except Exception as e:
+                    logger.error(f"Lỗi rollback DB: {e}")
+
+                # 2. Reset RAM
+                s['shot_count'] = initial
+                s['total_score'] = s.get('initial_total_score', 0)
+                
+                # Nếu quay về chưa bắn -> Chưa finished
+                if initial == 0:
+                    s['finished'] = False
+                    s['last_result'] = ""
+                    # Reset luôn status session
+                    try:
+                         self.db.cursor.execute("UPDATE sessions SET is_finished = 0 WHERE id = ?", (s['db_session_id'],))
+                         self.db.conn.commit()
+                    except: pass
+                else:
+                    # Nếu revert về trạng thái cũ đã bắn rồi, tính lại text hiển thị
+                    if self.shooting_mode == "SINGLE":
+                        avg = round(s['total_score'] / s['shot_count'], 1)
+                        s['last_result'] = f"{s['shot_count']} phát - {s['total_score']} điểm (TB: {avg})"
+                    else:
+                        s['last_result'] = f"Loạt 3: {s['total_score']} điểm"
+
+    # ... (Giữ nguyên các hàm khác) ...
     def assign_soldier_to_slot(self, slot, soldier_data):
         target = None
         for s in self.managed_session_data['soldiers']:
-            if s['id'] == soldier_data['id']:
-                target = s
-                break
-        if target:
-            self.active_soldiers[slot] = target
-        else:
-            self.active_soldiers[slot] = soldier_data
+            if s['id'] == soldier_data['id']: target = s; break
+        if target: self.active_soldiers[slot] = target
+        else: self.active_soldiers[slot] = soldier_data
+        
+        if slot == 1:
+            self.next_shot_cam_id = 1
+            self.auto_switch_camera.emit(1)
 
-    def clear_active_soldiers(self):
-        self.active_soldiers = {1: None, 2: None}
+    def clear_active_soldiers(self): self.active_soldiers = {1: None, 2: None}
 
     def get_soldier_at_session_idx(self, session_idx):
-        if self.current_mode == 0 and session_idx == 0:
-            return self.active_soldiers[1]
+        if self.current_mode == 0 and session_idx == 0: return self.active_soldiers[1]
         return self.active_soldiers.get(session_idx)
+
+    def determine_next_camera_after_shot(self, last_cam):
+        if self.shooting_mode != "BURST_3": return 2 if last_cam == 1 else 1
+        other_cam = 3 - last_cam
+        if not self.is_camera_finished(other_cam): return other_cam
+        elif not self.is_camera_finished(last_cam): return last_cam
+        return 1
 
     def cancel_incomplete_burst(self, session_idx):
         if not self.is_managed_session: return
-
         soldier = self.get_soldier_at_session_idx(session_idx)
         if not soldier: return
-
         old_sid = self.active_session_ids[session_idx]
-        if old_sid:
-            self.db.delete_session(old_sid)
+        if old_sid: self.db.delete_session(old_sid)
+        new_sid = self.db.create_session(soldier['id'], practice_session_id=self.managed_session_data['ps_id'])
+        soldier['db_session_id'] = new_sid
 
         target_in_list = None
         for s in self.managed_session_data['soldiers']:
-            if s['id'] == soldier['id']:
-                target_in_list = s
-                break
+            if s['id'] == soldier['id']: target_in_list = s; break
         
         if target_in_list:
             current_burst_score = sum(item['score'] for item in self.testing_buffers[session_idx])
             current_burst_count = len(self.testing_buffers[session_idx])
-            
             target_in_list['shot_count'] = max(0, target_in_list['shot_count'] - current_burst_count)
             target_in_list['total_score'] = max(0, target_in_list['total_score'] - current_burst_score)
-            
-            if target_in_list['shot_count'] == 0:
-                target_in_list['last_result'] = ""
-            else:
-                target_in_list['last_result'] = "Đã hủy loạt gần nhất"
-
+            target_in_list['last_result'] = "Đã hủy loạt gần nhất" if target_in_list['shot_count'] > 0 else ""
             self.active_soldiers[1 if session_idx == 0 and self.current_mode == 0 else session_idx] = target_in_list
 
-        self.end_session(session_idx)
-        self._reset_counters(session_idx)
+        self.end_session(session_idx); self._reset_counters(session_idx)
 
     def is_burst_in_progress(self, session_idx):
         if self.shooting_mode != "BURST_3": return False
@@ -120,182 +211,136 @@ class SessionManager(QObject):
             if self.is_burst_in_progress(i): return True
         return False
 
+    def is_camera_finished(self, session_idx):
+        if self.shooting_mode != "BURST_3": return False
+        return len(self.testing_buffers[session_idx]) + self.pending_shots[session_idx] >= 3
+
+    def are_all_active_cameras_finished(self):
+        if self.current_mode == 0: return self.is_camera_finished(0)
+        else: return self.is_camera_finished(1) and self.is_camera_finished(2)
+
     def retry_burst(self, session_idx):
         if not self.is_managed_session:
-            self.end_session(session_idx)
-            self._reset_counters(session_idx)
-            self.start_session(session_idx)
+            self.end_session(session_idx); self._reset_counters(session_idx); self.start_session(session_idx)
             return
         
         soldier = self.get_soldier_at_session_idx(session_idx)
         if not soldier: return
 
         old_sid = self.active_session_ids[session_idx]
-        if old_sid:
-            self.db.delete_session(old_sid)
+        if old_sid: self.db.delete_session(old_sid)
         
         target_in_list = None
         for s in self.managed_session_data['soldiers']:
-            if s['id'] == soldier['id']:
-                target_in_list = s
-                break
+            if s['id'] == soldier['id']: target_in_list = s; break
         
         if target_in_list:
             current_burst_score = sum(item['score'] for item in self.testing_buffers[session_idx])
             current_burst_count = len(self.testing_buffers[session_idx])
-            
             target_in_list['shot_count'] -= current_burst_count
             target_in_list['total_score'] -= current_burst_score
             target_in_list['finished'] = False
             target_in_list['last_result'] = "Đang bắn lại..."
-            
             self.active_soldiers[1 if session_idx == 0 and self.current_mode == 0 else session_idx] = target_in_list
 
-        self.end_session(session_idx) 
-        self._reset_counters(session_idx) 
-        self.start_session(session_idx)
+        self.end_session(session_idx); self._reset_counters(session_idx); self.start_session(session_idx)
+        if self.current_mode == 1:
+            self.next_shot_cam_id = session_idx
+            self.auto_switch_camera.emit(session_idx)
 
     def start_session(self, session_idx):
         if self.session_active_flags[session_idx]: self.end_session(session_idx)
-        
-        soldier = None
-        target_db_sid = None
-        
+        soldier = None; target_db_sid = None
         if self.is_managed_session:
             soldier = self.get_soldier_at_session_idx(session_idx)
             if soldier:
-                target_db_sid = self.db.create_session(soldier['id'], exercise_name=self.managed_session_data['name'])
+                target_db_sid = self.db.create_session(soldier['id'], practice_session_id=self.managed_session_data['ps_id'])
                 soldier['db_session_id'] = target_db_sid
-                
-                if self.shooting_mode == "SINGLE":
-                    self.shot_counters[session_idx] = soldier.get('shot_count', 0)
-                else:
-                    self.shot_counters[session_idx] = 0
-            else:
-                return
+                if self.shooting_mode == "SINGLE": self.shot_counters[session_idx] = soldier.get('shot_count', 0)
+                else: self.shot_counters[session_idx] = 0
+            else: return
         else:
-            target_db_sid = self.db.create_session(self.free_soldier_id)
+            target_db_sid = -1 
             self.shot_counters[session_idx] = 0
 
-        self.testing_buffers[session_idx] = []
-        self.pending_shots[session_idx] = 0
-        
-        if target_db_sid:
-            self.active_session_ids[session_idx] = target_db_sid
-            self.session_active_flags[session_idx] = True
-            self.session_state_changed.emit(session_idx, True)
+        self.testing_buffers[session_idx] = []; self.pending_shots[session_idx] = 0
+        self.active_session_ids[session_idx] = target_db_sid
+        self.session_active_flags[session_idx] = True
+        self.session_state_changed.emit(session_idx, True)
 
     def end_session(self, session_idx):
         if not self.session_active_flags[session_idx]: return
+        if not self.is_managed_session:
+            self.session_active_flags[session_idx] = False; self.active_session_ids[session_idx] = None; return
+
         sid = self.active_session_ids[session_idx]
         if sid and sid > 0:
-            if self.is_free_practice:
-                count = self.db.get_shot_count_for_session(sid)
-                if count == 0: self.db.delete_session(sid)
-                else:
-                    auto_name = f"Phiên tự do {datetime.now().strftime('%H:%M %d/%m')}"
-                    self.db.update_session_name(sid, auto_name)
-                    self.db.end_session(sid)
-            else:
-                pass 
+            if self.shooting_mode == "BURST_3":
+                if len(self.testing_buffers[session_idx]) >= 3: self.db.mark_session_finished(sid)
+        
         self.session_active_flags[session_idx] = False
         self.active_session_ids[session_idx] = None
         self.session_state_changed.emit(session_idx, False)
 
     def reset_all(self):
-        for i in [0, 1, 2]:
-            self.end_session(i)
-            self._reset_counters(i)
+        for i in [0, 1, 2]: self.end_session(i); self._reset_counters(i)
         self.next_shot_cam_id = 1
-
     def _reset_counters(self, idx):
         self.shot_counters[idx] = 0; self.testing_buffers[idx] = []; self.pending_shots[idx] = 0
-
-    def reset_burst_state(self, idx):
-        self.testing_buffers[idx] = []; self.pending_shots[idx] = 0
-
+    def reset_burst_state(self, idx): self.testing_buffers[idx] = []; self.pending_shots[idx] = 0
     def check_can_shot(self, session_idx):
         if self.shooting_mode == "BURST_3":
             if len(self.testing_buffers[session_idx]) + self.pending_shots[session_idx] >= 3: return False
         return True
-
     def register_pending_shot(self, session_idx):
         if self.shooting_mode == "BURST_3": self.pending_shots[session_idx] += 1
-
     def rollback_pending_shot(self, session_idx):
-        if self.shooting_mode == "BURST_3": 
-            self.pending_shots[session_idx] = max(0, self.pending_shots[session_idx] - 1)
-
+        if self.shooting_mode == "BURST_3": self.pending_shots[session_idx] = max(0, self.pending_shots[session_idx] - 1)
     def process_shot_result(self, res, pix_frame):
         score = res.get('score'); image_path = res.get('image_path')
         session_idx = 0
         try:
-            name = os.path.basename(image_path)
+            name = os.path.basename(image_path); 
             if name.startswith('s'): session_idx = int(name.split('_')[0][1:])
         except: pass
-        
         self.rollback_pending_shot(session_idx)
-        
         if self.is_managed_session:
             current_soldier = self.get_soldier_at_session_idx(session_idx)
             if current_soldier:
                 target_in_list = None
                 for s in self.managed_session_data['soldiers']:
-                    if s['id'] == current_soldier['id']:
-                        target_in_list = s
-                        break
-                
+                    if s['id'] == current_soldier['id']: target_in_list = s; break
                 if target_in_list:
-                    target_in_list['shot_count'] += 1
-                    target_in_list['total_score'] += score
-                    
+                    target_in_list['shot_count'] += 1; target_in_list['total_score'] += score
                     if self.shooting_mode == "SINGLE":
                         avg = round(target_in_list['total_score'] / target_in_list['shot_count'], 1)
                         target_in_list['last_result'] = f"{target_in_list['shot_count']} phát - {target_in_list['total_score']} điểm (TB: {avg})"
                     else:
                         target_in_list['last_result'] = f"Loạt 3: {target_in_list['total_score']} điểm"
-                    
                     self.active_soldiers[1 if session_idx == 0 and self.current_mode == 0 else session_idx] = target_in_list
-        
-        current_shot_no = self.shot_counters[session_idx] + 1
-        
-        # --- LOGIC HIỂN THỊ TEXT ---
+        self.shot_counters[session_idx] += 1 
+        current_shot_no = self.shot_counters[session_idx]
         if self.is_free_practice:
-            if self.shooting_mode == "SINGLE":
-                # Tự do từng viên -> Chỉ hiện điểm
-                score_text = f"Điểm: {score}"
-            else:
-                # Tự do loạt -> Hiện số phát 1/2/3 cho dễ theo dõi loạt
-                score_text = f"Phát {current_shot_no}: {score} điểm"
+            score_text = f"Điểm: {score}" if self.shooting_mode == "SINGLE" else f"Phát {current_shot_no}: {score} điểm"
         else:
-            # Managed -> Hiện đầy đủ
-            if self.shooting_mode == "BURST_3":
-                score_text = f"Phát {current_shot_no}: {score} điểm (Loạt)"
-            else:
-                score_text = f"Phát {current_shot_no}: {score} điểm"
-        # ---------------------------
-        
+            score_text = f"Phát {current_shot_no}: {score} điểm (Loạt)" if self.shooting_mode == "BURST_3" else f"Phát {current_shot_no}: {score} điểm"
         self.shot_added.emit(session_idx, score, score, score_text)
-        
         sid = self.active_session_ids[session_idx]
-        if self.session_active_flags[session_idx] and sid > 0:
-            self.shot_counters[session_idx] += 1
+        if self.is_managed_session and sid and sid > 0:
             self.db.add_shot(sid, self.shot_counters[session_idx], res.get('target_detected_raw'), score, res.get('coords'), image_path)
-        
         if self.shooting_mode == "BURST_3":
             self.testing_buffers[session_idx].append({'score': score, 'image': pix_frame})
-            self._check_burst_completion()
-
-    def _check_burst_completion(self):
-        if self.current_mode == 0:
-            if len(self.testing_buffers[0]) >= 3: self.burst_completed.emit(0, self.testing_buffers[0])
-        elif self.current_mode == 1:
-            b1 = len(self.testing_buffers[1]); b2 = len(self.testing_buffers[2])
-            p1 = self.pending_shots[1]; p2 = self.pending_shots[2]
-            if b1 >= 3 and b2 >= 3 and p1 == 0 and p2 == 0:
-                self.burst_completed.emit(1, self.testing_buffers[1]); self.burst_completed.emit(2, self.testing_buffers[2])
-                self.next_shot_cam_id = 1; self.auto_switch_camera.emit(1)
-
+            self._check_burst_completion(session_idx)
+    def _check_burst_completion(self, session_idx):
+        if len(self.testing_buffers[session_idx]) >= 3:
+            self.burst_completed.emit(session_idx, self.testing_buffers[session_idx])
+            if self.current_mode == 1:
+                other_cam = 3 - session_idx
+                if not self.is_camera_finished(other_cam):
+                    self.next_shot_cam_id = other_cam
+                    self.auto_switch_camera.emit(other_cam)
+                else:
+                    self.next_shot_cam_id = 1
     def get_auto_switch_target(self, current_target):
         if self.shooting_mode != "BURST_3" or self.current_mode != 1: return None
         cur_total = len(self.testing_buffers[current_target]) + self.pending_shots[current_target]

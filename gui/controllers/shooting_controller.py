@@ -2,6 +2,7 @@
 import os
 import cv2
 import logging
+from collections import deque
 from datetime import datetime
 from PySide6.QtCore import QObject, Slot, Qt
 from PySide6.QtWidgets import QMessageBox, QApplication
@@ -25,7 +26,8 @@ class ShootingController(QObject):
         self.parent_window = parent_window
         self.save_dir = os.path.join(APP_DATA_DIR, "captured_images")
         os.makedirs(self.save_dir, exist_ok=True)
-        self.current_selecting_slot = 1 
+        self.current_selecting_slot = 1
+        self.popup_queue = deque()
         self._connect_signals()
 
     def _connect_signals(self):
@@ -35,10 +37,6 @@ class ShootingController(QObject):
         self.ui.camera_view_label.clicked.connect(lambda p: self.set_center(1, p))
         self.ui.single_cam_source.currentIndexChanged.connect(lambda i: self.change_cam_source(1, i))
         
-        self.ui.btn_select_trainee.clicked.connect(lambda: self.show_trainee_list(1))
-        self.ui.btn_save_session.clicked.connect(self.save_and_exit_managed_session)
-        self.ui.btn_back_header.clicked.connect(self.stop_practice_and_return)
-
         if hasattr(self.ui, 'dual_cam1_view'):
             self.ui.dual_cam1_zoom.valueChanged.connect(lambda v: self.set_zoom(1, v))
             self.ui.dual_cam1_refresh.clicked.connect(lambda: self.on_manual_refresh(1))
@@ -59,13 +57,11 @@ class ShootingController(QObject):
 
         self.cam_manager.frame_received.connect(self.update_camera_feed)
         self.cam_manager.error_occurred.connect(self.show_camera_error)
-        
         self.sess_manager.session_state_changed.connect(self.update_session_ui_state)
         self.sess_manager.shot_added.connect(self.update_shot_display)
         self.sess_manager.burst_completed.connect(self.on_burst_completed)
         self.sess_manager.auto_switch_camera.connect(self.update_active_border)
         self.sess_manager.soldier_session_started.connect(self.on_soldier_started)
-
         self.trigger.triggered.connect(self.execute_shot_logic)
 
     def start_free_practice(self):
@@ -74,8 +70,13 @@ class ShootingController(QObject):
         self._setup_ui_for_mode("FREE")
         self._init_camera_and_session()
 
-    def initialize_managed_session(self, name, mode, soldiers):
+    def setup_new_session(self, name, mode, soldiers):
         self.sess_manager.setup_managed_session(name, mode, soldiers)
+        self.parent_window.gui.stack.setCurrentWidget(self.parent_window.gui.page_view)
+        self.start_managed_practice()
+
+    def restore_session(self, ps_id, name, mode):
+        self.sess_manager.resume_managed_session(ps_id, name, mode)
         self.parent_window.gui.stack.setCurrentWidget(self.parent_window.gui.page_view)
         self.start_managed_practice()
 
@@ -101,7 +102,9 @@ class ShootingController(QObject):
             self.ui.btn_select_trainee.setVisible(False)
             
         self.ui.btn_save_session.setVisible(not is_free)
-        self.ui.back_to_dashboard_btn.setText("Kết thúc" if is_free else "Thoát phiên")
+        # --- ĐỔI TÊN NÚT ---
+        self.ui.back_to_dashboard_btn.setText("Kết thúc")
+        
         self.ui.lbl_current_trainee.setVisible(not is_free)
         self.ui.btn_control_session.setVisible(False)
         
@@ -111,6 +114,9 @@ class ShootingController(QObject):
         if hasattr(self.ui, 'dual_cam2_trainee_lbl'):
             self.ui.dual_cam2_trainee_lbl.setVisible(not is_free)
             self.ui.dual_cam2_trainee_btn.setVisible(not is_free)
+            
+        self._set_trainee_btn_state(1, True)
+        self._set_trainee_btn_state(2, True)
 
     def _init_camera_and_session(self):
         self.populate_camera_sources()
@@ -121,27 +127,18 @@ class ShootingController(QObject):
              self.start_new_session(0)
         else:
             self.reset_result_display()
-        
         if self.sess_manager.current_mode == 1:
             self.update_active_border(self.sess_manager.next_shot_cam_id)
-
-    def stop_practice_and_return(self):
-        self.stop_practice()
-        self.parent_window.gui.stack.setCurrentWidget(self.parent_window.gui.page_dashboard)
 
     def show_trainee_list(self, slot=1):
         self.current_selecting_slot = slot
         data = self.sess_manager.managed_session_data
-        
         current_ids = []
         for s_slot, s_data in self.sess_manager.active_soldiers.items():
-            if s_data and s_slot != slot:
-                current_ids.append(s_data['id'])
-        
+            if s_data and s_slot != slot: current_ids.append(s_data['id'])
         current_soldier = self.sess_manager.active_soldiers.get(slot)
-        if current_soldier:
-            current_ids.append(current_soldier['id'])
-            
+        if current_soldier: current_ids.append(current_soldier['id'])
+        
         mode_str = self.sess_manager.shooting_mode
         popup = TraineeSessionPopup(data['name'], data['soldiers'], current_ids, mode_str, self.parent_window)
         popup.trainee_selected.connect(self.on_trainee_changed)
@@ -149,87 +146,90 @@ class ShootingController(QObject):
 
     def on_trainee_changed(self, soldier_data):
         target_slot = self.current_selecting_slot
-        
         for slot, s in self.sess_manager.active_soldiers.items():
             if s and s['id'] == soldier_data['id'] and slot != target_slot:
                 QMessageBox.warning(self.parent_window, "Trùng lặp", f"Chiến sĩ {soldier_data['name']} đang tập ở Camera {slot}.")
                 return
-
         self.sess_manager.assign_soldier_to_slot(target_slot, soldier_data)
         self.update_trainee_info_ui(target_slot, soldier_data['name'])
-        
         s_idx = 0 if self.sess_manager.current_mode == 0 else target_slot
-        
         self.reset_result_display(s_idx)
         self.sess_manager.start_session(s_idx)
 
     def update_trainee_info_ui(self, slot, name):
         text = f"Người tập: {name}"
         if slot == 1:
-            if self.sess_manager.current_mode == 0:
-                self.ui.lbl_current_trainee.setText(text)
-            elif hasattr(self.ui, 'dual_cam1_trainee_lbl'):
-                self.ui.dual_cam1_trainee_lbl.setText(text)
-        elif slot == 2 and hasattr(self.ui, 'dual_cam2_trainee_lbl'):
-             self.ui.dual_cam2_trainee_lbl.setText(text)
+            if self.sess_manager.current_mode == 0: self.ui.lbl_current_trainee.setText(text)
+            elif hasattr(self.ui, 'dual_cam1_trainee_lbl'): self.ui.dual_cam1_trainee_lbl.setText(text)
+        elif slot == 2 and hasattr(self.ui, 'dual_cam2_trainee_lbl'): self.ui.dual_cam2_trainee_lbl.setText(text)
 
-    def toggle_managed_turn(self): pass
     def on_soldier_started(self, name): pass
-
-    def save_and_exit_managed_session(self):
-        self.stop_practice()
-        self.parent_window.gui.stack.setCurrentWidget(self.parent_window.gui.page_dashboard)
 
     @Slot(int, list)
     def on_burst_completed(self, idx, data):
-        t = f"KẾT QUẢ - CAMERA {idx}" if self.sess_manager.current_mode == 1 else ""
-        
-        # --- FIX: Tách biệt logic Popup cho Free và Managed ---
-        allow_retry = self.sess_manager.is_managed_session
-        p = ResultPopup(data, camera_name=t, allow_retry=allow_retry, parent=self.parent_window)
-        result_code = p.exec()
-        
-        target_ui_idx = 0 if self.sess_manager.current_mode == 0 else idx
-        
-        if result_code == 2 and allow_retry: # Bắn lại (chỉ Managed)
-            self.sess_manager.retry_burst(idx)
-            self.reset_result_display(target_ui_idx)
+        self.popup_queue.append((idx, data))
+        if not self.sess_manager.is_managed_session:
+            self.process_popup_queue()
             return
+        if self.sess_manager.are_all_active_cameras_finished():
+            self.process_popup_queue()
 
-        if self.sess_manager.is_managed_session:
-            soldier = self.sess_manager.get_soldier_at_session_idx(idx)
-            if soldier: soldier['finished'] = True
-            self.sess_manager.end_session(idx)
-            self.reset_result_display(target_ui_idx)
-            self.show_trainee_list(target_ui_idx if self.sess_manager.current_mode == 1 else 1)
-        else:
-            # Free Mode: Reset bộ đếm để loạt sau bắn từ 1
-            self.sess_manager._reset_counters(idx) 
-            self.sess_manager.reset_burst_state(idx)
-            self._update_result_image(idx, QPixmap())
-            self.update_shot_display(idx, 0, 0, "Điểm số: --")
+    def process_popup_queue(self):
+        while self.popup_queue:
+            idx, data = self.popup_queue.popleft()
+            t = f"KẾT QUẢ - CAMERA {idx}" if self.sess_manager.current_mode == 1 else ""
+            allow_retry = self.sess_manager.is_managed_session
+            p = ResultPopup(data, camera_name=t, allow_retry=allow_retry, parent=self.parent_window)
+            result_code = p.exec()
+            target_ui_idx = 0 if self.sess_manager.current_mode == 0 else idx
+            
+            # --- FIX: Mở khóa nút chọn người khi xong ---
+            if result_code != 2:
+                self._set_trainee_btn_state(target_ui_idx, True)
+
+            if result_code == 2 and allow_retry: # Bắn lại
+                self.sess_manager.retry_burst(idx)
+                self.reset_result_display(target_ui_idx)
+                if self.sess_manager.current_mode == 1: self.update_active_border(idx)
+                return
+
+            if self.sess_manager.is_managed_session:
+                soldier = self.sess_manager.get_soldier_at_session_idx(idx)
+                if soldier: soldier['finished'] = True
+                self.sess_manager.end_session(idx)
+                self.reset_result_display(target_ui_idx)
+                
+                if self.sess_manager.shooting_mode == "BURST_3" and self.sess_manager.are_all_soldiers_finished() and not self.popup_queue:
+                    QMessageBox.information(self.parent_window, "Hoàn tất phiên tập", "Tất cả chiến sĩ trong danh sách đã hoàn thành bài bắn.\nVui lòng xem lại kết quả chi tiết ở chức năng 'Quản lý Thống kê'.")
+                    self.parent_window.on_return_to_dashboard()
+                    return
+
+                if self.sess_manager.current_mode == 0 and not self.popup_queue:
+                    self.show_trainee_list(1)
+            else:
+                self.sess_manager._reset_counters(idx) 
+                self.sess_manager.reset_burst_state(idx)
+                self._update_result_image(idx, QPixmap())
+                self.update_shot_display(idx, 0, 0, "Điểm số: --")
+                self._set_trainee_btn_state(target_ui_idx, True)
 
     def stop_practice(self):
         self.trigger.deactivate()
         self.cam_manager.stop_all()
         self.sess_manager.reset_all()
         self.reset_ui_state()
+        self.popup_queue.clear()
+        self._set_trainee_btn_state(1, True)
+        self._set_trainee_btn_state(2, True)
 
     def _reset_trainee_labels(self):
         self.ui.lbl_current_trainee.setText("Người tập: --")
-        if hasattr(self.ui, 'dual_cam1_trainee_lbl'):
-            self.ui.dual_cam1_trainee_lbl.setText("Người tập: Chưa chọn")
-        if hasattr(self.ui, 'dual_cam2_trainee_lbl'):
-            self.ui.dual_cam2_trainee_lbl.setText("Người tập: Chưa chọn")
+        if hasattr(self.ui, 'dual_cam1_trainee_lbl'): self.ui.dual_cam1_trainee_lbl.setText("Người tập: Chưa chọn")
+        if hasattr(self.ui, 'dual_cam2_trainee_lbl'): self.ui.dual_cam2_trainee_lbl.setText("Người tập: Chưa chọn")
 
     def handle_mode_change(self, idx):
         if self.sess_manager.is_any_burst_in_progress():
-            reply = QMessageBox.warning(
-                self.parent_window, "Cảnh báo",
-                "Đang có lượt bắn chưa hoàn thành (loạt 3 viên).\n"
-                "Bạn có muốn hủy loạt bắn này và chuyển chế độ không?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-            )
+            reply = QMessageBox.warning(self.parent_window, "Cảnh báo", "Đang có lượt bắn chưa hoàn thành.\nBạn có muốn hủy loạt này và chuyển chế độ không?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply == QMessageBox.No:
                 self.ui.mode_selector.blockSignals(True)
                 self.ui.mode_selector.setCurrentIndex(self.sess_manager.current_mode)
@@ -237,16 +237,14 @@ class ShootingController(QObject):
                 return
             else:
                 for i in [0, 1, 2]:
-                    if self.sess_manager.is_burst_in_progress(i):
-                        self.sess_manager.cancel_incomplete_burst(i)
+                    if self.sess_manager.is_burst_in_progress(i): self.sess_manager.cancel_incomplete_burst(i)
         
         self.sess_manager.current_mode = idx
         self.ui.main_stack.setCurrentIndex(idx)
-        
         self.sess_manager.reset_all()
         self.sess_manager.clear_active_soldiers() 
         self._reset_trainee_labels()
-        
+        self.popup_queue.clear()
         self.populate_camera_sources()
         if idx == 1:
             if self.cam_manager.cam_indices[1] == self.cam_manager.cam_indices[2]:
@@ -257,9 +255,7 @@ class ShootingController(QObject):
                     self._sync_combo_selection(2)
         self._start_cameras()
         self._setup_ui_for_mode("MANAGED" if self.sess_manager.is_managed_session else "FREE")
-        
         self.reset_result_display()
-
         if self.sess_manager.is_free_practice:
             if idx == 0: self.start_new_session(0)
             else: self.start_new_session(1); self.start_new_session(2)
@@ -270,6 +266,7 @@ class ShootingController(QObject):
         self.sess_manager.shooting_mode = self.ui.shooting_mode_selector.currentData()
         self.sess_manager.reset_all()
         self.reset_result_display()
+        self.popup_queue.clear()
         if self.sess_manager.current_mode == 0: self.start_new_session(0)
         else: self.start_new_session(1); self.start_new_session(2)
 
@@ -283,6 +280,8 @@ class ShootingController(QObject):
         self.reset_result_display(idx)
         self.sess_manager.start_session(idx)
         self.parent_window.setFocus()
+        self._set_trainee_btn_state(1, True)
+        self._set_trainee_btn_state(2, True)
 
     def on_manual_refresh(self, cam_id):
         self.cam_manager.stop_camera(cam_id)
@@ -319,17 +318,33 @@ class ShootingController(QObject):
             val = combo.itemData(idx)
             if val is not None: self.cam_manager.cam_indices[cam_id] = val; self.cam_manager.start_camera(cam_id)
 
+    # --- HÀM KHÓA NÚT ĐÃ SỬA ---
+    def _set_trainee_btn_state(self, slot, enabled):
+        if self.sess_manager.current_mode == 0:
+            # Single Cam mode: slot=0 hoặc 1 đều là nút chung
+            if slot == 0 or slot == 1: 
+                self.ui.btn_select_trainee.setEnabled(enabled)
+            return
+
+        if slot == 1 and hasattr(self.ui, 'dual_cam1_trainee_btn'): self.ui.dual_cam1_trainee_btn.setEnabled(enabled)
+        elif slot == 2 and hasattr(self.ui, 'dual_cam2_trainee_btn'): self.ui.dual_cam2_trainee_btn.setEnabled(enabled)
+
     @Slot()
     def execute_shot_logic(self):
         if self.sess_manager.is_managed_session:
             target_cam = 1
             if self.sess_manager.current_mode == 1:
                 target_cam = self.sess_manager.next_shot_cam_id
-                
+                s1 = self.sess_manager.active_soldiers.get(1)
+                s2 = self.sess_manager.active_soldiers.get(2)
+                if not s1 or not s2:
+                    QMessageBox.warning(self.parent_window, "Thiếu người tập", "Chế độ 2 Camera yêu cầu phải chọn đủ 2 người tập.")
+                    return 
+            
             s_idx = 0 if self.sess_manager.current_mode == 0 else target_cam
             soldier = self.sess_manager.get_soldier_at_session_idx(s_idx)
-            
-            if not soldier:
+            if not soldier: 
+                QMessageBox.warning(self.parent_window, "Chưa chọn người", "Vui lòng chọn người tập trước khi bắn.")
                 return 
 
         target_cam = 1
@@ -341,11 +356,14 @@ class ShootingController(QObject):
 
         sess_idx = 0 if self.sess_manager.current_mode == 0 else target_cam
         if not self.sess_manager.check_can_shot(sess_idx): return
-
         if not self.cam_manager.is_camera_ready(target_cam): return
 
         frame, center = self.cam_manager.get_shot_data(target_cam)
         if frame is None: return
+
+        # --- KHÓA NÚT NGAY LẬP TỨC ---
+        if self.sess_manager.is_managed_session:
+            self._set_trainee_btn_state(sess_idx, False)
 
         self.sess_manager.register_pending_shot(sess_idx)
         self.audio_manager.play_sound('shot')
@@ -359,10 +377,13 @@ class ShootingController(QObject):
         except Exception as e:
             logger.error(f"Lỗi chụp ảnh: {e}")
             self.sess_manager.rollback_pending_shot(sess_idx)
+            # Nếu lỗi, mở lại nút
+            if self.sess_manager.is_managed_session: self._set_trainee_btn_state(sess_idx, True)
 
         if self.sess_manager.current_mode == 1:
-            self.sess_manager.next_shot_cam_id = 2 if target_cam == 1 else 1
-            self.update_active_border(self.sess_manager.next_shot_cam_id)
+            next_cam = self.sess_manager.determine_next_camera_after_shot(target_cam)
+            self.sess_manager.next_shot_cam_id = next_cam
+            self.update_active_border(next_cam)
 
     @Slot(dict)
     def on_processing_finished(self, res):
@@ -373,6 +394,12 @@ class ShootingController(QObject):
             name = os.path.basename(res.get('image_path', ''))
             if name.startswith('s'): sess_idx = int(name.split('_')[0][1:])
         except: pass
+
+        # --- MỞ KHÓA NÚT NẾU LÀ SINGLE MODE (Burst chờ popup) ---
+        if self.sess_manager.is_managed_session:
+            is_bursting = self.sess_manager.is_burst_in_progress(sess_idx)
+            if not is_bursting and self.sess_manager.shooting_mode == "SINGLE":
+                self._set_trainee_btn_state(sess_idx, True)
 
         self._update_result_image(sess_idx, pix)
         if score > 0: self.audio_manager.play_score(score)
@@ -433,77 +460,53 @@ class ShootingController(QObject):
         empty = QPixmap()
         msg_wait = "Vui lòng chọn người\ntrong danh sách để bắt đầu bắn"
         msg_ready = "Có thể thực hiện lượt tập"
+        msg_finished = "Người tập đã hoàn thành lượt bắn"
         
-        # --- FIX: Placeholder cho Free Practice ---
         if not self.sess_manager.is_managed_session:
             free_msg = "Ảnh kết quả sẽ hiển thị ở đây"
             default_style = "font-size: 20px; font-weight: bold; color: #e74c3c;"
             box_style = "background-color: #212f3d; border: 1px dashed #7f8c8d; border-radius: 8px; color: #7f8c8d; font-size: 14px;"
-            
             if idx is None or idx == 0:
-                self.ui.score_label.setText("Điểm số: --")
-                self.ui.score_label.setStyleSheet(default_style)
-                self.ui.result_image_label.setPixmap(empty)
-                self.ui.result_image_label.setText(free_msg) 
-                self.ui.result_image_label.setStyleSheet(box_style)
-            
+                self.ui.score_label.setText("Điểm số: --"); self.ui.score_label.setStyleSheet(default_style)
+                self.ui.result_image_label.setPixmap(empty); self.ui.result_image_label.setText(free_msg); self.ui.result_image_label.setStyleSheet(box_style)
             if (idx is None or idx == 1) and hasattr(self.ui, 'dual_cam1_score'):
-                self.ui.dual_cam1_score.setText("Điểm số: --")
-                self.ui.dual_cam1_score.setStyleSheet("font-size: 16px; font-weight: bold; color: #e74c3c;")
-                self.ui.dual_cam1_result_img.setPixmap(empty)
-                self.ui.dual_cam1_result_img.setText(free_msg)
-                self.ui.dual_cam1_result_img.setStyleSheet(box_style)
-
+                self.ui.dual_cam1_score.setText("Điểm số: --"); self.ui.dual_cam1_score.setStyleSheet("font-size: 16px; font-weight: bold; color: #e74c3c;")
+                self.ui.dual_cam1_result_img.setPixmap(empty); self.ui.dual_cam1_result_img.setText(free_msg); self.ui.dual_cam1_result_img.setStyleSheet(box_style)
             if (idx is None or idx == 2) and hasattr(self.ui, 'dual_cam2_score'):
-                self.ui.dual_cam2_score.setText("Điểm số: --")
-                self.ui.dual_cam2_score.setStyleSheet("font-size: 16px; font-weight: bold; color: #e74c3c;")
-                self.ui.dual_cam2_result_img.setPixmap(empty)
-                self.ui.dual_cam2_result_img.setText(free_msg)
-                self.ui.dual_cam2_result_img.setStyleSheet(box_style)
+                self.ui.dual_cam2_score.setText("Điểm số: --"); self.ui.dual_cam2_score.setStyleSheet("font-size: 16px; font-weight: bold; color: #e74c3c;")
+                self.ui.dual_cam2_result_img.setPixmap(empty); self.ui.dual_cam2_result_img.setText(free_msg); self.ui.dual_cam2_result_img.setStyleSheet(box_style)
             return
-        # ------------------------------------------
 
         def get_status_msg(slot_check):
             s_data = self.sess_manager.active_soldiers.get(slot_check)
-            if s_data: return msg_ready
-            return msg_wait
+            if not s_data: return msg_wait
+            if s_data.get('finished', False): return msg_finished
+            return msg_ready
 
         style_wait = "color: #e67e22; font-size: 18px; font-weight: bold; border: 1px dashed #e67e22;"
-        style_ready = "color: #2ecc71; font-size: 18px; font-weight: bold; border: 1px solid #2ecc71;" # Xanh lá
+        style_ready = "color: #2ecc71; font-size: 18px; font-weight: bold; border: 1px solid #2ecc71;"
+        style_finished = "color: #27ae60; font-size: 18px; font-weight: bold; border: 1px solid #27ae60;"
+        
+        def get_style(msg):
+            if msg == msg_wait: return style_wait
+            if msg == msg_finished: return style_finished
+            return style_ready
         
         if idx is None or idx == 0: 
-            self.ui.score_label.setText("Điểm số: --")
-            self.ui.result_image_label.setPixmap(empty)
-            txt = get_status_msg(1)
-            self.ui.result_image_label.setText(txt)
-            self.ui.result_image_label.setStyleSheet(style_ready if txt == msg_ready else style_wait)
-        
+            self.ui.score_label.setText("Điểm số: --"); self.ui.result_image_label.setPixmap(empty)
+            txt = get_status_msg(1); self.ui.result_image_label.setText(txt); self.ui.result_image_label.setStyleSheet(get_style(txt))
         if (idx is None or idx == 1) and hasattr(self.ui, 'dual_cam1_score'): 
-            self.ui.dual_cam1_score.setText("Điểm số: --")
-            self.ui.dual_cam1_result_img.setPixmap(empty)
-            txt = get_status_msg(1)
-            self.ui.dual_cam1_result_img.setText(txt)
-            self.ui.dual_cam1_result_img.setStyleSheet(style_ready if txt == msg_ready else style_wait)
-
+            self.ui.dual_cam1_score.setText("Điểm số: --"); self.ui.dual_cam1_result_img.setPixmap(empty)
+            txt = get_status_msg(1); self.ui.dual_cam1_result_img.setText(txt); self.ui.dual_cam1_result_img.setStyleSheet(get_style(txt))
         if (idx is None or idx == 2) and hasattr(self.ui, 'dual_cam2_score'): 
-            self.ui.dual_cam2_score.setText("Điểm số: --")
-            self.ui.dual_cam2_result_img.setPixmap(empty)
-            txt = get_status_msg(2)
-            self.ui.dual_cam2_result_img.setText(txt)
-            self.ui.dual_cam2_result_img.setStyleSheet(style_ready if txt == msg_ready else style_wait)
+            self.ui.dual_cam2_score.setText("Điểm số: --"); self.ui.dual_cam2_result_img.setPixmap(empty)
+            txt = get_status_msg(2); self.ui.dual_cam2_result_img.setText(txt); self.ui.dual_cam2_result_img.setStyleSheet(get_style(txt))
 
     def _update_result_image(self, idx, pix):
         default_style = "background-color: #212f3d; border: 1px solid #4a6278; border-radius: 8px;"
-        
-        if idx == 0: 
-            self.ui.result_image_label.setStyleSheet(default_style)
-            self.ui.result_image_label.setPixmap(pix)
-        elif idx == 1: 
-            self.ui.dual_cam1_result_img.setStyleSheet(default_style)
-            self.ui.dual_cam1_result_img.setPixmap(pix)
-        elif idx == 2: 
-            self.ui.dual_cam2_result_img.setStyleSheet(default_style)
-            self.ui.dual_cam2_result_img.setPixmap(pix)
+        if idx == 0: self.ui.result_image_label.setStyleSheet(default_style); self.ui.result_image_label.setPixmap(pix)
+        elif idx == 1: self.ui.dual_cam1_result_img.setStyleSheet(default_style); self.ui.dual_cam1_result_img.setPixmap(pix)
+        elif idx == 2: self.ui.dual_cam2_result_img.setStyleSheet(default_style); self.ui.dual_cam2_result_img.setPixmap(pix)
 
     def _get_combo(self, cam_id):
         if self.sess_manager.current_mode == 0 and cam_id == 1: return self.ui.single_cam_source
