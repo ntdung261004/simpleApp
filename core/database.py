@@ -30,6 +30,7 @@ class DatabaseManager:
             self.cursor = self.conn.cursor()
             self.cursor.execute("PRAGMA foreign_keys = ON;")
             self._create_tables()
+            self._migrate_db()
         except sqlite3.Error as e:
             logger.error(f"Lỗi kết nối DB: {e}")
             
@@ -40,6 +41,7 @@ class DatabaseManager:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
                     class_name TEXT,
+                    note TEXT,
                     created_at TEXT NOT NULL
                 );
             """)
@@ -81,6 +83,17 @@ class DatabaseManager:
         except sqlite3.Error as e:
             logger.error(f"Lỗi tạo bảng: {e}")
 
+    def _migrate_db(self):
+        try:
+            self.cursor.execute("PRAGMA table_info(soldiers)")
+            columns = [info[1] for info in self.cursor.fetchall()]
+            if "note" not in columns:
+                logger.info("Đang cập nhật DB: Thêm cột 'note' vào bảng soldiers...")
+                self.cursor.execute("ALTER TABLE soldiers ADD COLUMN note TEXT")
+                self.conn.commit()
+        except Exception as e:
+            logger.error(f"Lỗi migrate DB: {e}")
+
     # --- Soldiers ---
     def add_soldier(self, name: str, class_name: str) -> int | None:
         try:
@@ -101,11 +114,46 @@ class DatabaseManager:
             self.conn.commit(); return True
         except: return False
     
+    def update_soldier_note(self, soldier_id, note):
+        try:
+            self.cursor.execute("UPDATE soldiers SET note=? WHERE id=?", (note, soldier_id))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Lỗi update note: {e}")
+            return False
+    
     def delete_soldier(self, soldier_id):
         try:
             self.cursor.execute("DELETE FROM soldiers WHERE id=?", (soldier_id,))
             self.conn.commit(); return True
         except: return False
+
+    # --- HISTORY & STATS (NEW) ---
+    def get_soldier_history(self, soldier_id: int) -> list:
+        """Lấy lịch sử tất cả các phiên tập của một người."""
+        try:
+            # Lấy thông tin phiên tập + tổng điểm + số phát bắn
+            query = """
+                SELECT 
+                    ps.name as session_name,
+                    ps.mode,
+                    ps.created_at,
+                    COUNT(sh.id) as shot_count,
+                    SUM(sh.score) as total_score
+                FROM sessions s
+                JOIN practice_sessions ps ON s.practice_session_id = ps.id
+                LEFT JOIN shots sh ON s.id = sh.session_id
+                WHERE s.soldier_id = ? AND ps.is_finished = 1
+                GROUP BY s.id
+                HAVING shot_count > 0
+                ORDER BY ps.created_at ASC
+            """
+            self.cursor.execute(query, (soldier_id,))
+            return [dict(zip([c[0] for c in self.cursor.description], row)) for row in self.cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Lỗi lấy lịch sử cá nhân: {e}")
+            return []
 
     # --- PRACTICE SESSIONS ---
     def create_practice_session(self, name: str, mode: str) -> int | None:
@@ -131,7 +179,6 @@ class DatabaseManager:
             logger.error(f"Lỗi lấy danh sách phiên: {e}"); return []
 
     def get_finished_practice_sessions(self) -> list:
-        """Lấy danh sách phiên ĐÃ kết thúc (Báo cáo)."""
         try:
             self.cursor.execute("SELECT * FROM practice_sessions WHERE is_finished = 1 ORDER BY created_at DESC")
             sessions = [dict(zip([c[0] for c in self.cursor.description], row)) for row in self.cursor.fetchall()]
@@ -167,10 +214,8 @@ class DatabaseManager:
         except sqlite3.Error as e:
             logger.error(f"Lỗi lấy chi tiết báo cáo: {e}"); return []
 
-    # --- MỚI: LẤY CHI TIẾT CÁC PHÁT BẮN CỦA 1 NGƯỜI TRONG 1 PHIÊN ---
     def get_soldier_session_shots(self, practice_session_id: int, soldier_id: int) -> list:
         try:
-            # Tìm session_id của người đó trong phiên tập đó (lấy phiên mới nhất nếu có nhiều lượt)
             query_session = """
                 SELECT id FROM sessions 
                 WHERE practice_session_id = ? AND soldier_id = ?
@@ -181,7 +226,6 @@ class DatabaseManager:
             if not row: return []
             session_id = row[0]
 
-            # Lấy danh sách các phát bắn
             query_shots = """
                 SELECT * FROM shots 
                 WHERE session_id = ?
@@ -192,7 +236,6 @@ class DatabaseManager:
             return shots
         except Exception as e:
             logger.error(f"Lỗi lấy chi tiết shots: {e}"); return []
-    # ---------------------------------------------------------------
 
     def mark_practice_session_finished(self, ps_id: int):
         try:

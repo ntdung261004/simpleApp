@@ -2,7 +2,8 @@
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QTableWidget, QFrame, QStackedWidget, QApplication, QLineEdit,
-    QHeaderView, QAbstractItemView, QComboBox, QScrollArea, QGridLayout
+    QHeaderView, QAbstractItemView, QComboBox, QScrollArea, QGridLayout,
+    QTextEdit, QGroupBox
 )
 from PySide6.QtGui import QFont, QColor
 from PySide6.QtCore import Qt
@@ -93,6 +94,25 @@ class ManageGui(QWidget):
             QLabel.card-value {{
                 color: #ecf0f1; font-size: 20px; font-weight: bold;
             }}
+            
+            /* TextEdit ghi chú */
+            QTextEdit {{
+                background-color: #2c3e50; border: 1px solid #4a6278; color: white;
+                border-radius: 6px; padding: 5px; font-size: 14px;
+            }}
+            
+            /* Style chung cho GroupBox để tránh đè title */
+            QGroupBox {{
+                font-weight: bold;
+                border: 1px solid #7f8c8d;
+                border-radius: 5px;
+                margin-top: 20px; /* Quan trọng: Tạo khoảng trống cho title */
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }}
         """)
 
         self.setupUi()
@@ -123,6 +143,11 @@ class ManageGui(QWidget):
         self.page_session_detail = QWidget()
         self._setup_session_detail_page()
         self.main_stack.addWidget(self.page_session_detail)
+        
+        # --- TRANG 4: THỐNG KÊ CÁ NHÂN (NEW) ---
+        self.page_personal_stats = QWidget()
+        self._setup_personal_stats_page()
+        self.main_stack.addWidget(self.page_personal_stats)
 
     def _setup_menu_page(self):
         layout = QVBoxLayout(self.page_menu)
@@ -168,30 +193,55 @@ class ManageGui(QWidget):
         layout.setContentsMargins(margin, margin, margin, margin)
         layout.setSpacing(int(15 * self.scale_factor))
 
-        header_layout = QHBoxLayout()
+        # --- HEADER 1: Title ---
+        title_layout = QHBoxLayout()
         lbl_title = QLabel("DANH SÁCH NGƯỜI TẬP")
-        lbl_title.setStyleSheet(f"font-size: {int(20 * self.scale_factor)}px; font-weight: bold; color: #1abc9c;")
+        lbl_title.setStyleSheet(f"font-size: {int(24 * self.scale_factor)}px; font-weight: bold; color: #1abc9c;")
+        title_layout.addWidget(lbl_title)
+        title_layout.addStretch()
+        self.total_count_label = QLabel("Tổng số: 0")
+        self.total_count_label.setStyleSheet("font-style: italic; color: #bdc3c7; font-size: 14px; font-weight: bold;")
+        title_layout.addWidget(self.total_count_label)
+        layout.addLayout(title_layout)
+
+        # --- HEADER 2: Filter & Sort Controls ---
+        controls_layout = QHBoxLayout()
         
+        # Search Box
         self.search_box = QLineEdit()
         self.search_box.setObjectName("searchBox")
-        self.search_box.setPlaceholderText("🔍 Tìm kiếm theo tên hoặc đơn vị...")
-        self.search_box.setFixedWidth(int(350 * self.scale_factor))
+        self.search_box.setPlaceholderText("🔍 Tìm theo tên...")
+        self.search_box.setFixedWidth(int(250 * self.scale_factor))
         
-        self.total_count_label = QLabel("Tổng số: 0")
-        self.total_count_label.setStyleSheet("font-style: italic; color: #bdc3c7; font-size: 14px;")
+        # Filter Unit ComboBox
+        self.cmb_filter_unit = QComboBox()
+        self.cmb_filter_unit.setPlaceholderText("Tất cả đơn vị")
+        self.cmb_filter_unit.addItem("Tất cả đơn vị", "ALL")
+        self.cmb_filter_unit.setMinimumWidth(int(150 * self.scale_factor))
+        
+        # Sort ComboBox
+        self.cmb_sort_trainees = QComboBox()
+        self.cmb_sort_trainees.addItem("Sắp xếp: Tên A-Z", "NAME_ASC")
+        self.cmb_sort_trainees.addItem("Sắp xếp: Tên Z-A", "NAME_DESC")
+        self.cmb_sort_trainees.addItem("Sắp xếp: Đơn vị", "UNIT")
+        self.cmb_sort_trainees.setMinimumWidth(int(180 * self.scale_factor))
 
-        header_layout.addWidget(lbl_title)
-        header_layout.addStretch()
-        header_layout.addWidget(self.search_box)
-        header_layout.addSpacing(15)
-        header_layout.addWidget(self.total_count_label)
-        layout.addLayout(header_layout)
+        controls_layout.addWidget(self.search_box)
+        controls_layout.addSpacing(10)
+        controls_layout.addWidget(QLabel("Lọc:"))
+        controls_layout.addWidget(self.cmb_filter_unit)
+        controls_layout.addSpacing(10)
+        controls_layout.addWidget(QLabel("Xếp:"))
+        controls_layout.addWidget(self.cmb_sort_trainees)
+        controls_layout.addStretch()
+        layout.addLayout(controls_layout)
 
-        self.soldier_table = QTableWidget(0, 3)
-        self.soldier_table.setHorizontalHeaderLabels(["ID", "Họ và Tên", "Đơn vị"])
+        # --- TABLE ---
+        self.soldier_table = QTableWidget(0, 4)
+        self.soldier_table.setHorizontalHeaderLabels(["STT", "Họ và Tên", "Đơn vị", "Ghi chú"])
         self.soldier_table.verticalHeader().setVisible(False)
         self.soldier_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.soldier_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.soldier_table.setSelectionMode(QAbstractItemView.SingleSelection) 
         self.soldier_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.soldier_table.setAlternatingRowColors(True)
         self.soldier_table.setStyleSheet("alternate-background-color: #3b5266;")
@@ -199,26 +249,46 @@ class ManageGui(QWidget):
         header = self.soldier_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
         layout.addWidget(self.soldier_table)
 
+        # --- FOOTER ---
         footer_layout = QHBoxLayout()
+        
         self.btn_add_trainee = QPushButton("Thêm Mới")
         self.btn_add_trainee.setCursor(Qt.PointingHandCursor)
-        self.btn_add_trainee.setMinimumWidth(130); self.btn_add_trainee.setMinimumHeight(40)
+        self.btn_add_trainee.setMinimumHeight(40)
         
         self.btn_import_excel = QPushButton("Nhập Excel")
         self.btn_import_excel.setObjectName("importBtn")
         self.btn_import_excel.setCursor(Qt.PointingHandCursor)
-        self.btn_import_excel.setMinimumWidth(130); self.btn_import_excel.setMinimumHeight(40)
+        self.btn_import_excel.setMinimumHeight(40)
         
+        # ĐÃ SỬA: Bỏ icon
+        self.btn_note = QPushButton("Thêm/Sửa Ghi chú")
+        self.btn_note.setStyleSheet("background-color: #f39c12; color: white;")
+        self.btn_note.setCursor(Qt.PointingHandCursor)
+        self.btn_note.setMinimumHeight(40)
+        self.btn_note.setEnabled(False) 
+        
+        # ĐÃ SỬA: Bỏ icon
+        self.btn_personal_stats = QPushButton("Xem Thống kê Cá nhân")
+        self.btn_personal_stats.setStyleSheet("background-color: #9b59b6; color: white;")
+        self.btn_personal_stats.setCursor(Qt.PointingHandCursor)
+        self.btn_personal_stats.setMinimumHeight(40)
+        self.btn_personal_stats.setEnabled(False)
+
         self.btn_back_to_menu = QPushButton("Quay Lại Menu")
         self.btn_back_to_menu.setObjectName("danger")
         self.btn_back_to_menu.setCursor(Qt.PointingHandCursor)
-        self.btn_back_to_menu.setMinimumWidth(130); self.btn_back_to_menu.setMinimumHeight(40)
+        self.btn_back_to_menu.setMinimumHeight(40)
 
         footer_layout.addWidget(self.btn_add_trainee)
         footer_layout.addWidget(self.btn_import_excel)
+        footer_layout.addSpacing(15)
+        footer_layout.addWidget(self.btn_note)
+        footer_layout.addWidget(self.btn_personal_stats)
         footer_layout.addStretch()
         footer_layout.addWidget(self.btn_back_to_menu)
         layout.addLayout(footer_layout)
@@ -253,11 +323,18 @@ class ManageGui(QWidget):
         layout.addWidget(self.session_table)
 
         footer_layout = QHBoxLayout()
+        # ĐÃ SỬA: Đảm bảo không có icon
         self.btn_view_report = QPushButton("Xem báo cáo")
         self.btn_view_report.setStyleSheet("background-color: #3498db; color: white;")
         self.btn_view_report.setCursor(Qt.PointingHandCursor)
         self.btn_view_report.setMinimumWidth(130); self.btn_view_report.setMinimumHeight(40)
         self.btn_view_report.setEnabled(False) 
+
+        self.btn_delete_session = QPushButton("Xóa phiên")
+        self.btn_delete_session.setObjectName("danger")
+        self.btn_delete_session.setCursor(Qt.PointingHandCursor)
+        self.btn_delete_session.setMinimumWidth(130); self.btn_delete_session.setMinimumHeight(40)
+        self.btn_delete_session.setEnabled(False)
 
         self.btn_back_from_session = QPushButton("Quay Lại Menu")
         self.btn_back_from_session.setObjectName("danger")
@@ -266,6 +343,8 @@ class ManageGui(QWidget):
         
         footer_layout.addStretch()
         footer_layout.addWidget(self.btn_view_report)
+        footer_layout.addSpacing(10)
+        footer_layout.addWidget(self.btn_delete_session)
         footer_layout.addWidget(self.btn_back_from_session)
         layout.addLayout(footer_layout)
 
@@ -348,7 +427,7 @@ class ManageGui(QWidget):
             
             l1 = QLabel(title)
             l1.setProperty("class", "card-title")
-            l1.setObjectName(title_obj_name) # Để logic có thể truy cập đổi tên
+            l1.setObjectName(title_obj_name) 
             
             l2 = QLabel("--")
             l2.setProperty("class", "card-value")
@@ -358,7 +437,6 @@ class ManageGui(QWidget):
             cl.addWidget(l1); cl.addWidget(l2)
             return card, l1, l2
 
-        # Lưu lại tham chiếu Title và Value để đổi tên sau
         card1, self.lbl_card1_title, self.lbl_card1_value = create_card("TỔNG SỐ NGƯỜI", "c1Title", "c1Value")
         card2, self.lbl_card2_title, self.lbl_card2_value = create_card("THẺ 2", "c2Title", "c2Value")
         card3, self.lbl_card3_title, self.lbl_card3_value = create_card("THẺ 3", "c3Title", "c3Value")
@@ -408,3 +486,114 @@ class ManageGui(QWidget):
         footer_layout.addWidget(self.btn_view_personal)
         footer_layout.addWidget(self.btn_back_to_session_list)
         layout.addLayout(footer_layout)
+
+    # --- SETUP TRANG THỐNG KÊ CÁ NHÂN (NEW) ---
+    def _setup_personal_stats_page(self):
+        main_lo = QVBoxLayout(self.page_personal_stats)
+        main_lo.setContentsMargins(int(20*self.scale_factor), int(20*self.scale_factor), int(20*self.scale_factor), int(20*self.scale_factor))
+        
+        # 1. Header
+        header_lo = QHBoxLayout()
+        self.btn_back_from_personal = QPushButton("◀ Quay lại Danh sách")
+        self.btn_back_from_personal.setObjectName("danger")
+        self.btn_back_from_personal.setMinimumHeight(40)
+        
+        self.lbl_personal_name = QLabel("NGUYỄN VĂN A - C1")
+        self.lbl_personal_name.setStyleSheet("font-size: 24px; font-weight: bold; color: #f1c40f;")
+        
+        # --- THÊM: ComboBox chọn chế độ xem ---
+        self.cmb_stats_filter = QComboBox()
+        self.cmb_stats_filter.addItem("Xem: Bắn từng viên (Single)", "SINGLE")
+        self.cmb_stats_filter.addItem("Xem: Bắn loạt 3 (Burst)", "BURST_3")
+        self.cmb_stats_filter.setMinimumWidth(200)
+        self.cmb_stats_filter.setMinimumHeight(40)
+        self.cmb_stats_filter.setStyleSheet("background-color: #34495e; color: white; font-weight: bold; border: 1px solid #1abc9c; padding: 5px;")
+        
+        header_lo.addWidget(self.btn_back_from_personal)
+        header_lo.addSpacing(20)
+        header_lo.addWidget(self.lbl_personal_name)
+        header_lo.addStretch()
+        header_lo.addWidget(QLabel("Chế độ xem:"))
+        header_lo.addWidget(self.cmb_stats_filter) # Add combo box
+        main_lo.addLayout(header_lo)
+        
+        # 2. Content (Splitter or HBox)
+        content_lo = QHBoxLayout()
+        
+        # LEFT: Lịch sử các phiên (Table)
+        # ĐÃ SỬA: Thêm style cho GroupBox bên trái để khớp giao diện
+        left_group = QGroupBox("Lịch sử tham gia")
+        left_group.setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #7f8c8d; border-radius: 5px; margin-top: 20px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }")
+        l_lo = QVBoxLayout(left_group)
+        
+        self.personal_table = QTableWidget(0, 3) # Giảm xuống 3 cột cho gọn (Ngày, Tên phiên, Kết quả)
+        self.personal_table.setHorizontalHeaderLabels(["Ngày", "Phiên tập", "Kết quả"])
+        self.personal_table.verticalHeader().setVisible(False)
+        self.personal_table.setAlternatingRowColors(True)
+        self.personal_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.personal_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.personal_table.setStyleSheet("alternate-background-color: #3b5266;")
+        
+        h = self.personal_table.horizontalHeader()
+        h.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(1, QHeaderView.Stretch)
+        h.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        
+        l_lo.addWidget(self.personal_table)
+        content_lo.addWidget(left_group, 4) # Tỷ lệ 40%
+        
+        # RIGHT: Thống kê & Ghi chú
+        right_widget = QWidget()
+        r_lo = QVBoxLayout(right_widget)
+        r_lo.setContentsMargins(0,0,0,0)
+        
+        # Cards
+        cards_lo = QHBoxLayout()
+        def mk_mini_card(title, obj_val):
+            fr = QFrame()
+            fr.setStyleSheet("background-color: #34495e; border-radius: 5px; border: 1px solid #1abc9c;")
+            v = QVBoxLayout(fr)
+            v.setContentsMargins(5,5,5,5)
+            l1 = QLabel(title); l1.setStyleSheet("color:#bdc3c7; font-size:12px; font-weight:bold;")
+            l2 = QLabel("--"); l2.setObjectName(obj_val); l2.setStyleSheet("color:white; font-size:18px; font-weight:bold;")
+            l2.setAlignment(Qt.AlignCenter)
+            v.addWidget(l1); v.addWidget(l2)
+            return fr, l2
+            
+        c1, self.lbl_p_sessions = mk_mini_card("SỐ LƯỢT", "vp1")
+        c2, self.lbl_p_avg = mk_mini_card("TRUNG BÌNH", "vp2") # Title động sẽ set trong logic
+        c3, self.lbl_p_best = mk_mini_card("TỐT NHẤT", "vp3")
+        
+        cards_lo.addWidget(c1); cards_lo.addWidget(c2); cards_lo.addWidget(c3)
+        r_lo.addLayout(cards_lo)
+        
+        # Chart Area
+        self.personal_chart_container = QWidget()
+        self.personal_chart_layout = QVBoxLayout(self.personal_chart_container)
+        self.personal_chart_container.setMinimumHeight(250)
+        self.personal_chart_container.setStyleSheet("background-color: #2c3e50; border: 1px solid #4a6278; border-radius: 5px;")
+        r_lo.addWidget(self.personal_chart_container)
+        
+        # System Evaluation
+        self.lbl_p_eval = QLabel("Đánh giá hệ thống...")
+        self.lbl_p_eval.setWordWrap(True)
+        self.lbl_p_eval.setStyleSheet("color: #ecf0f1; font-style: italic; margin: 5px;")
+        r_lo.addWidget(self.lbl_p_eval)
+        
+        # Notes
+        note_group = QGroupBox("Ghi chú & Nhận xét (GV/CB)")
+        # ĐÃ SỬA: Style cho GroupBox ghi chú
+        note_group.setStyleSheet("QGroupBox { font-weight: bold; color: #f39c12; border: 1px solid #f39c12; margin-top: 20px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }")
+        n_lo = QVBoxLayout(note_group)
+        self.txt_personal_note = QTextEdit()
+        self.txt_personal_note.setPlaceholderText("Nhập nhận xét về quá trình luyện tập...")
+        self.btn_save_p_note = QPushButton("Lưu Ghi chú")
+        self.btn_save_p_note.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold;")
+        self.btn_save_p_note.setCursor(Qt.PointingHandCursor)
+        
+        n_lo.addWidget(self.txt_personal_note)
+        n_lo.addWidget(self.btn_save_p_note)
+        r_lo.addWidget(note_group)
+        
+        content_lo.addWidget(right_widget, 6) # Tỷ lệ 60%
+        main_lo.addLayout(content_lo)

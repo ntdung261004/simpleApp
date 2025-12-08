@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
     QMainWindow, QDialog, QFormLayout, QLineEdit,
     QDialogButtonBox, QMessageBox, QTableWidgetItem,
     QVBoxLayout, QWidget, QCheckBox, QHBoxLayout, QPushButton,
-    QMenu, QFileDialog, QHeaderView, QLabel, QTableWidget, QSizePolicy
+    QMenu, QFileDialog, QHeaderView, QLabel, QTableWidget, QSizePolicy,
+    QInputDialog
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QImage, QColor, QFont
@@ -30,7 +31,7 @@ from utils.resource_path import resource_path
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# === CÁC CLASS DIALOG HỖ TRỢ ===
+# === CÁC CLASS DIALOG HỖ TRỢ (GIỮ NGUYÊN) ===
 # =============================================================================
 
 class ExcelPreviewDialog(QDialog):
@@ -156,12 +157,21 @@ class ManageWindow(QMainWindow):
         self.current_detail_data = [] 
         self.current_session_mode = "SINGLE"
         self.current_practice_session_id = None
+        self.all_soldiers_data = [] # Cache dữ liệu
         
-        # Matplotlib Figure
+        # Matplotlib Figure (General Report)
         self.figure = Figure(figsize=(8, 4), dpi=100, facecolor='#2c3e50')
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setStyleSheet("background-color: transparent;")
         self.ui.charts_layout.addWidget(self.canvas)
+
+        # Matplotlib Figure (Personal Stats) - NEW
+        self.p_figure = Figure(figsize=(6, 3), dpi=100, facecolor='#2c3e50')
+        self.p_canvas = FigureCanvas(self.p_figure)
+        self.p_canvas.setStyleSheet("background-color: transparent;")
+        self.ui.personal_chart_layout.addWidget(self.p_canvas)
+        
+        self.current_viewing_soldier_id = None
 
         self.connect_signals()
         self.show_menu()
@@ -174,21 +184,39 @@ class ManageWindow(QMainWindow):
         self.ui.btn_add_trainee.clicked.connect(self.open_add_soldier_dialog)
         self.ui.btn_import_excel.clicked.connect(self.import_excel_handler)
         self.ui.btn_back_to_menu.clicked.connect(self.show_menu)
-        self.ui.search_box.textChanged.connect(self.filter_soldiers)
+        
+        # Filter & Sort
+        self.ui.search_box.textChanged.connect(self.reload_soldier_table_view)
+        self.ui.cmb_filter_unit.currentIndexChanged.connect(self.reload_soldier_table_view)
+        self.ui.cmb_sort_trainees.currentIndexChanged.connect(self.reload_soldier_table_view)
+        
+        # Table interactions
+        self.ui.soldier_table.itemSelectionChanged.connect(self.on_soldier_selection_changed)
+        self.ui.btn_note.clicked.connect(self.on_edit_note_clicked)
         
         self.ui.soldier_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ui.soldier_table.customContextMenuRequested.connect(self.show_soldier_context_menu)
         
+        # Session List
         self.ui.btn_back_from_session.clicked.connect(self.show_menu)
         self.ui.session_table.itemSelectionChanged.connect(self.on_session_selection_changed)
         self.ui.btn_view_report.clicked.connect(self.show_session_detail)
+        self.ui.btn_delete_session.clicked.connect(self.on_delete_session_clicked)
 
+        # Session Detail
         self.ui.btn_back_to_session_list.clicked.connect(self.show_session_report)
         self.ui.cmb_sort.currentIndexChanged.connect(self.sort_session_detail)
         self.ui.detail_table.itemSelectionChanged.connect(self.on_detail_selection_changed)
         self.ui.btn_view_personal.clicked.connect(self.on_view_personal_process)
-        
         self.ui.cmb_view_mode.currentIndexChanged.connect(self.toggle_view_mode)
+        
+        # Personal Stats (NEW)
+        self.ui.btn_personal_stats.clicked.connect(self.on_view_personal_stats_clicked)
+        self.ui.btn_back_from_personal.clicked.connect(self.show_trainee_list)
+        self.ui.btn_save_p_note.clicked.connect(self.save_personal_note_direct)
+        
+        # Kết nối ComboBox lọc chế độ trong trang cá nhân
+        self.ui.cmb_stats_filter.currentIndexChanged.connect(self.refresh_personal_stats_view)
 
     # --- NAVIGATION ---
     def show_menu(self): self.ui.main_stack.setCurrentWidget(self.ui.page_menu)
@@ -197,6 +225,171 @@ class ManageWindow(QMainWindow):
         self.ui.main_stack.setCurrentWidget(self.ui.page_sessions)
         self.load_session_history()
         self.ui.btn_view_report.setEnabled(False)
+        self.ui.btn_delete_session.setEnabled(False)
+
+    # --- THỐNG KÊ CÁ NHÂN (LOGIC MỚI) ---
+    def on_view_personal_stats_clicked(self):
+        selected_rows = self.ui.soldier_table.selectedItems()
+        if not selected_rows: return
+        row = selected_rows[0].row()
+        
+        # Lấy ID và thông tin cơ bản
+        soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
+        name = self.ui.soldier_table.item(row, 1).text()
+        unit = self.ui.soldier_table.item(row, 2).text()
+        note = self.ui.soldier_table.item(row, 3).text()
+        
+        # Lấy lịch sử từ DB
+        self.current_history_cache = self.db.get_soldier_history(soldier_id)
+        
+        if not self.current_history_cache:
+            QMessageBox.information(self, "Thông báo", f"Chiến sĩ {name} chưa tham gia phiên tập nào.")
+            return
+            
+        self.current_viewing_soldier_id = soldier_id
+        
+        # Setup UI
+        self.ui.lbl_personal_name.setText(f"{name.upper()} - {unit}")
+        self.ui.txt_personal_note.setPlainText(note)
+        
+        # Reset Filter về SINGLE
+        self.ui.cmb_stats_filter.blockSignals(True)
+        self.ui.cmb_stats_filter.setCurrentIndex(0)
+        self.ui.cmb_stats_filter.blockSignals(False)
+        
+        self.refresh_personal_stats_view()
+        self.ui.main_stack.setCurrentWidget(self.ui.page_personal_stats)
+
+    def refresh_personal_stats_view(self):
+        """Hàm vẽ lại giao diện thống kê dựa trên chế độ đang chọn (Single/Burst)"""
+        mode_filter = self.ui.cmb_stats_filter.currentData() # "SINGLE" or "BURST_3"
+        
+        # Lọc dữ liệu theo chế độ
+        filtered_history = [h for h in self.current_history_cache if h['mode'] == mode_filter]
+        
+        # --- A. CẬP NHẬT BẢNG LỊCH SỬ ---
+        self.ui.personal_table.setRowCount(len(filtered_history))
+        scores_for_chart = []
+        dates_for_chart = []
+        
+        total_score_accum = 0
+        
+        for i, h in enumerate(filtered_history):
+            date_str = datetime.strptime(h['created_at'], "%Y-%m-%d %H:%M:%S").strftime("%d/%m")
+            sc = h['total_score']
+            cnt = h['shot_count']
+            
+            # Tính giá trị hiển thị
+            if mode_filter == "BURST_3":
+                res_str = f"{sc} điểm / 30"
+                chart_val = sc
+            else: # SINGLE
+                avg = sc / cnt if cnt > 0 else 0
+                res_str = f"{avg:.1f} điểm/phát ({cnt} viên)"
+                chart_val = avg
+                
+            scores_for_chart.append(chart_val)
+            dates_for_chart.append(date_str)
+            total_score_accum += chart_val
+            
+            self.ui.personal_table.setItem(i, 0, QTableWidgetItem(date_str))
+            self.ui.personal_table.setItem(i, 1, QTableWidgetItem(h['session_name']))
+            self.ui.personal_table.setItem(i, 2, QTableWidgetItem(res_str))
+
+        # --- B. CẬP NHẬT THẺ CHỈ SỐ (CARDS) ---
+        count = len(filtered_history)
+        self.ui.lbl_p_sessions.setText(f"{count} lần")
+        
+        # Nếu không có dữ liệu cho chế độ này
+        if count == 0:
+            self.ui.lbl_p_avg.setText("--")
+            self.ui.lbl_p_best.setText("--")
+            self.ui.lbl_p_eval.setText(f"Chưa có dữ liệu tập luyện ở chế độ {mode_filter}.")
+            self.p_figure.clear()
+            self.p_canvas.draw()
+            return
+
+        # Tính Trung bình & Tốt nhất
+        avg_global = total_score_accum / count
+        best_val = max(scores_for_chart)
+        
+        if mode_filter == "BURST_3":
+            # Chế độ loạt: Hiển thị Tổng điểm
+            self.ui.lbl_p_avg.parent().findChild(QLabel).setText("ĐIỂM TB / LOẠT") # Đổi title thẻ
+            self.ui.lbl_p_avg.setText(f"{avg_global:.1f}")
+            self.ui.lbl_p_best.setText(f"{best_val}")
+        else:
+            # Chế độ đơn: Hiển thị Điểm trung bình
+            self.ui.lbl_p_avg.parent().findChild(QLabel).setText("ĐIỂM TB / PHÁT") # Đổi title thẻ
+            self.ui.lbl_p_avg.setText(f"{avg_global:.2f}")
+            self.ui.lbl_p_best.setText(f"{best_val:.2f}")
+
+        # --- C. ĐÁNH GIÁ HỆ THỐNG ---
+        eval_msg = ""
+        # 1. Đánh giá xu hướng
+        if len(scores_for_chart) >= 2:
+            # So sánh 3 lần gần nhất (hoặc 2) để thấy xu hướng gần đây
+            recent = scores_for_chart[-3:]
+            trend = recent[-1] - recent[0]
+            if trend > 0.5: eval_msg = "📈 Đang có sự TIẾN BỘ trong các buổi tập gần đây."
+            elif trend < -0.5: eval_msg = "📉 Phong độ đang ĐI XUỐNG, cần tập trung hơn."
+            else: eval_msg = "➡ Phong độ ỔN ĐỊNH."
+        else:
+            eval_msg = "Cần thêm dữ liệu để đánh giá xu hướng."
+
+        # 2. Đánh giá trình độ
+        level_msg = ""
+        if mode_filter == "BURST_3":
+            if avg_global >= 23: level_msg = "Khả năng ghìm súng RẤT TỐT (Giỏi)."
+            elif avg_global >= 15: level_msg = "Khả năng ghìm súng ĐẠT YÊU CẦU."
+            else: level_msg = "Yếu lĩnh ghìm súng còn YẾU (Hay giật)."
+        else:
+            if avg_global >= 8.0: level_msg = "Đường ngắm rất chính xác (Giỏi)."
+            elif avg_global >= 5.0: level_msg = "Đường ngắm đạt yêu cầu."
+            else: level_msg = "Đường ngắm chưa chuẩn (Yếu)."
+            
+        self.ui.lbl_p_eval.setText(f"{eval_msg} {level_msg}")
+
+        # --- D. VẼ BIỂU ĐỒ ---
+        self.p_figure.clear()
+        ax = self.p_figure.add_subplot(111)
+        
+        # Chọn màu sắc và giới hạn trục Y
+        line_color = '#3498db' if mode_filter == "SINGLE" else '#e67e22' # Xanh cho Single, Cam cho Burst
+        y_limit = 10 if mode_filter == "SINGLE" else 30
+        
+        ax.plot(range(len(scores_for_chart)), scores_for_chart, marker='o', linestyle='-', color=line_color, linewidth=2)
+        ax.set_xticks(range(len(dates_for_chart)))
+        ax.set_xticklabels(dates_for_chart, color='white', rotation=0, fontsize=8)
+        
+        title_chart = "BIỂU ĐỒ DIỄN BIẾN THÀNH TÍCH (ĐIỂM)" # Title chung
+        ax.set_title(title_chart, color='white', fontsize=10)
+        
+        ax.set_ylim(0, y_limit + (y_limit*0.1)) # Thêm chút khoảng trống bên trên
+        ax.tick_params(colors='white')
+        ax.grid(True, linestyle='--', alpha=0.3)
+        
+        # Hiển thị giá trị lên điểm
+        for x, y in enumerate(scores_for_chart):
+            ax.text(x, y + (y_limit*0.02), f"{y:.1f}" if mode_filter == "SINGLE" else f"{int(y)}", 
+                    color='white', ha='center', fontsize=8)
+
+        self.p_canvas.draw()
+
+    def save_personal_note_direct(self):
+        if self.current_viewing_soldier_id is None: return
+        text = self.ui.txt_personal_note.toPlainText().strip()
+        if self.db.update_soldier_note(self.current_viewing_soldier_id, text):
+            QMessageBox.information(self, "Đã lưu", "Cập nhật ghi chú thành công.")
+            self.ui.txt_personal_note.clear() # ĐÃ SỬA: Xóa text
+            
+            # Cập nhật cache để khi back về list không bị cũ
+            for s in self.all_soldiers_data:
+                if s['id'] == self.current_viewing_soldier_id:
+                    s['note'] = text
+                    break
+        else:
+            QMessageBox.warning(self, "Lỗi", "Không thể lưu ghi chú.")
 
     # --- BÁO CÁO PHIÊN TẬP (LIST) ---
     def load_session_history(self):
@@ -223,7 +416,31 @@ class ManageWindow(QMainWindow):
         except Exception as e: logging.error(f"Lỗi tải lịch sử phiên: {e}")
 
     def on_session_selection_changed(self):
-        self.ui.btn_view_report.setEnabled(len(self.ui.session_table.selectedItems()) > 0)
+        has_selection = len(self.ui.session_table.selectedItems()) > 0
+        self.ui.btn_view_report.setEnabled(has_selection)
+        self.ui.btn_delete_session.setEnabled(has_selection)
+
+    def on_delete_session_clicked(self):
+        selected_rows = self.ui.session_table.selectedItems()
+        if not selected_rows: return
+        row = selected_rows[0].row()
+        session_data = self.ui.session_table.item(row, 0).data(Qt.UserRole)
+        
+        reply = QMessageBox.question(
+            self, 
+            "Xác nhận xóa", 
+            f"Bạn có chắc chắn muốn xóa phiên tập:\n'{session_data['name']}'?\n\nDữ liệu không thể khôi phục.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            if self.db.delete_practice_session(session_data['id']):
+                QMessageBox.information(self, "Thành công", "Đã xóa phiên tập.")
+                self.load_session_history()
+                self.ui.btn_delete_session.setEnabled(False)
+                self.ui.btn_view_report.setEnabled(False)
+            else:
+                QMessageBox.critical(self, "Lỗi", "Không thể xóa phiên tập này.")
 
     # --- CHI TIẾT PHIÊN TẬP ---
     def show_session_detail(self):
@@ -290,8 +507,11 @@ class ManageWindow(QMainWindow):
         
         if not self.current_detail_data: return
         self.ui.detail_table.setRowCount(len(self.current_detail_data))
+        
         for row, p in enumerate(self.current_detail_data):
             score = p.get('total_score', 0)
+            shot_count = p.get('shot_count', 0)
+            
             stt_item = QTableWidgetItem(str(row + 1)); stt_item.setTextAlignment(Qt.AlignCenter)
             name_item = QTableWidgetItem(p['name']); name_item.setData(Qt.UserRole, p)
             class_item = QTableWidgetItem(p.get('class_name', '')); class_item.setTextAlignment(Qt.AlignCenter)
@@ -303,18 +523,34 @@ class ManageWindow(QMainWindow):
             self.ui.detail_table.setItem(row, 2, class_item)
 
             if self.current_session_mode == "BURST_3":
-                rank = "Không đạt"; color = QColor("#95a5a6")
-                if 15 <= score <= 18: rank = "Đạt"; color = QColor("#f39c12")
-                elif 19 <= score <= 23: rank = "Khá"; color = QColor("#3498db")
-                elif score > 23: rank = "Giỏi"; color = QColor("#2ecc71")
+                rank = ""; color = QColor("white")
+                
+                if shot_count == 0:
+                    rank = "Chưa tập"; color = QColor("#7f8c8d") 
+                    score_item.setText("--")
+                else:
+                    if score > 23: rank = "Giỏi"; color = QColor("#2ecc71")
+                    elif score >= 19: rank = "Khá"; color = QColor("#3498db")
+                    elif score >= 15: rank = "Đạt"; color = QColor("#f39c12")
+                    else: rank = "Không đạt"; color = QColor("#e74c3c")
+                
                 rank_item = QTableWidgetItem(rank); rank_item.setTextAlignment(Qt.AlignCenter); rank_item.setForeground(color); rank_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
                 self.ui.detail_table.setItem(row, 3, score_item)
                 self.ui.detail_table.setItem(row, 4, rank_item)
             else:
-                count = p.get('shot_count', 0)
-                count_item = QTableWidgetItem(str(count)); count_item.setTextAlignment(Qt.AlignCenter)
-                avg = round(score / count, 1) if count > 0 else 0
-                avg_item = QTableWidgetItem(str(avg)); avg_item.setTextAlignment(Qt.AlignCenter); avg_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
+                count_item = QTableWidgetItem(str(shot_count)); count_item.setTextAlignment(Qt.AlignCenter)
+                avg_text = "--"
+                if shot_count > 0:
+                    avg = round(score / shot_count, 1)
+                    avg_text = str(avg)
+                
+                avg_item = QTableWidgetItem(avg_text); avg_item.setTextAlignment(Qt.AlignCenter); avg_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
+                
+                if shot_count == 0:
+                    count_item.setForeground(QColor("#7f8c8d"))
+                    score_item.setText("--"); score_item.setForeground(QColor("#7f8c8d"))
+                    avg_item.setForeground(QColor("#7f8c8d"))
+
                 self.ui.detail_table.setItem(row, 3, count_item)
                 self.ui.detail_table.setItem(row, 4, score_item)
                 self.ui.detail_table.setItem(row, 5, avg_item)
@@ -323,22 +559,37 @@ class ManageWindow(QMainWindow):
     def render_general_report(self):
         if not self.current_detail_data: return
         
-        total_soldiers = len(self.current_detail_data)
-        self.ui.lbl_card1_title.setText("TỔNG SỐ NGƯỜI")
-        self.ui.lbl_card1_value.setText(str(total_soldiers))
+        total_assigned = len(self.current_detail_data)
         
-        # Sắp xếp để tìm Cao nhất/Thấp nhất
-        sorted_by_perf = sorted(self.current_detail_data, key=lambda x: x['total_score'] if self.current_session_mode == "BURST_3" else (x['total_score']/x['shot_count'] if x['shot_count']>0 else 0), reverse=True)
-        best = sorted_by_perf[0] if sorted_by_perf else None
-        worst = sorted_by_perf[-1] if sorted_by_perf else None
+        active_participants = [p for p in self.current_detail_data if p.get('shot_count', 0) > 0]
+        active_count = len(active_participants)
+        
+        self.ui.lbl_card1_title.setText("QUÂN SỐ")
+        self.ui.lbl_card1_value.setText(f"{active_count} / {total_assigned}")
+        
+        if active_count == 0:
+            self.ui.lbl_card2_value.setText("--")
+            self.ui.lbl_card3_value.setText("--")
+            self.ui.lbl_card4_value.setText("--")
+            self.ui.lbl_rpt_eval.setText("Chưa có dữ liệu bắn thực tế để đánh giá.")
+            self.figure.clear()
+            self.canvas.draw()
+            return
+
+        if self.current_session_mode == "BURST_3":
+            sorted_by_perf = sorted(active_participants, key=lambda x: x['total_score'], reverse=True)
+        else:
+            sorted_by_perf = sorted(active_participants, key=lambda x: (x['total_score']/x['shot_count']), reverse=True)
+            
+        best = sorted_by_perf[0]
+        worst = sorted_by_perf[-1]
         
         self.figure.clear()
         eval_text = ""; rec_text = ""
 
         if self.current_session_mode == "BURST_3":
-            # Thống kê Xếp loại (Loạt 3 viên)
             rank_counts = {"Giỏi": 0, "Khá": 0, "Đạt": 0, "Không đạt": 0}
-            for p in self.current_detail_data:
+            for p in active_participants:
                 s = p['total_score']
                 if s > 23: rank_counts["Giỏi"] += 1
                 elif s >= 19: rank_counts["Khá"] += 1
@@ -346,16 +597,16 @@ class ManageWindow(QMainWindow):
                 else: rank_counts["Không đạt"] += 1
             
             pass_count = sum(v for k, v in rank_counts.items() if k != "Không đạt")
-            pass_rate = (pass_count / total_soldiers * 100) if total_soldiers > 0 else 0
+            pass_rate = (pass_count / active_count * 100) 
             
             self.ui.lbl_card2_title.setText("TỈ LỆ ĐẠT")
             self.ui.lbl_card2_value.setText(f"{pass_rate:.1f}%")
             self.ui.lbl_card3_title.setText("CAO NHẤT")
-            self.ui.lbl_card3_value.setText(f"{best['name']}\n({best['total_score']}đ)" if best else "--")
+            self.ui.lbl_card3_value.setText(f"{best['name']}\n({best['total_score']}đ)")
             self.ui.lbl_card4_title.setText("THẤP NHẤT")
-            self.ui.lbl_card4_value.setText(f"{worst['name']}\n({worst['total_score']}đ)" if worst else "--")
+            self.ui.lbl_card4_value.setText(f"{worst['name']}\n({worst['total_score']}đ)")
             
-            eval_text = f"Kết quả loạt bắn (3 viên): {pass_rate:.1f}% chiến sĩ đạt yêu cầu."
+            eval_text = f"Kết quả trên {active_count} đồng chí đã bắn: {pass_rate:.1f}% đạt yêu cầu."
             if pass_rate >= 80: rec_text = "Đơn vị nắm vững yếu lĩnh. Duy trì luyện tập nâng cao."
             elif pass_rate >= 50: rec_text = "Cần kèm cặp thêm các đồng chí chưa đạt (chủ yếu lỗi giật súng)."
             else: rec_text = "Tổ chức huấn luyện lại cơ bản: lấy đường ngắm, giữ súng."
@@ -363,58 +614,74 @@ class ManageWindow(QMainWindow):
             ax1 = self.figure.add_subplot(121)
             labels = [k for k, v in rank_counts.items() if v > 0]
             sizes = [v for v in rank_counts.values() if v > 0]
-            colors = ['#2ecc71', '#3498db', '#f39c12', '#95a5a6']
+            colors = ['#2ecc71', '#3498db', '#f39c12', '#e74c3c']
             if sizes:
-                wedges, texts, autotexts = ax1.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
-                ax1.set_title('Tỉ lệ Xếp loại', color='white')
-                for t in texts + autotexts: t.set_color('white')
-            
+                wedges, texts, autotexts = ax1.pie(sizes, labels=labels, autopct='%1.0f%%', startangle=90, colors=colors)
+                ax1.set_title('Tỉ lệ Xếp loại', color='white', fontsize=10)
+                for t in texts + autotexts: t.set_color('white'); t.set_fontsize(8)
+
             ax2 = self.figure.add_subplot(122)
-            scores = [p['total_score'] for p in self.current_detail_data]
-            bins = [0, 15, 19, 24, 31]
-            ax2.hist(scores, bins=bins, color='#e74c3c', edgecolor='white', alpha=0.7)
-            ax2.set_title('Phân bố Điểm số (0-30)', color='white')
-            ax2.set_xlabel('Điểm', color='white'); ax2.tick_params(colors='white')
+            top_n = sorted_by_perf[:10][::-1] 
+            names = [p['name'].split()[-1] for p in top_n]
+            scores = [p['total_score'] for p in top_n]
+            
+            y_pos = range(len(names))
+            bars = ax2.barh(y_pos, scores, color='#1abc9c', height=0.6)
+            ax2.set_yticks(y_pos)
+            ax2.set_yticklabels(names, color='white', fontsize=9)
+            ax2.set_title(f'Top {len(top_n)} Thành Tích Tốt Nhất', color='white', fontsize=10)
+            ax2.set_xlim(0, 32)
+            ax2.tick_params(axis='x', colors='white')
+            for i, v in enumerate(scores):
+                ax2.text(v + 0.5, i, str(v), color='white', va='center', fontweight='bold')
 
         else:
-            # Thống kê Điểm TB (Từng viên)
             avg_scores = []
-            for p in self.current_detail_data:
-                sc = p['total_score'] / p['shot_count'] if p['shot_count'] > 0 else 0
-                avg_scores.append(sc)
+            for p in active_participants:
+                avg_scores.append(p['total_score'] / p['shot_count'])
             
             global_avg = sum(avg_scores) / len(avg_scores) if avg_scores else 0
             
             self.ui.lbl_card2_title.setText("ĐIỂM TRUNG BÌNH")
-            self.ui.lbl_card2_value.setText(f"{global_avg:.2f} / phát")
+            self.ui.lbl_card2_value.setText(f"{global_avg:.2f}")
             self.ui.lbl_card3_title.setText("CAO NHẤT")
-            best_avg = best['total_score'] / best['shot_count'] if best and best['shot_count'] > 0 else 0
-            self.ui.lbl_card3_value.setText(f"{best['name']}\n(TB: {best_avg:.1f})" if best else "--")
+            best_avg = best['total_score'] / best['shot_count']
+            self.ui.lbl_card3_value.setText(f"{best['name']}\n(TB: {best_avg:.1f})")
             self.ui.lbl_card4_title.setText("THẤP NHẤT")
-            worst_avg = worst['total_score'] / worst['shot_count'] if worst and worst['shot_count'] > 0 else 0
-            self.ui.lbl_card4_value.setText(f"{worst['name']}\n(TB: {worst_avg:.1f})" if worst else "--")
+            worst_avg = worst['total_score'] / worst['shot_count']
+            self.ui.lbl_card4_value.setText(f"{worst['name']}\n(TB: {worst_avg:.1f})")
             
             ax1 = self.figure.add_subplot(121)
-            cat_counts = {"0-5": 0, "5-8": 0, "8-10": 0}
+            cat_counts = {"Kém (<5)": 0, "TB (5-8)": 0, "Giỏi (>8)": 0}
             for a in avg_scores:
-                if a < 5: cat_counts["0-5"] += 1
-                elif a < 8: cat_counts["5-8"] += 1
-                else: cat_counts["8-10"] += 1
+                if a < 5: cat_counts["Kém (<5)"] += 1
+                elif a < 8: cat_counts["TB (5-8)"] += 1
+                else: cat_counts["Giỏi (>8)"] += 1
             
             labels = [k for k, v in cat_counts.items() if v > 0]
             sizes = [v for v in cat_counts.values() if v > 0]
             colors = ['#e74c3c', '#f39c12', '#2ecc71']
             if sizes:
-                wedges, texts, autotexts = ax1.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
-                ax1.set_title('Phân bố chất lượng (Điểm TB)', color='white')
-                for t in texts + autotexts: t.set_color('white')
+                wedges, texts, autotexts = ax1.pie(sizes, labels=labels, autopct='%1.0f%%', startangle=90, colors=colors)
+                ax1.set_title('Phân loại (Điểm TB)', color='white', fontsize=10)
+                for t in texts + autotexts: t.set_color('white'); t.set_fontsize(8)
 
             ax2 = self.figure.add_subplot(122)
-            ax2.hist(avg_scores, bins=[0, 2, 4, 6, 8, 10], color='#3498db', edgecolor='white', alpha=0.7)
-            ax2.set_title('Phổ điểm Trung bình', color='white')
-            ax2.set_xlabel('Điểm TB/Phát', color='white'); ax2.tick_params(colors='white')
+            top_n = sorted_by_perf[:10][::-1]
+            names = [p['name'].split()[-1] for p in top_n]
+            scores = [round(p['total_score']/p['shot_count'], 1) for p in top_n]
             
-            eval_text = f"Điểm trung bình toàn phiên: {global_avg:.2f} điểm/phát."
+            y_pos = range(len(names))
+            ax2.barh(y_pos, scores, color='#3498db', height=0.6)
+            ax2.set_yticks(y_pos)
+            ax2.set_yticklabels(names, color='white', fontsize=9)
+            ax2.set_title(f'Top {len(top_n)} Điểm TB Cao Nhất', color='white', fontsize=10)
+            ax2.set_xlim(0, 11)
+            ax2.tick_params(axis='x', colors='white')
+            for i, v in enumerate(scores):
+                ax2.text(v + 0.2, i, str(v), color='white', va='center', fontweight='bold')
+            
+            eval_text = f"Điểm trung bình thực tế: {global_avg:.2f} điểm/phát."
             if global_avg >= 8.0: rec_text = "Thành tích rất tốt. Đa số bắn trúng vòng 9, 10."
             elif global_avg >= 5.0: rec_text = "Thành tích đạt yêu cầu. Cần cải thiện độ ổn định."
             else: rec_text = "Thành tích thấp. Cần rèn luyện lại kỹ năng ngắm bắn cơ bản."
@@ -435,25 +702,69 @@ class ManageWindow(QMainWindow):
         dlg = PersonalProcessDialog(soldier_info, shots, self)
         dlg.exec()
 
-    # --- LOGIC QUẢN LÝ NGƯỜI TẬP (CŨ) - ĐÃ KHÔI PHỤC ĐẦY ĐỦ ---
+    # --- LOGIC QUẢN LÝ NGƯỜI TẬP (MỚI) ---
     def load_soldiers(self):
-        self.ui.search_box.clear(); self.ui.soldier_table.setRowCount(0)
-        soldiers = self.db.get_all_soldiers()
-        self.ui.total_count_label.setText(f"Tổng số: {len(soldiers)}")
-        if not soldiers: return
-        self.ui.soldier_table.setRowCount(len(soldiers))
-        for row, s in enumerate(soldiers):
-            id_item = QTableWidgetItem(str(s['id'])); id_item.setTextAlignment(Qt.AlignCenter); id_item.setData(Qt.UserRole, s['id'])
-            self.ui.soldier_table.setItem(row, 0, id_item)
-            self.ui.soldier_table.setItem(row, 1, QTableWidgetItem(s['name']))
-            c_item = QTableWidgetItem(s.get('class_name', '')); c_item.setTextAlignment(Qt.AlignCenter)
-            self.ui.soldier_table.setItem(row, 2, c_item)
+        self.all_soldiers_data = self.db.get_all_soldiers() 
+        
+        units = sorted(list(set(s.get('class_name', '') for s in self.all_soldiers_data if s.get('class_name'))))
+        self.ui.cmb_filter_unit.blockSignals(True)
+        self.ui.cmb_filter_unit.clear()
+        self.ui.cmb_filter_unit.addItem("Tất cả đơn vị", "ALL")
+        for u in units:
+            self.ui.cmb_filter_unit.addItem(u, u)
+        self.ui.cmb_filter_unit.blockSignals(False)
+        
+        self.reload_soldier_table_view()
+
+    def reload_soldier_table_view(self):
+        if not hasattr(self, 'all_soldiers_data'): return
+        
+        filtered_data = self.all_soldiers_data[:]
+        
+        search_txt = self.ui.search_box.text().strip().lower()
+        if search_txt:
+            filtered_data = [s for s in filtered_data if search_txt in s['name'].lower()]
+            
+        unit_filter = self.ui.cmb_filter_unit.currentData()
+        if unit_filter and unit_filter != "ALL":
+            filtered_data = [s for s in filtered_data if s.get('class_name') == unit_filter]
+            
+        sort_mode = self.ui.cmb_sort_trainees.currentData()
+        if sort_mode == "NAME_ASC":
+            filtered_data.sort(key=lambda x: x['name'].split()[-1]) 
+        elif sort_mode == "NAME_DESC":
+            filtered_data.sort(key=lambda x: x['name'].split()[-1], reverse=True)
+        elif sort_mode == "UNIT":
+            filtered_data.sort(key=lambda x: (x.get('class_name', ''), x['name']))
+
+        self.ui.soldier_table.setRowCount(len(filtered_data))
+        self.ui.total_count_label.setText(f"Tổng số: {len(filtered_data)}")
+        
+        for row, s in enumerate(filtered_data):
+            stt_item = QTableWidgetItem(str(row + 1))
+            stt_item.setTextAlignment(Qt.AlignCenter)
+            stt_item.setData(Qt.UserRole, s['id']) 
+            
+            name_item = QTableWidgetItem(s['name'])
+            unit_item = QTableWidgetItem(s.get('class_name', ''))
+            unit_item.setTextAlignment(Qt.AlignCenter)
+            
+            note_content = s.get('note', '')
+            note_item = QTableWidgetItem(note_content)
+            if note_content:
+                note_item.setForeground(QColor("#f1c40f")) 
+                note_item.setToolTip(note_content)
+
+            self.ui.soldier_table.setItem(row, 0, stt_item)
+            self.ui.soldier_table.setItem(row, 1, name_item)
+            self.ui.soldier_table.setItem(row, 2, unit_item)
+            self.ui.soldier_table.setItem(row, 3, note_item)
+            
+        self.ui.btn_note.setEnabled(False)
+        self.ui.btn_personal_stats.setEnabled(False)
 
     def filter_soldiers(self):
-        txt = self.ui.search_box.text().lower()
-        for r in range(self.ui.soldier_table.rowCount()):
-            match = txt in self.ui.soldier_table.item(r, 1).text().lower() or txt in self.ui.soldier_table.item(r, 2).text().lower()
-            self.ui.soldier_table.setRowHidden(r, not match)
+        self.reload_soldier_table_view()
 
     def open_add_soldier_dialog(self):
         d = AddSoldierDialog(self.config, parent=self)
@@ -536,6 +847,41 @@ class ManageWindow(QMainWindow):
             soldier_ids = [self.ui.soldier_table.item(r, 0).data(Qt.UserRole) for r in selected_rows]
             delete_action = menu.addAction(f"Xóa {len(soldier_ids)} người đã chọn"); delete_action.triggered.connect(lambda: self.delete_multiple_soldiers(soldier_ids))
         menu.exec(self.ui.soldier_table.mapToGlobal(pos))
+        
+    def on_soldier_selection_changed(self):
+        has_selection = len(self.ui.soldier_table.selectedItems()) > 0
+        self.ui.btn_note.setEnabled(has_selection)
+        self.ui.btn_personal_stats.setEnabled(has_selection)
+
+    def on_edit_note_clicked(self):
+        selected_rows = self.ui.soldier_table.selectedItems()
+        if not selected_rows: return
+        
+        row = selected_rows[0].row()
+        soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
+        current_name = self.ui.soldier_table.item(row, 1).text()
+        current_note = self.ui.soldier_table.item(row, 3).text()
+        
+        text, ok = QInputDialog.getMultiLineText(
+            self, 
+            "Ghi chú", 
+            f"Nhập ghi chú cho chiến sĩ: {current_name}", 
+            current_note
+        )
+        
+        if ok:
+            if self.db.update_soldier_note(soldier_id, text):
+                note_item = QTableWidgetItem(text)
+                if text: note_item.setForeground(QColor("#f1c40f"))
+                self.ui.soldier_table.setItem(row, 3, note_item)
+                
+                for s in self.all_soldiers_data:
+                    if s['id'] == soldier_id:
+                        s['note'] = text
+                        break
+                QMessageBox.information(self, "Thành công", "Đã lưu ghi chú.")
+            else:
+                QMessageBox.critical(self, "Lỗi", "Không thể lưu ghi chú.")
 
     def edit_soldier(self, row):
         soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
