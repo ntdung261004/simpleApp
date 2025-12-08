@@ -4,20 +4,6 @@
     "labels": {
         "customer_unit_name": "TÊN ĐƠN VỊ KHÁCH HÀNG",
         "app_title": "PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM",
-        "app_subtitle": "SÚNG TIỂU LIÊN",
-        "trainee": "Chiến sĩ",
-        "trainee_class": "Đơn vị",
-        "trainee_list_title": "Danh sách Chiến sĩ",
-        "trainee_list_header_name": "Họ và Tên",
-        "trainee_list_header_class": "Đơn vị",
-        "add_trainee_dialog_title": "Thêm Chiến sĩ Mới",
-        "edit_trainee_dialog_title": "Chỉnh sửa thông tin Chiến sĩ",
-        "trainee_name_prompt": "Họ và Tên:",
-        "trainee_class_prompt": "Đơn vị:",
-        "history_title_prefix": "Lịch sử bắn của",
-        "manage_select_trainee_prompt": "◀ Vui lòng chọn một {trainee} từ danh sách",
-        "manage_no_sessions_prompt": "{trainee} này chưa thực hiện phiên tập nào",
-        "practice_no_trainees_in_selector": "Chưa có {trainee} nào",
-        "practice_select_trainee_first": "Vui lòng chọn một {trainee} trước khi bắt đầu."
+        "app_subtitle": "SÚNG TIỂU LIÊN"
     }
 }

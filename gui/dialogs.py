@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QDialogButtonBox, QLineEdit, QTableWidget, QTableWidgetItem, 
-    QHeaderView, QAbstractItemView, QMessageBox, QFrame, QSizePolicy
+    QHeaderView, QAbstractItemView, QMessageBox, QFrame, QSizePolicy, QApplication
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QColor, QFont
@@ -11,51 +11,71 @@ from PySide6.QtGui import QPixmap, QColor, QFont
 class ResultPopup(QDialog):
     def __init__(self, shots_data, camera_name="", allow_retry=True, parent=None):
         super().__init__(parent)
+        
+        # --- SCALING ---
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.scale_factor = screen.height() / 1080.0
+        def s(val): return int(val * self.scale_factor)
+        # ---------------
+
         self.setWindowTitle("KẾT QUẢ LUYỆN TẬP")
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
-        self.setMinimumSize(700, 650)
-        self.setStyleSheet("background-color: #2c3e50; color: white;")
+        self.setMinimumSize(s(700), s(650))
+        self.setStyleSheet(f"background-color: #2c3e50; color: white; font-size: {s(14)}px;")
+        
         self.shots_data = shots_data
         self.current_idx = 0
         layout = QVBoxLayout(self)
+        
         if camera_name:
             self.lbl_cam = QLabel(camera_name)
-            self.lbl_cam.setStyleSheet("font-size: 20px; font-weight: bold; color: #3498db; margin-top: 5px;")
+            self.lbl_cam.setStyleSheet(f"font-size: {s(20)}px; font-weight: bold; color: #3498db; margin-top: 5px;")
             self.lbl_cam.setAlignment(Qt.AlignCenter)
             layout.addWidget(self.lbl_cam)
+            
         total_score = sum(s['score'] for s in self.shots_data)
         if total_score < 15: rank = "KHÔNG ĐẠT"; color = "#95a5a6"
         elif 15 <= total_score <= 18: rank = "ĐẠT"; color = "#f39c12"
         elif 19 <= total_score <= 23: rank = "KHÁ"; color = "#3498db"
         else: rank = "GIỎI"; color = "#2ecc71"
+        
         header_layout = QHBoxLayout()
         self.lbl_score = QLabel(f"TỔNG ĐIỂM: {total_score}/30")
-        self.lbl_score.setStyleSheet("font-size: 24px; font-weight: bold; color: #ecf0f1;")
+        self.lbl_score.setStyleSheet(f"font-size: {s(24)}px; font-weight: bold; color: #ecf0f1;")
         self.lbl_rank = QLabel(rank)
-        self.lbl_rank.setStyleSheet(f"font-size: 32px; font-weight: bold; color: {color};")
+        self.lbl_rank.setStyleSheet(f"font-size: {s(32)}px; font-weight: bold; color: {color};")
         header_layout.addWidget(self.lbl_score); header_layout.addStretch(); header_layout.addWidget(self.lbl_rank)
         layout.addLayout(header_layout)
-        self.img_label = QLabel(); self.img_label.setAlignment(Qt.AlignCenter); self.img_label.setStyleSheet("background-color: #212f3d; border: 2px solid #bdc3c7; border-radius: 5px;")
-        self.img_label.setMinimumSize(600, 400); layout.addWidget(self.img_label, 1)
+        
+        self.img_label = QLabel(); self.img_label.setAlignment(Qt.AlignCenter)
+        self.img_label.setStyleSheet("background-color: #212f3d; border: 2px solid #bdc3c7; border-radius: 5px;")
+        self.img_label.setMinimumSize(s(600), s(400))
+        layout.addWidget(self.img_label, 1)
+        
         nav_layout = QHBoxLayout()
-        self.btn_prev = QPushButton("<< Trước"); self.btn_prev.setMinimumHeight(40); self.btn_prev.clicked.connect(self.prev_image)
-        self.lbl_index = QLabel("1/3"); self.lbl_index.setAlignment(Qt.AlignCenter); self.lbl_index.setStyleSheet("font-size: 16px; font-weight: bold;")
-        self.btn_next = QPushButton("Sau >>"); self.btn_next.setMinimumHeight(40); self.btn_next.clicked.connect(self.next_image)
+        self.btn_prev = QPushButton("<< Trước"); self.btn_prev.setMinimumHeight(s(40)); self.btn_prev.clicked.connect(self.prev_image)
+        self.lbl_index = QLabel("1/3"); self.lbl_index.setAlignment(Qt.AlignCenter); self.lbl_index.setStyleSheet(f"font-size: {s(16)}px; font-weight: bold;")
+        self.btn_next = QPushButton("Sau >>"); self.btn_next.setMinimumHeight(s(40)); self.btn_next.clicked.connect(self.next_image)
+        
+        # Style buttons
+        btn_style = f"font-size: {s(14)}px; padding: {s(5)}px; background-color: #1abc9c; border-radius: 5px;"
+        self.btn_prev.setStyleSheet(btn_style); self.btn_next.setStyleSheet(btn_style)
+        
         nav_layout.addWidget(self.btn_prev); nav_layout.addWidget(self.lbl_index); nav_layout.addWidget(self.btn_next)
         layout.addLayout(nav_layout)
         
         action_layout = QHBoxLayout()
         self.btn_retry = QPushButton("BẮN LẠI LOẠT NÀY")
-        self.btn_retry.setStyleSheet("background-color: #e74c3c; font-size: 16px; padding: 10px; font-weight: bold; border-radius: 5px; color: white;")
+        self.btn_retry.setStyleSheet(f"background-color: #e74c3c; font-size: {s(16)}px; padding: {s(10)}px; font-weight: bold; border-radius: 5px; color: white;")
         self.btn_retry.clicked.connect(self.on_retry_clicked)
         self.btn_retry.setVisible(allow_retry)
         
         self.btn_continue = QPushButton("TIẾP TỤC"); 
-        self.btn_continue.setStyleSheet("background-color: #1abc9c; font-size: 16px; padding: 10px; font-weight: bold; border-radius: 5px; color: white;")
+        self.btn_continue.setStyleSheet(f"background-color: #1abc9c; font-size: {s(16)}px; padding: {s(10)}px; font-weight: bold; border-radius: 5px; color: white;")
         self.btn_continue.clicked.connect(self.accept)
         
         action_layout.addWidget(self.btn_retry)
-        action_layout.addSpacing(20)
+        action_layout.addSpacing(s(20))
         action_layout.addWidget(self.btn_continue)
         layout.addLayout(action_layout)
         self.update_view()
@@ -81,15 +101,24 @@ class TraineeSessionPopup(QDialog):
     trainee_selected = Signal(dict)
     def __init__(self, session_name, soldiers_data, current_ids, mode_str, parent=None):
         super().__init__(parent)
+        
+        # --- SCALING ---
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.scale_factor = screen.height() / 1080.0
+        def s(val): return int(val * self.scale_factor)
+        # ---------------
+
         self.setWindowTitle(f"QUẢN LÝ PHIÊN: {session_name.upper()}")
-        self.setMinimumSize(950, 500)
-        self.setStyleSheet("background-color: #2c3e50; color: white;")
+        self.setMinimumSize(s(950), s(500))
+        self.setStyleSheet(f"background-color: #2c3e50; color: white; font-size: {s(14)}px;")
+        
         self.mode_str = mode_str
         layout = QVBoxLayout(self)
         lbl_title = QLabel(f"DANH SÁCH NGƯỜI TẬP - {session_name}")
-        lbl_title.setStyleSheet("font-size: 20px; font-weight: bold; color: #1abc9c; margin-bottom: 10px;")
+        lbl_title.setStyleSheet(f"font-size: {s(20)}px; font-weight: bold; color: #1abc9c; margin-bottom: 10px;")
         lbl_title.setAlignment(Qt.AlignCenter)
         layout.addWidget(lbl_title)
+        
         result_header = "Số phát / Điểm (Trung bình)" if mode_str == "SINGLE" else "Kết quả loạt"
         self.table = QTableWidget(len(soldiers_data), 4)
         self.table.setHorizontalHeaderLabels(["Họ và Tên", "Đơn vị", "Trạng thái", result_header])
@@ -100,17 +129,26 @@ class TraineeSessionPopup(QDialog):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setStyleSheet("QTableWidget { background-color: #34495e; border: 1px solid #7f8c8d; font-size: 14px; } QHeaderView::section { background-color: #2c3e50; color: #bdc3c7; padding: 8px; border: 1px solid #7f8c8d; font-weight: bold; } QTableWidget::item:selected { background-color: #1abc9c; color: white; }")
+        
+        self.table.setStyleSheet(f"""
+            QTableWidget {{ background-color: #34495e; border: 1px solid #7f8c8d; font-size: {s(14)}px; }} 
+            QHeaderView::section {{ background-color: #2c3e50; color: #bdc3c7; padding: {s(8)}px; border: 1px solid #7f8c8d; font-weight: bold; font-size: {s(14)}px; }} 
+            QTableWidget::item:selected {{ background-color: #1abc9c; color: white; }}
+        """)
+        
         self.soldiers_data = soldiers_data
         self.populate_table(current_ids, mode_str)
         layout.addWidget(self.table)
+        
         btn_layout = QHBoxLayout()
         self.btn_select = QPushButton("CHỌN NGƯỜI NÀY")
-        self.btn_select.setStyleSheet("background-color: #3498db; font-weight: bold; padding: 12px; font-size: 14px; border-radius: 6px;")
+        self.btn_select.setStyleSheet(f"background-color: #3498db; font-weight: bold; padding: {s(12)}px; font-size: {s(14)}px; border-radius: 6px;")
         self.btn_select.clicked.connect(self.on_select)
+        
         self.btn_close = QPushButton("ĐÓNG")
-        self.btn_close.setStyleSheet("background-color: #95a5a6; font-weight: bold; padding: 12px; font-size: 14px; border-radius: 6px;")
+        self.btn_close.setStyleSheet(f"background-color: #95a5a6; font-weight: bold; padding: {s(12)}px; font-size: {s(14)}px; border-radius: 6px;")
         self.btn_close.clicked.connect(self.reject)
+        
         btn_layout.addStretch()
         btn_layout.addWidget(self.btn_select); btn_layout.addWidget(self.btn_close)
         layout.addLayout(btn_layout)
@@ -144,14 +182,21 @@ class TraineeSessionPopup(QDialog):
             self.accept()
         else: QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn một người tập từ danh sách.")
 
-# --- CLASS MỚI: POPUP XEM QUÁ TRÌNH CÁ NHÂN ---
 class PersonalProcessDialog(QDialog):
     def __init__(self, soldier_info, shots_data, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"QUÁ TRÌNH TẬP LUYỆN - {soldier_info['name'].upper()}")
+        
+        # --- SCALING ---
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.scale_factor = screen.height() / 1080.0
+        def s(val): return int(val * self.scale_factor)
+        # ---------------
+
+        self.setWindowTitle(f"QUẢN LÝ: {soldier_info['name'].upper()}")
         self.setWindowFlags(Qt.Window)
-        self.setMinimumSize(900, 700)
-        self.setStyleSheet("background-color: #2c3e50; color: white;")
+        self.setMinimumSize(s(900), s(700))
+        self.setStyleSheet(f"background-color: #2c3e50; color: white; font-size: {s(14)}px;")
+        
         self.shots_data = shots_data
         self.current_idx = 0
         
@@ -166,10 +211,10 @@ class PersonalProcessDialog(QDialog):
         lbl_class = QLabel(f"Đơn vị: <b>{soldier_info.get('class_name','')}</b>")
         total_score = sum(s.get('score', 0) for s in shots_data)
         count = len(shots_data)
-        lbl_summary = QLabel(f"Tổng: <b>{count} phát</b> - Điểm: <b style='color:#f1c40f; font-size:16px;'>{total_score}</b>")
+        lbl_summary = QLabel(f"Tổng: <b>{count} phát</b> - Điểm: <b style='color:#f1c40f; font-size:{s(16)}px;'>{total_score}</b>")
         
         for lbl in [lbl_name, lbl_class, lbl_summary]:
-            lbl.setStyleSheet("font-size: 16px; padding: 5px;")
+            lbl.setStyleSheet(f"font-size: {s(16)}px; padding: 5px;")
             info_layout.addWidget(lbl)
         layout.addWidget(info_frame)
         
@@ -179,25 +224,23 @@ class PersonalProcessDialog(QDialog):
         self.img_label = QLabel()
         self.img_label.setAlignment(Qt.AlignCenter)
         self.img_label.setStyleSheet("background-color: #212f3d; border: 2px solid #7f8c8d; border-radius: 5px;")
-        # --- ĐÃ SỬA LỖI TẠI DÒNG NÀY ---
         self.img_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        # -------------------------------
-        layout.addWidget(self.img_label, 1) # Stretch factor 1
+        layout.addWidget(self.img_label, 1)
 
         # --- NAVIGATION ---
         nav_layout = QHBoxLayout()
         self.btn_prev = QPushButton("<< Phát trước")
-        self.btn_prev.setMinimumHeight(50)
-        self.btn_prev.setStyleSheet("background-color: #3498db; font-weight: bold; border-radius: 5px;")
+        self.btn_prev.setMinimumHeight(s(50))
+        self.btn_prev.setStyleSheet(f"background-color: #3498db; font-weight: bold; border-radius: 5px; font-size: {s(14)}px;")
         self.btn_prev.clicked.connect(self.prev_shot)
         
         self.lbl_shot_info = QLabel("...")
         self.lbl_shot_info.setAlignment(Qt.AlignCenter)
-        self.lbl_shot_info.setStyleSheet("font-size: 18px; font-weight: bold; color: #ecf0f1; min-width: 200px;")
+        self.lbl_shot_info.setStyleSheet(f"font-size: {s(18)}px; font-weight: bold; color: #ecf0f1; min-width: {s(200)}px;")
         
         self.btn_next = QPushButton("Phát sau >>")
-        self.btn_next.setMinimumHeight(50)
-        self.btn_next.setStyleSheet("background-color: #3498db; font-weight: bold; border-radius: 5px;")
+        self.btn_next.setMinimumHeight(s(50))
+        self.btn_next.setStyleSheet(f"background-color: #3498db; font-weight: bold; border-radius: 5px; font-size: {s(14)}px;")
         self.btn_next.clicked.connect(self.next_shot)
         
         nav_layout.addWidget(self.btn_prev)
@@ -207,8 +250,8 @@ class PersonalProcessDialog(QDialog):
         
         # --- CLOSE BUTTON ---
         btn_close = QPushButton("Đóng")
-        btn_close.setMinimumHeight(40)
-        btn_close.setStyleSheet("background-color: #95a5a6; border-radius: 5px;")
+        btn_close.setMinimumHeight(s(40))
+        btn_close.setStyleSheet(f"background-color: #95a5a6; border-radius: 5px; font-size: {s(14)}px;")
         btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
 
@@ -237,13 +280,11 @@ class PersonalProcessDialog(QDialog):
         # Update Info
         score = data.get('score', 0)
         result_text = "TRÚNG" if score > 0 else "TRƯỢT"
-        color = "#2ecc71" if score > 0 else "#e74c3c"
         
         info_str = f"Phát thứ {data.get('shot_number', self.current_idx + 1)}/{len(self.shots_data)}\n"
         info_str += f"Điểm: {score} ({result_text})"
         self.lbl_shot_info.setText(info_str)
         
-        # Buttons
         self.btn_prev.setEnabled(self.current_idx > 0)
         self.btn_next.setEnabled(self.current_idx < len(self.shots_data) - 1)
 

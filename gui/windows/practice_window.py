@@ -3,10 +3,10 @@ import logging
 import numpy as np
 from datetime import datetime
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QListWidgetItem, QTableWidgetItem, QAbstractItemView
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QKeyEvent
 
-from ..ui.ui_practice import MainGui
+from gui.ui.ui_practice import MainGui
 from utils.audio import AudioManager
 from core.database import DatabaseManager
 from gui.managers.camera_manager import CameraManager
@@ -29,7 +29,7 @@ class PracticeWindow(QMainWindow):
         
         self.worker = worker
         self.bt_trigger = trigger
-        self.db_manager = DatabaseManager()
+        self.db_manager = DatabaseManager() # Singleton đã được xử lý ở core/database.py
         self.audio_manager = AudioManager()
         
         self.cam_manager = CameraManager(config)
@@ -153,7 +153,7 @@ class PracticeWindow(QMainWindow):
                 if ps_id: self.db_manager.delete_practice_session(ps_id)
                 self.on_return_to_dashboard()
 
-    # --- LOGIC KẾT THÚC PHIÊN (FINISH) ĐÃ SỬA ---
+    # --- LOGIC KẾT THÚC PHIÊN (FINISH) BẰNG TAY ---
     def on_finish_session_clicked(self):
         if not self.sess_manager.is_managed_session:
             self.on_return_to_dashboard()
@@ -191,15 +191,34 @@ class PracticeWindow(QMainWindow):
             reply = QMessageBox.warning(self, "Chưa hoàn thành", msg, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply == QMessageBox.No: return
             
-        # --- CẬP NHẬT TRẠNG THÁI IS_FINISHED VÀO DB ---
+        # Kết thúc thủ công -> Cần hiện thông báo thành công
+        self._finalize_and_exit_session(show_success=True)
+
+    # --- KẾT THÚC PHIÊN TỰ ĐỘNG ---
+    def on_auto_finish_session(self):
+        """Được gọi tự động từ Controller khi tất cả chiến sĩ đã hoàn thành bài bắn."""
+        # Thông báo này đã bao gồm xác nhận hoàn thành
+        QMessageBox.information(self, "Hoàn thành", "Tất cả chiến sĩ đã hoàn thành bài bắn.\nDữ liệu đã được lưu.\nPhiên tập kết thúc.")
+        
+        # Không cần hiện thêm thông báo trong hàm finalize nữa
+        self._finalize_and_exit_session(show_success=False)
+
+    def _finalize_and_exit_session(self, show_success=True):
+        """
+        Logic chung để đánh dấu kết thúc phiên và thoát.
+        show_success: Có hiện thông báo thành công hay không (để tránh lặp lại khi auto finish).
+        """
         ps_id = self.sess_manager.managed_session_data.get('ps_id')
         if ps_id:
             if self.db_manager.mark_practice_session_finished(ps_id):
-                QMessageBox.information(self, "Hoàn tất", "Phiên tập đã kết thúc.\nDữ liệu đã được lưu vào Báo cáo.")
+                logger.info(f"Đã đánh dấu kết thúc phiên {ps_id}")
+                if show_success:
+                    QMessageBox.information(self, "Đã lưu", 
+                                            "Phiên tập đã được lưu thành công.\n"
+                                            "Bạn có thể xem lại chi tiết trong mục 'Quản lý - Thống kê'.")
             else:
                 QMessageBox.critical(self, "Lỗi", "Không thể cập nhật trạng thái kết thúc vào CSDL.")
-        # -----------------------------------------------
-
+        
         self.on_return_to_dashboard()
 
     # --- LOGIC LƯU PHIÊN (SAVE) ---

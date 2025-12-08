@@ -22,7 +22,17 @@ def get_app_data_path(file_name):
     return dest_path
 
 class DatabaseManager:
+    _instance = None 
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(DatabaseManager, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self, db_name="shooting_range.db"):
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+            
         self.db_path = get_app_data_path(db_name)
         self.conn = None
         try:
@@ -31,6 +41,9 @@ class DatabaseManager:
             self.cursor.execute("PRAGMA foreign_keys = ON;")
             self._create_tables()
             self._migrate_db()
+            
+            self._initialized = True
+            logger.info("DatabaseManager: Kết nối DB thành công (Singleton).")
         except sqlite3.Error as e:
             logger.error(f"Lỗi kết nối DB: {e}")
             
@@ -129,11 +142,9 @@ class DatabaseManager:
             self.conn.commit(); return True
         except: return False
 
-    # --- HISTORY & STATS (NEW) ---
+    # --- HISTORY & STATS ---
     def get_soldier_history(self, soldier_id: int) -> list:
-        """Lấy lịch sử tất cả các phiên tập của một người."""
         try:
-            # Lấy thông tin phiên tập + tổng điểm + số phát bắn
             query = """
                 SELECT 
                     ps.name as session_name,
@@ -299,13 +310,35 @@ class DatabaseManager:
             return self.cursor.fetchone()[0]
         except: return 0
 
-    def add_shot(self, session_id, shot_number, target_detected, score, coords, image_path):
+    def add_shot(self, session_id, shot_number, target_detected, score, coords, image_path) -> int | None:
+        """
+        Thêm một shot mới vào DB.
+        [UPDATE] Trả về ID của bản ghi vừa thêm để phục vụ Rollback chính xác.
+        """
         try:
             cx = float(coords[0]) if coords else None; cy = float(coords[1]) if coords else None
             sql = "INSERT INTO shots (session_id, shot_number, target_detected, score, hit_coordinate_x, hit_coordinate_y, image_path, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             self.cursor.execute(sql, (session_id, shot_number, target_detected, score, cx, cy, image_path, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             self.conn.commit()
-        except: pass
+            return self.cursor.lastrowid # Trả về ID
+        except Exception as e:
+            logger.error(f"Lỗi add_shot: {e}")
+            return None
+
+    def delete_shots_by_ids(self, id_list: list):
+        """
+        [NEW] Xóa danh sách các shot dựa trên ID. Dùng cho Rollback an toàn.
+        """
+        if not id_list: return
+        try:
+            # Tạo chuỗi placeholder (?, ?, ...)
+            placeholders = ','.join(['?'] * len(id_list))
+            sql = f"DELETE FROM shots WHERE id IN ({placeholders})"
+            self.cursor.execute(sql, tuple(id_list))
+            self.conn.commit()
+            logger.info(f"Đã xóa {self.cursor.rowcount} shot(s) theo yêu cầu Rollback.")
+        except Exception as e:
+            logger.error(f"Lỗi xóa shots theo ID: {e}")
 
     def delete_session(self, session_id):
         try:
@@ -314,4 +347,4 @@ class DatabaseManager:
         except: pass
 
     def close(self):
-        if self.conn: self.conn.close()
+        pass

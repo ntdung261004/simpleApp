@@ -30,7 +30,7 @@ class SessionManager(QObject):
         
         self.managed_session_data = {
             'name': "", 'soldiers': [], 'current_soldier_idx': -1, 'ps_id': None,
-            'is_resumed': False # Cờ đánh dấu xem đây là phiên mới hay phiên load lại
+            'is_resumed': False 
         }
         self.active_soldiers = {1: None, 2: None}
 
@@ -60,7 +60,7 @@ class SessionManager(QObject):
         self.shooting_mode = mode
         self.managed_session_data = {
             'name': name, 'soldiers': [], 'current_soldier_idx': -1, 'ps_id': ps_id,
-            'is_resumed': False # Đây là phiên mới
+            'is_resumed': False 
         }
         self.active_soldiers = {1: None, 2: None}
         self.next_shot_cam_id = 1
@@ -71,11 +71,11 @@ class SessionManager(QObject):
             for s in soldiers:
                 sid = self.db.create_session(s['id'], practice_session_id=new_ps_id)
                 soldier_entry = s.copy()
-                # Lưu initial_shot_count = 0 vì mới tinh
                 soldier_entry.update({
                     'db_session_id': sid, 'finished': False, 'last_result': "", 
                     'shot_count': 0, 'total_score': 0,
-                    'initial_shot_count': 0, 'initial_total_score': 0
+                    'initial_shot_count': 0, 'initial_total_score': 0,
+                    'session_shot_ids': [] # [MỚI] Danh sách ID các phát bắn mới trong phiên này
                 })
                 self.managed_session_data['soldiers'].append(soldier_entry)
 
@@ -86,7 +86,7 @@ class SessionManager(QObject):
         self.shooting_mode = mode
         self.managed_session_data = {
             'name': name, 'soldiers': [], 'current_soldier_idx': -1, 'ps_id': ps_id,
-            'is_resumed': True # Đánh dấu là phiên load lại
+            'is_resumed': True 
         }
         self.active_soldiers = {1: None, 2: None}
         self.next_shot_cam_id = 1
@@ -99,8 +99,9 @@ class SessionManager(QObject):
                 'id': row['soldier_id'], 'name': row['name'], 'class_name': row['class_name'],
                 'db_session_id': row['db_session_id'], 'finished': bool(row['is_finished']),
                 'shot_count': s_count, 'total_score': s_score,
-                'initial_shot_count': s_count, 'initial_total_score': s_score, # Snapshot trạng thái lúc load
-                'last_result': "" 
+                'initial_shot_count': s_count, 'initial_total_score': s_score, 
+                'last_result': "",
+                'session_shot_ids': [] # [MỚI] Chỉ track những shot THÊM MỚI sau khi resume
             }
             if s_count > 0:
                 if mode == "SINGLE":
@@ -110,37 +111,31 @@ class SessionManager(QObject):
                     soldier_entry['last_result'] = f"Loạt 3: {s_score} điểm"
             self.managed_session_data['soldiers'].append(soldier_entry)
 
-    # --- ROLLBACK (QUAN TRỌNG) ---
+    # --- ROLLBACK (ĐÃ TỐI ƯU AN TOÀN) ---
     def rollback_session_changes(self):
-        """Hoàn tác về trạng thái ban đầu (xóa các shot mới)."""
+        """Hoàn tác: Xóa chính xác các shot đã thêm trong phiên làm việc này."""
         if not self.is_managed_session: return
 
-        logger.info("Thực hiện Rollback: Xóa dữ liệu mới phát sinh trong phiên này...")
+        logger.info("Thực hiện Rollback: Xóa dữ liệu mới phát sinh dựa trên ID...")
         for s in self.managed_session_data['soldiers']:
-            current = s['shot_count']
-            initial = s.get('initial_shot_count', 0)
+            # Lấy danh sách ID các phát bắn mới thêm
+            new_ids = s.get('session_shot_ids', [])
             
-            if current > initial:
-                # 1. Xóa trong DB: Xóa các shot có số thứ tự lớn hơn số ban đầu
-                try:
-                    # Query này giả định shot_number tăng dần và đúng logic
-                    self.db.cursor.execute(
-                        "DELETE FROM shots WHERE session_id = ? AND shot_number > ?", 
-                        (s['db_session_id'], initial)
-                    )
-                    self.db.conn.commit()
-                except Exception as e:
-                    logger.error(f"Lỗi rollback DB: {e}")
+            if new_ids:
+                # 1. Xóa trong DB: Dùng hàm xóa theo list ID an toàn
+                self.db.delete_shots_by_ids(new_ids)
 
-                # 2. Reset RAM
-                s['shot_count'] = initial
+                # 2. Reset RAM về trạng thái initial
+                s['shot_count'] = s.get('initial_shot_count', 0)
                 s['total_score'] = s.get('initial_total_score', 0)
                 
+                # Xóa danh sách tracking để sạch sẽ
+                s['session_shot_ids'] = []
+                
                 # Nếu quay về chưa bắn -> Chưa finished
-                if initial == 0:
+                if s['shot_count'] == 0:
                     s['finished'] = False
                     s['last_result'] = ""
-                    # Reset luôn status session
                     try:
                          self.db.cursor.execute("UPDATE sessions SET is_finished = 0 WHERE id = ?", (s['db_session_id'],))
                          self.db.conn.commit()
@@ -153,7 +148,6 @@ class SessionManager(QObject):
                     else:
                         s['last_result'] = f"Loạt 3: {s['total_score']} điểm"
 
-    # ... (Giữ nguyên các hàm khác) ...
     def assign_soldier_to_slot(self, slot, soldier_data):
         target = None
         for s in self.managed_session_data['soldiers']:
@@ -197,6 +191,13 @@ class SessionManager(QObject):
             target_in_list['shot_count'] = max(0, target_in_list['shot_count'] - current_burst_count)
             target_in_list['total_score'] = max(0, target_in_list['total_score'] - current_burst_score)
             target_in_list['last_result'] = "Đã hủy loạt gần nhất" if target_in_list['shot_count'] > 0 else ""
+            
+            # [MỚI] Xóa các ID của loạt đang bắn dở khỏi danh sách tracking để tránh lỗi khi rollback sau này
+            # Lưu ý: Vì đã xóa session (delete_session ở trên) thì các shot trong đó cũng bay màu (cascade delete)
+            # Nên ta chỉ cần clear list tracking ID tương ứng trong RAM là đủ, hoặc lọc lại.
+            # Tuy nhiên, cách đơn giản nhất là giữ nguyên vì nếu rollback gọi delete_shots_by_ids, 
+            # DB sẽ chỉ báo 0 rows deleted nếu chúng đã bị xóa cascade. Vẫn an toàn.
+            
             self.active_soldiers[1 if session_idx == 0 and self.current_mode == 0 else session_idx] = target_in_list
 
         self.end_session(session_idx); self._reset_counters(session_idx)
@@ -293,15 +294,11 @@ class SessionManager(QObject):
             if len(self.testing_buffers[session_idx]) + self.pending_shots[session_idx] >= 3: return False
         return True
     
-    # --- LOGIC MỚI: THEO DÕI HÀNG ĐỢI XỬ LÝ (ÁP DỤNG CẢ SINGLE & BURST) ---
     def register_pending_shot(self, session_idx):
-        # Tăng vô điều kiện để biết đang có bao nhiêu shot cần xử lý
         self.pending_shots[session_idx] += 1
         
     def rollback_pending_shot(self, session_idx):
-        # Giảm vô điều kiện khi xử lý xong hoặc lỗi
         self.pending_shots[session_idx] = max(0, self.pending_shots[session_idx] - 1)
-    # ---------------------------------------------------------------------
 
     def process_shot_result(self, res, pix_frame):
         score = res.get('score'); image_path = res.get('image_path')
@@ -334,12 +331,18 @@ class SessionManager(QObject):
         else:
             score_text = f"Phát {current_shot_no}: {score} điểm (Loạt)" if self.shooting_mode == "BURST_3" else f"Phát {current_shot_no}: {score} điểm"
         self.shot_added.emit(session_idx, score, score, score_text)
+        
         sid = self.active_session_ids[session_idx]
         if self.is_managed_session and sid and sid > 0:
-            self.db.add_shot(sid, self.shot_counters[session_idx], res.get('target_detected_raw'), score, res.get('coords'), image_path)
+            # [MỚI] Nhận ID trả về và lưu vào tracking list
+            new_shot_id = self.db.add_shot(sid, self.shot_counters[session_idx], res.get('target_detected_raw'), score, res.get('coords'), image_path)
+            if new_shot_id and target_in_list:
+                target_in_list['session_shot_ids'].append(new_shot_id)
+                
         if self.shooting_mode == "BURST_3":
             self.testing_buffers[session_idx].append({'score': score, 'image': pix_frame})
             self._check_burst_completion(session_idx)
+            
     def _check_burst_completion(self, session_idx):
         if len(self.testing_buffers[session_idx]) >= 3:
             self.burst_completed.emit(session_idx, self.testing_buffers[session_idx])

@@ -241,7 +241,11 @@ class ManageGui(QWidget):
         self.soldier_table.setHorizontalHeaderLabels(["STT", "Họ và Tên", "Đơn vị", "Ghi chú"])
         self.soldier_table.verticalHeader().setVisible(False)
         self.soldier_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.soldier_table.setSelectionMode(QAbstractItemView.SingleSelection) 
+        
+        # --- [TINH CHỈNH] CHO PHÉP CHỌN NHIỀU DÒNG (KÉO THẢ) ---
+        self.soldier_table.setSelectionMode(QAbstractItemView.ExtendedSelection) 
+        # --------------------------------------------------------
+        
         self.soldier_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.soldier_table.setAlternatingRowColors(True)
         self.soldier_table.setStyleSheet("alternate-background-color: #3b5266;")
@@ -265,14 +269,12 @@ class ManageGui(QWidget):
         self.btn_import_excel.setCursor(Qt.PointingHandCursor)
         self.btn_import_excel.setMinimumHeight(40)
         
-        # ĐÃ SỬA: Bỏ icon
         self.btn_note = QPushButton("Thêm/Sửa Ghi chú")
         self.btn_note.setStyleSheet("background-color: #f39c12; color: white;")
         self.btn_note.setCursor(Qt.PointingHandCursor)
         self.btn_note.setMinimumHeight(40)
         self.btn_note.setEnabled(False) 
         
-        # ĐÃ SỬA: Bỏ icon
         self.btn_personal_stats = QPushButton("Xem Thống kê Cá nhân")
         self.btn_personal_stats.setStyleSheet("background-color: #9b59b6; color: white;")
         self.btn_personal_stats.setCursor(Qt.PointingHandCursor)
@@ -323,7 +325,6 @@ class ManageGui(QWidget):
         layout.addWidget(self.session_table)
 
         footer_layout = QHBoxLayout()
-        # ĐÃ SỬA: Đảm bảo không có icon
         self.btn_view_report = QPushButton("Xem báo cáo")
         self.btn_view_report.setStyleSheet("background-color: #3498db; color: white;")
         self.btn_view_report.setCursor(Qt.PointingHandCursor)
@@ -521,7 +522,6 @@ class ManageGui(QWidget):
         content_lo = QHBoxLayout()
         
         # LEFT: Lịch sử các phiên (Table)
-        # ĐÃ SỬA: Thêm style cho GroupBox bên trái để khớp giao diện
         left_group = QGroupBox("Lịch sử tham gia")
         left_group.setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #7f8c8d; border-radius: 5px; margin-top: 20px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }")
         l_lo = QVBoxLayout(left_group)
@@ -582,7 +582,6 @@ class ManageGui(QWidget):
         
         # Notes
         note_group = QGroupBox("Ghi chú & Nhận xét (GV/CB)")
-        # ĐÃ SỬA: Style cho GroupBox ghi chú
         note_group.setStyleSheet("QGroupBox { font-weight: bold; color: #f39c12; border: 1px solid #f39c12; margin-top: 20px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }")
         n_lo = QVBoxLayout(note_group)
         self.txt_personal_note = QTextEdit()

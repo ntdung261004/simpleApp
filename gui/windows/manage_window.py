@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QMessageBox, QTableWidgetItem,
     QVBoxLayout, QWidget, QCheckBox, QHBoxLayout, QPushButton,
     QMenu, QFileDialog, QHeaderView, QLabel, QTableWidget, QSizePolicy,
-    QInputDialog
+    QInputDialog, QApplication
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QImage, QColor, QFont
@@ -31,20 +31,26 @@ from utils.resource_path import resource_path
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# === CÁC CLASS DIALOG HỖ TRỢ (GIỮ NGUYÊN) ===
+# === CÁC CLASS DIALOG HỖ TRỢ (ĐÃ TỐI ƯU SCALE) ===
 # =============================================================================
 
 class ExcelPreviewDialog(QDialog):
     def __init__(self, data_list, parent=None):
         super().__init__(parent)
+        # --- SCALING ---
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.scale_factor = screen.height() / 1080.0
+        def s(val): return int(val * self.scale_factor)
+        # ---------------
+
         self.setWindowTitle("Xác nhận nhập dữ liệu")
-        self.setMinimumSize(700, 500)
+        self.setMinimumSize(s(700), s(500))
         self.data_list = data_list
 
         layout = QVBoxLayout(self)
         lbl_info = QLabel(f"<b>Đã tìm thấy {len(data_list)} bản ghi.</b><br>"
                           "Vui lòng kiểm tra kỹ danh sách bên dưới trước khi nhập.")
-        lbl_info.setStyleSheet("font-size: 14px; margin-bottom: 10px;")
+        lbl_info.setStyleSheet(f"font-size: {s(14)}px; margin-bottom: 10px;")
         layout.addWidget(lbl_info)
 
         self.table = QTableWidget(len(data_list), 3)
@@ -52,6 +58,7 @@ class ExcelPreviewDialog(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.table.setStyleSheet(f"font-size: {s(14)}px;")
         
         self.checkboxes = []
         for i, row_data in enumerate(data_list):
@@ -73,11 +80,16 @@ class ExcelPreviewDialog(QDialog):
         btn_all.clicked.connect(lambda: self.toggle_all(True))
         btn_none = QPushButton("Bỏ chọn tất cả")
         btn_none.clicked.connect(lambda: self.toggle_all(False))
+        
+        btn_style = f"font-size: {s(14)}px; padding: 5px;"
+        btn_all.setStyleSheet(btn_style); btn_none.setStyleSheet(btn_style)
+        
         btn_layout.addWidget(btn_all)
         btn_layout.addWidget(btn_none)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.setStyleSheet(f"QPushButton {{ font-size: {s(14)}px; padding: 5px; }}")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -93,45 +105,60 @@ class ExcelPreviewDialog(QDialog):
 class AddSoldierDialog(QDialog):
     def __init__(self, config: dict, is_edit_mode: bool = False, parent=None):
         super().__init__(parent)
+        # --- SCALING ---
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.scale_factor = screen.height() / 1080.0
+        def s(val): return int(val * self.scale_factor)
+        # ---------------
+
         self.config = config
         labels = self.config.get("labels", {})
         title = labels.get("edit_trainee_dialog_title", "Chỉnh sửa thông tin") if is_edit_mode else labels.get("add_trainee_dialog_title", "Thêm mới")
         self.setWindowTitle(title)
-        self.setMinimumWidth(400)
-        self.setStyleSheet("""
-            QDialog { background-color: #34495e; }
-            QLabel { color: #ecf0f1; font-size: 14px; }
-            QLineEdit { background-color: #2c3e50; border: 1px solid #4a6278; border-radius: 6px; padding: 8px; color: #ecf0f1; font-size: 14px; }
-            QLineEdit:focus { border: 1px solid #1abc9c; }
-            QPushButton { background-color: #1abc9c; color: white; font-size: 14px; font-weight: bold; border: none; padding: 8px 18px; border-radius: 8px; }
-            QPushButton:hover { background-color: #16a085; }
-            QPushButton[objectName="cancelButton"] { background-color: #95a5a6; }
-            QPushButton[objectName="cancelButton"]:hover { background-color: #7f8c8d; }
+        self.setMinimumWidth(s(400))
+        
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: #34495e; }}
+            QLabel {{ color: #ecf0f1; font-size: {s(14)}px; }}
+            QLineEdit {{ background-color: #2c3e50; border: 1px solid #4a6278; border-radius: 6px; padding: {s(8)}px; color: #ecf0f1; font-size: {s(14)}px; }}
+            QLineEdit:focus {{ border: 1px solid #1abc9c; }}
+            QPushButton {{ background-color: #1abc9c; color: white; font-size: {s(14)}px; font-weight: bold; border: none; padding: {s(8)}px {s(18)}px; border-radius: {s(8)}px; }}
+            QPushButton:hover {{ background-color: #16a085; }}
+            QPushButton[objectName="cancelButton"] {{ background-color: #95a5a6; }}
+            QPushButton[objectName="cancelButton"]:hover {{ background-color: #7f8c8d; }}
         """)
+        
         main_layout = QVBoxLayout(self)
         title_label = QLabel(self.windowTitle())
         title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
+        title_label.setStyleSheet(f"font-size: {s(18)}px; font-weight: bold; margin-bottom: 10px;")
         main_layout.addWidget(title_label)
+        
         form_layout = QFormLayout()
         form_layout.setRowWrapPolicy(QFormLayout.WrapAllRows)
         form_layout.setLabelAlignment(Qt.AlignRight)
         form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        
         self.name_input = QLineEdit()
         self.class_name_input = QLineEdit()
         self.inputs = [self.name_input, self.class_name_input]
+        
         form_layout.addRow(labels.get("trainee_name_prompt", "Họ và Tên:"), self.name_input)
         form_layout.addRow(labels.get("trainee_class_prompt", "Đơn vị:"), self.class_name_input)
         main_layout.addLayout(form_layout)
+        
         buttons = QDialogButtonBox()
         ok_button = buttons.addButton("Hoàn tất", QDialogButtonBox.AcceptRole)
         cancel_button = buttons.addButton("Hủy", QDialogButtonBox.RejectRole)
         cancel_button.setObjectName("cancelButton")
+        
         buttons.accepted.connect(self.validate_and_accept)
         buttons.rejected.connect(self.reject)
         main_layout.addWidget(buttons)
+        
         self.default_style = "border: 1px solid #4a6278;"
         self.error_style = "border: 2px solid #e74c3c;"
+
     def get_data(self):
         return {"name": self.name_input.text().strip(), "class_name": self.class_name_input.text().strip()}
     def validate_and_accept(self):
@@ -242,10 +269,6 @@ class ManageWindow(QMainWindow):
         # Lấy lịch sử từ DB
         self.current_history_cache = self.db.get_soldier_history(soldier_id)
         
-        # Nếu chưa có lịch sử gì cả, vẫn cho vào xem nhưng hiển thị trống
-        # Bỏ đoạn check "if not self.current_history_cache" và return ở đây
-        # để người dùng vẫn vào được màn hình cá nhân và xem thông tin/nhập ghi chú.
-            
         self.current_viewing_soldier_id = soldier_id
         
         # Setup UI
@@ -261,10 +284,7 @@ class ManageWindow(QMainWindow):
         self.ui.main_stack.setCurrentWidget(self.ui.page_personal_stats)
 
     def refresh_personal_stats_view(self):
-        """
-        Hàm vẽ lại giao diện thống kê dựa trên chế độ đang chọn (Single/Burst).
-        TINH CHỈNH: Xử lý thông minh các trường hợp ít hoặc không có dữ liệu.
-        """
+        """Hàm vẽ lại giao diện thống kê dựa trên chế độ đang chọn (Single/Burst)"""
         mode_filter = self.ui.cmb_stats_filter.currentData() # "SINGLE" or "BURST_3"
         
         # Lọc dữ liệu theo chế độ
@@ -303,21 +323,16 @@ class ManageWindow(QMainWindow):
         count = len(filtered_history)
         self.ui.lbl_p_sessions.setText(f"{count} lần")
 
-        # Cập nhật tiêu đề thẻ dựa trên chế độ
         if mode_filter == "BURST_3":
             self.ui.lbl_p_avg.parent().findChild(QLabel).setText("ĐIỂM TB / LOẠT")
         else:
             self.ui.lbl_p_avg.parent().findChild(QLabel).setText("ĐIỂM TB / PHÁT")
 
         # --- XỬ LÝ CÁC TRƯỜNG HỢP DỮ LIỆU ---
-        eval_msg = ""
-        level_msg = ""
-        
-        # Ngưỡng dữ liệu tối thiểu để đánh giá chuyên môn
+        eval_msg = ""; level_msg = ""
         MIN_DATA_THRESHOLD = 3 
 
         if count == 0:
-            # === TRƯỜNG HỢP 0: CHƯA CÓ DỮ LIỆU ===
             self.ui.lbl_p_avg.setText("--")
             self.ui.lbl_p_best.setText("--")
             self.ui.lbl_p_eval.setText(f"ℹ Chưa có dữ liệu tập luyện ở chế độ {mode_filter}.\nHãy thực hiện các bài bắn để hệ thống bắt đầu ghi nhận và phân tích thành tích.")
@@ -325,7 +340,6 @@ class ManageWindow(QMainWindow):
             self.p_canvas.draw()
             return
 
-        # Tính toán các chỉ số cơ bản (dù ít dữ liệu vẫn tính)
         avg_global = total_score_accum / count
         best_val = max(scores_for_chart)
         
@@ -337,26 +351,17 @@ class ManageWindow(QMainWindow):
             self.ui.lbl_p_best.setText(f"{best_val:.2f}")
 
         if count < MIN_DATA_THRESHOLD:
-            # === TRƯỜNG HỢP 1: DỮ LIỆU ÍT (1-2 PHIÊN) -> KHÔNG ĐÁNH GIÁ MẠNH ===
             missing = MIN_DATA_THRESHOLD - count
             eval_msg = "📊 Đang thu thập dữ liệu cơ sở."
             level_msg = f"Cần tập luyện thêm {missing} buổi nữa để hệ thống có đủ dữ liệu vẽ biểu đồ tiến độ và đánh giá trình độ khách quan hơn."
-            
-            # Thông báo nhẹ nhàng, khích lệ
             self.ui.lbl_p_eval.setText(f"{eval_msg}\n{level_msg}")
-            
         else:
-            # === TRƯỜNG HỢP 2: DỮ LIỆU ĐỦ (>= 3 PHIÊN) -> ĐÁNH GIÁ CHI TIẾT ===
-            
-            # 1. Đánh giá xu hướng
-            recent = scores_for_chart[-3:] # Lấy 3 lần gần nhất
+            recent = scores_for_chart[-3:] 
             trend = recent[-1] - recent[0]
-            
             if trend > 0.5: eval_msg = "📈 Đang có sự TIẾN BỘ trong các buổi tập gần đây."
             elif trend < -0.5: eval_msg = "📉 Phong độ đang ĐI XUỐNG, cần ổn định tâm lý và yếu lĩnh."
             else: eval_msg = "➡ Phong độ ỔN ĐỊNH."
 
-            # 2. Đánh giá trình độ (Ranking)
             if mode_filter == "BURST_3":
                 if avg_global >= 23: level_msg = "Khả năng ghìm súng RẤT TỐT (Giỏi)."
                 elif avg_global >= 19: level_msg = "Khả năng ghìm súng TỐT (Khá)."
@@ -370,32 +375,22 @@ class ManageWindow(QMainWindow):
             
             self.ui.lbl_p_eval.setText(f"{eval_msg}\n{level_msg}")
 
-        # --- D. VẼ BIỂU ĐỒ (LUÔN VẼ NẾU CÓ DỮ LIỆU) ---
+        # --- D. VẼ BIỂU ĐỒ ---
         self.p_figure.clear()
         ax = self.p_figure.add_subplot(111)
-        
         line_color = '#3498db' if mode_filter == "SINGLE" else '#e67e22'
         y_limit = 10 if mode_filter == "SINGLE" else 30
-        
-        # Vẽ biểu đồ
         ax.plot(range(len(scores_for_chart)), scores_for_chart, marker='o', linestyle='-', color=line_color, linewidth=2)
-        
-        # Cấu hình trục X
         ax.set_xticks(range(len(dates_for_chart)))
         ax.set_xticklabels(dates_for_chart, color='white', rotation=0, fontsize=8)
-        
         title_chart = "BIỂU ĐỒ TIẾN ĐỘ" if count >= MIN_DATA_THRESHOLD else "BIỂU ĐỒ KẾT QUẢ (Dữ liệu ban đầu)"
         ax.set_title(title_chart, color='white', fontsize=10)
-        
         ax.set_ylim(0, y_limit + (y_limit*0.1))
         ax.tick_params(colors='white')
         ax.grid(True, linestyle='--', alpha=0.3)
-        
-        # Hiển thị giá trị lên điểm
         for x, y in enumerate(scores_for_chart):
             ax.text(x, y + (y_limit*0.02), f"{y:.1f}" if mode_filter == "SINGLE" else f"{int(y)}", 
                     color='white', ha='center', fontsize=8)
-
         self.p_canvas.draw()
 
     def save_personal_note_direct(self):
@@ -403,9 +398,7 @@ class ManageWindow(QMainWindow):
         text = self.ui.txt_personal_note.toPlainText().strip()
         if self.db.update_soldier_note(self.current_viewing_soldier_id, text):
             QMessageBox.information(self, "Đã lưu", "Cập nhật ghi chú thành công.")
-            self.ui.txt_personal_note.clear() # ĐÃ SỬA: Xóa text
-            
-            # Cập nhật cache để khi back về list không bị cũ
+            self.ui.txt_personal_note.clear() 
             for s in self.all_soldiers_data:
                 if s['id'] == self.current_viewing_soldier_id:
                     s['note'] = text
@@ -871,9 +864,16 @@ class ManageWindow(QMainWindow):
         menu.exec(self.ui.soldier_table.mapToGlobal(pos))
         
     def on_soldier_selection_changed(self):
-        has_selection = len(self.ui.soldier_table.selectedItems()) > 0
-        self.ui.btn_note.setEnabled(has_selection)
-        self.ui.btn_personal_stats.setEnabled(has_selection)
+        # --- [TINH CHỈNH] LOGIC CHỌN NHIỀU NGƯỜI ---
+        # Tính số dòng thực tế được chọn (loại bỏ trùng lặp cột)
+        selected_rows = set(item.row() for item in self.ui.soldier_table.selectedItems())
+        count = len(selected_rows)
+        
+        # Chỉ bật nút Ghi chú và Thống kê khi chọn ĐÚNG 1 người
+        is_single = (count == 1)
+        self.ui.btn_note.setEnabled(is_single)
+        self.ui.btn_personal_stats.setEnabled(is_single)
+        # -------------------------------------------
 
     def on_edit_note_clicked(self):
         selected_rows = self.ui.soldier_table.selectedItems()

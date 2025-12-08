@@ -4,12 +4,13 @@ import cv2
 import logging
 from collections import deque
 from datetime import datetime
-from PySide6.QtCore import QObject, Slot, Qt, QTimer # [THAY ĐỔI] Thêm QTimer
+from PySide6.QtCore import QObject, Slot, Qt, QTimer
 from PySide6.QtWidgets import QMessageBox, QApplication
 from PySide6.QtGui import QPixmap, QImage
 from utils.camera import find_available_cameras
 from config import APP_DATA_DIR
 from gui.dialogs import ResultPopup, TraineeSessionPopup
+from core.saver import ImageSaver
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,12 @@ class ShootingController(QObject):
         os.makedirs(self.save_dir, exist_ok=True)
         self.current_selecting_slot = 1
         self.popup_queue = deque()
+        self.is_popup_open = False 
+        
+        # Khởi tạo Image Saver
+        self.image_saver = ImageSaver()
+        self.image_saver.start()
+        
         self._connect_signals()
 
     def _connect_signals(self):
@@ -64,7 +71,7 @@ class ShootingController(QObject):
         self.sess_manager.soldier_session_started.connect(self.on_soldier_started)
         self.trigger.triggered.connect(self.execute_shot_logic)
 
-    # ... (Giữ nguyên các hàm start_free_practice, setup_new_session, restore_session, start_managed_practice, _setup_ui_for_mode, _init_camera_and_session, show_trainee_list, on_trainee_changed, update_trainee_info_ui, on_soldier_started) ...
+    # ... (Các hàm khác giữ nguyên) ...
     def start_free_practice(self):
         self.sess_manager.is_free_practice = True
         self.sess_manager.is_managed_session = False
@@ -165,97 +172,47 @@ class ShootingController(QObject):
 
     def on_soldier_started(self, name): pass
 
-    # --- [BẮT ĐẦU VÙNG SỬA ĐỔI LOGIC POPUP] ---
-
     @Slot(int, list)
     def on_burst_completed(self, idx, data):
-        """
-        Khi một camera hoàn thành loạt bắn:
-        1. Đưa dữ liệu vào hàng đợi.
-        2. Kiểm tra xem có cần đợi camera còn lại không.
-        3. Nếu đủ điều kiện (hoặc chế độ 1 cam, hoặc cả 2 cam đã xong), kích hoạt hiển thị sau trễ.
-        """
         self.popup_queue.append((idx, data))
-        
-        # Logic xác định xem có cần đợi camera kia không
         should_wait_others = False
-
-        if self.sess_manager.current_mode == 1: # Chế độ 2 Camera (Áp dụng cho cả Tự do và Theo phiên)
-            # Nếu chưa xong hết cả 2 cam thì phải đợi -> Không hiện popup ngay
+        if self.sess_manager.current_mode == 1: 
             if not self.sess_manager.are_all_active_cameras_finished():
                 should_wait_others = True
-        
-        # Nếu đang ở chế độ theo phiên (Managed), logic cũ đã bao hàm kiểm tra này,
-        # nhưng để chắc chắn cho cả trường hợp Tự do, ta dùng cờ should_wait_others ở trên.
-        
-        if should_wait_others:
-            return # Thoát ra, đợi tín hiệu từ camera còn lại
-
-        # Nếu không phải đợi (Chế độ 1 Cam HOẶC Chế độ 2 Cam mà cả 2 đều đã xong)
-        # Delay 1.5s để đọc xong âm thanh rồi mới hiện Popup
+        if should_wait_others: return 
         QTimer.singleShot(1500, self.process_popup_queue)
 
     def process_popup_queue(self):
-        """
-        Xử lý hiển thị popup từ hàng đợi.
-        Đảm bảo reset giao diện (ảnh kết quả) sau khi đóng popup.
-        """
         while self.popup_queue:
             idx, data = self.popup_queue.popleft()
             t = f"KẾT QUẢ - CAMERA {idx}" if self.sess_manager.current_mode == 1 else ""
             allow_retry = self.sess_manager.is_managed_session
-            
-            # Hiển thị Modal Popup (Code sẽ dừng tại đây cho đến khi user đóng popup)
+            self.is_popup_open = True
             p = ResultPopup(data, camera_name=t, allow_retry=allow_retry, parent=self.parent_window)
-            result_code = p.exec() # 2 = Retry, 1 = Continue/Close
-            
+            result_code = p.exec()
+            self.is_popup_open = False
             target_ui_idx = 0 if self.sess_manager.current_mode == 0 else idx
-            
-            # --- LOGIC SAU KHI ĐÓNG POPUP ---
-            
             if result_code == 2 and allow_retry: 
-                # === TRƯỜNG HỢP: BẮN LẠI (Chỉ Managed Session) ===
                 self.sess_manager.retry_burst(idx)
-                # Reset ảnh hiển thị về trạng thái "Chờ"
                 self.reset_result_display(target_ui_idx) 
-                
-                if self.sess_manager.current_mode == 1: 
-                    self.update_active_border(idx)
-                return # Thoát để xử lý lượt bắn lại
-
-            # === TRƯỜNG HỢP: TIẾP TỤC / ĐÓNG ===
+                if self.sess_manager.current_mode == 1: self.update_active_border(idx)
+                return 
             if self.sess_manager.is_managed_session:
-                # Logic Phiên tập
                 soldier = self.sess_manager.get_soldier_at_session_idx(idx)
                 if soldier: soldier['finished'] = True
                 self.sess_manager.end_session(idx)
-                
-                # Mở nút chọn người lại
                 self._set_trainee_btn_state(target_ui_idx, True)
-                
-                # Quan trọng: Reset ảnh hiển thị để xóa ảnh bia cũ
                 self.reset_result_display(target_ui_idx)
-
-                # Kiểm tra kết thúc toàn phiên
                 if self.sess_manager.shooting_mode == "BURST_3" and self.sess_manager.are_all_soldiers_finished() and not self.popup_queue:
                     self.parent_window.on_auto_finish_session()
                     return
-
-                # Nếu là chế độ 1 Cam -> Mở lại danh sách chọn người
                 if self.sess_manager.current_mode == 0 and not self.popup_queue:
                     self.show_trainee_list(1)
             else:
-                # Logic Tự do: Reset bộ đếm để bắn loạt mới
                 self.sess_manager._reset_counters(idx) 
                 self.sess_manager.reset_burst_state(idx)
-                
-                # Quan trọng: Reset ảnh hiển thị về trạng thái chờ
                 self.reset_result_display(target_ui_idx)
                 self._set_trainee_btn_state(target_ui_idx, True)
-    
-    # --- [KẾT THÚC VÙNG SỬA ĐỔI] ---
-
-    # ... (Giữ nguyên các hàm stop_practice, _reset_trainee_labels, handle_mode_change, handle_shooting_mode_change, _start_cameras, start_new_session, on_manual_refresh, populate_camera_sources, _sync_combo_selection, change_cam_source, _set_trainee_btn_state, execute_shot_logic, on_processing_finished, update_camera_feed, show_camera_error, update_shot_display, update_session_ui_state, update_active_border, _convert_cv_to_pixmap, reset_ui_state, reset_result_display, _update_result_image, _get_combo, set_zoom, on_manual_refresh, toggle_calib, set_center, stop_cam, _update_button_visibility) ...
 
     def stop_practice(self):
         self.trigger.deactivate()
@@ -263,6 +220,9 @@ class ShootingController(QObject):
         self.sess_manager.reset_all()
         self.reset_ui_state()
         self.popup_queue.clear()
+        if self.image_saver:
+            self.image_saver.stop()
+            self.image_saver = None
         self._set_trainee_btn_state(1, True)
         self._set_trainee_btn_state(2, True)
 
@@ -303,7 +263,6 @@ class ShootingController(QObject):
         if self.sess_manager.is_free_practice:
             if idx == 0: self.start_new_session(0)
             else: self.start_new_session(1); self.start_new_session(2)
-        
         if idx == 1: 
             QApplication.processEvents()
             self.update_active_border(self.sess_manager.next_shot_cam_id)
@@ -373,6 +332,10 @@ class ShootingController(QObject):
 
     @Slot()
     def execute_shot_logic(self):
+        if self.is_popup_open:
+            logger.warning("Trigger bị chặn vì Popup đang mở.")
+            return
+
         if self.sess_manager.is_managed_session:
             target_cam = 1
             if self.sess_manager.current_mode == 1:
@@ -412,14 +375,9 @@ class ShootingController(QObject):
         ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         fname = f"s{sess_idx}_cam{target_cam}_{ts}.png"
         path = os.path.join(self.save_dir, fname)
-        try:
-            cv2.imwrite(path, frame)
-            self.parent_window.request_processing.emit(frame, center, path)
-        except Exception as e:
-            logger.error(f"Lỗi chụp ảnh: {e}")
-            self.sess_manager.rollback_pending_shot(sess_idx)
-            if self.sess_manager.is_managed_session and self.sess_manager.pending_shots[sess_idx] == 0:
-                self._set_trainee_btn_state(sess_idx, True)
+        
+        # Gửi frame cho worker, không lưu file ở đây
+        self.parent_window.request_processing.emit(frame, center, path)
 
         if self.sess_manager.current_mode == 1:
             next_cam = self.sess_manager.determine_next_camera_after_shot(target_cam)
@@ -430,6 +388,16 @@ class ShootingController(QObject):
     def on_processing_finished(self, res):
         pix = self._convert_cv_to_pixmap(res.get('result_frame'))
         score = res.get('score', 0)
+        
+        # --- [QUAN TRỌNG] CHỈ LƯU ẢNH NẾU LÀ PHIÊN TẬP CÓ QUẢN LÝ ---
+        final_img_numpy = res.get('result_frame')
+        save_path = res.get('image_path')
+        
+        # Kiểm tra is_managed_session: Nếu là False (Tự do) thì sẽ KHÔNG BAO GIỜ GỌI save_image
+        if self.sess_manager.is_managed_session and final_img_numpy is not None and save_path:
+            if self.image_saver:
+                self.image_saver.save_image(final_img_numpy, save_path)
+        # -----------------------------------------------------------
         
         self.sess_manager.process_shot_result(res, pix)
         

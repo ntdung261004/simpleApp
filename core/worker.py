@@ -44,10 +44,6 @@ class ProcessingWorker(QObject):
                 logger.error(f"Worker: Lỗi trong quá trình warm-up: {e}")
 
     def _initialize_detector(self):
-        """
-        Khởi tạo ObjectDetector bằng cách đọc đường dẫn model từ config
-        và trỏ đến thư mục AppData.
-        """
         model_filename = self.config.get("yolo_model_name")
         if not model_filename:
             logger.critical("Config không chứa 'yolo_model_name'. Không thể khởi tạo AI.")
@@ -124,22 +120,15 @@ class ProcessingWorker(QObject):
             result_data = handle_miss(hit_info, photo_frame)
             target_detected_raw = "Trượt" 
 
-        # --- FIX: LUÔN LƯU ẢNH KẾT QUẢ (DÙ TRÚNG HAY TRƯỢT) ---
-        # Code cũ chỉ lưu khi score > 0, gây ra lỗi mất tâm khi bắn trượt.
-        final_image_to_save = result_data.get('image')
-        if final_image_to_save is not None:
-            try:
-                # Ghi đè file ảnh gốc bằng ảnh đã vẽ tâm
-                cv2.imwrite(image_path, final_image_to_save)
-                logger.info(f"Worker: Đã lưu ảnh kết quả tại {image_path}")
-            except Exception as e:
-                logger.error(f"Worker: Lỗi khi ghi đè ảnh kết quả: {e}")
-        # ------------------------------------------------------
+        # --- [TỐI ƯU] LOẠI BỎ VIỆC GHI ĐĨA TẠI ĐÂY ---
+        # Việc lưu ảnh sẽ được chuyển cho ImageSaver ở Controller xử lý bất đồng bộ.
+        # Worker chỉ trả về ảnh kết quả (đã vẽ tâm) thông qua Signal.
+        
         final_package = {
             'time_str': datetime.now().strftime('%H:%M:%S'),
             'target_name': result_data.get('target'),
             'score': result_data.get('score'),
-            'result_frame': result_data.get('image'),
+            'result_frame': result_data.get('image'), # Ảnh này sẽ được gửi đi lưu
             'coords': result_data.get('coords'),
             'image_path': image_path,
             'target_detected_raw': target_detected_raw
