@@ -242,9 +242,9 @@ class ManageWindow(QMainWindow):
         # Lấy lịch sử từ DB
         self.current_history_cache = self.db.get_soldier_history(soldier_id)
         
-        if not self.current_history_cache:
-            QMessageBox.information(self, "Thông báo", f"Chiến sĩ {name} chưa tham gia phiên tập nào.")
-            return
+        # Nếu chưa có lịch sử gì cả, vẫn cho vào xem nhưng hiển thị trống
+        # Bỏ đoạn check "if not self.current_history_cache" và return ở đây
+        # để người dùng vẫn vào được màn hình cá nhân và xem thông tin/nhập ghi chú.
             
         self.current_viewing_soldier_id = soldier_id
         
@@ -261,11 +261,14 @@ class ManageWindow(QMainWindow):
         self.ui.main_stack.setCurrentWidget(self.ui.page_personal_stats)
 
     def refresh_personal_stats_view(self):
-        """Hàm vẽ lại giao diện thống kê dựa trên chế độ đang chọn (Single/Burst)"""
+        """
+        Hàm vẽ lại giao diện thống kê dựa trên chế độ đang chọn (Single/Burst).
+        TINH CHỈNH: Xử lý thông minh các trường hợp ít hoặc không có dữ liệu.
+        """
         mode_filter = self.ui.cmb_stats_filter.currentData() # "SINGLE" or "BURST_3"
         
         # Lọc dữ liệu theo chế độ
-        filtered_history = [h for h in self.current_history_cache if h['mode'] == mode_filter]
+        filtered_history = [h for h in self.current_history_cache if h['mode'] == mode_filter] if self.current_history_cache else []
         
         # --- A. CẬP NHẬT BẢNG LỊCH SỬ ---
         self.ui.personal_table.setRowCount(len(filtered_history))
@@ -296,76 +299,95 @@ class ManageWindow(QMainWindow):
             self.ui.personal_table.setItem(i, 1, QTableWidgetItem(h['session_name']))
             self.ui.personal_table.setItem(i, 2, QTableWidgetItem(res_str))
 
-        # --- B. CẬP NHẬT THẺ CHỈ SỐ (CARDS) ---
+        # --- B. CẬP NHẬT THẺ CHỈ SỐ VÀ ĐÁNH GIÁ (LOGIC TINH CHỈNH) ---
         count = len(filtered_history)
         self.ui.lbl_p_sessions.setText(f"{count} lần")
+
+        # Cập nhật tiêu đề thẻ dựa trên chế độ
+        if mode_filter == "BURST_3":
+            self.ui.lbl_p_avg.parent().findChild(QLabel).setText("ĐIỂM TB / LOẠT")
+        else:
+            self.ui.lbl_p_avg.parent().findChild(QLabel).setText("ĐIỂM TB / PHÁT")
+
+        # --- XỬ LÝ CÁC TRƯỜNG HỢP DỮ LIỆU ---
+        eval_msg = ""
+        level_msg = ""
         
-        # Nếu không có dữ liệu cho chế độ này
+        # Ngưỡng dữ liệu tối thiểu để đánh giá chuyên môn
+        MIN_DATA_THRESHOLD = 3 
+
         if count == 0:
+            # === TRƯỜNG HỢP 0: CHƯA CÓ DỮ LIỆU ===
             self.ui.lbl_p_avg.setText("--")
             self.ui.lbl_p_best.setText("--")
-            self.ui.lbl_p_eval.setText(f"Chưa có dữ liệu tập luyện ở chế độ {mode_filter}.")
+            self.ui.lbl_p_eval.setText(f"ℹ Chưa có dữ liệu tập luyện ở chế độ {mode_filter}.\nHãy thực hiện các bài bắn để hệ thống bắt đầu ghi nhận và phân tích thành tích.")
             self.p_figure.clear()
             self.p_canvas.draw()
             return
 
-        # Tính Trung bình & Tốt nhất
+        # Tính toán các chỉ số cơ bản (dù ít dữ liệu vẫn tính)
         avg_global = total_score_accum / count
         best_val = max(scores_for_chart)
         
         if mode_filter == "BURST_3":
-            # Chế độ loạt: Hiển thị Tổng điểm
-            self.ui.lbl_p_avg.parent().findChild(QLabel).setText("ĐIỂM TB / LOẠT") # Đổi title thẻ
             self.ui.lbl_p_avg.setText(f"{avg_global:.1f}")
             self.ui.lbl_p_best.setText(f"{best_val}")
         else:
-            # Chế độ đơn: Hiển thị Điểm trung bình
-            self.ui.lbl_p_avg.parent().findChild(QLabel).setText("ĐIỂM TB / PHÁT") # Đổi title thẻ
             self.ui.lbl_p_avg.setText(f"{avg_global:.2f}")
             self.ui.lbl_p_best.setText(f"{best_val:.2f}")
 
-        # --- C. ĐÁNH GIÁ HỆ THỐNG ---
-        eval_msg = ""
-        # 1. Đánh giá xu hướng
-        if len(scores_for_chart) >= 2:
-            # So sánh 3 lần gần nhất (hoặc 2) để thấy xu hướng gần đây
-            recent = scores_for_chart[-3:]
-            trend = recent[-1] - recent[0]
-            if trend > 0.5: eval_msg = "📈 Đang có sự TIẾN BỘ trong các buổi tập gần đây."
-            elif trend < -0.5: eval_msg = "📉 Phong độ đang ĐI XUỐNG, cần tập trung hơn."
-            else: eval_msg = "➡ Phong độ ỔN ĐỊNH."
-        else:
-            eval_msg = "Cần thêm dữ liệu để đánh giá xu hướng."
-
-        # 2. Đánh giá trình độ
-        level_msg = ""
-        if mode_filter == "BURST_3":
-            if avg_global >= 23: level_msg = "Khả năng ghìm súng RẤT TỐT (Giỏi)."
-            elif avg_global >= 15: level_msg = "Khả năng ghìm súng ĐẠT YÊU CẦU."
-            else: level_msg = "Yếu lĩnh ghìm súng còn YẾU (Hay giật)."
-        else:
-            if avg_global >= 8.0: level_msg = "Đường ngắm rất chính xác (Giỏi)."
-            elif avg_global >= 5.0: level_msg = "Đường ngắm đạt yêu cầu."
-            else: level_msg = "Đường ngắm chưa chuẩn (Yếu)."
+        if count < MIN_DATA_THRESHOLD:
+            # === TRƯỜNG HỢP 1: DỮ LIỆU ÍT (1-2 PHIÊN) -> KHÔNG ĐÁNH GIÁ MẠNH ===
+            missing = MIN_DATA_THRESHOLD - count
+            eval_msg = "📊 Đang thu thập dữ liệu cơ sở."
+            level_msg = f"Cần tập luyện thêm {missing} buổi nữa để hệ thống có đủ dữ liệu vẽ biểu đồ tiến độ và đánh giá trình độ khách quan hơn."
             
-        self.ui.lbl_p_eval.setText(f"{eval_msg} {level_msg}")
+            # Thông báo nhẹ nhàng, khích lệ
+            self.ui.lbl_p_eval.setText(f"{eval_msg}\n{level_msg}")
+            
+        else:
+            # === TRƯỜNG HỢP 2: DỮ LIỆU ĐỦ (>= 3 PHIÊN) -> ĐÁNH GIÁ CHI TIẾT ===
+            
+            # 1. Đánh giá xu hướng
+            recent = scores_for_chart[-3:] # Lấy 3 lần gần nhất
+            trend = recent[-1] - recent[0]
+            
+            if trend > 0.5: eval_msg = "📈 Đang có sự TIẾN BỘ trong các buổi tập gần đây."
+            elif trend < -0.5: eval_msg = "📉 Phong độ đang ĐI XUỐNG, cần ổn định tâm lý và yếu lĩnh."
+            else: eval_msg = "➡ Phong độ ỔN ĐỊNH."
 
-        # --- D. VẼ BIỂU ĐỒ ---
+            # 2. Đánh giá trình độ (Ranking)
+            if mode_filter == "BURST_3":
+                if avg_global >= 23: level_msg = "Khả năng ghìm súng RẤT TỐT (Giỏi)."
+                elif avg_global >= 19: level_msg = "Khả năng ghìm súng TỐT (Khá)."
+                elif avg_global >= 15: level_msg = "Khả năng ghìm súng ĐẠT YÊU CẦU."
+                else: level_msg = "Yếu lĩnh ghìm súng còn YẾU (Hay giật), cần rèn luyện thêm."
+            else:
+                if avg_global >= 8.0: level_msg = "Đường ngắm rất chính xác (Giỏi)."
+                elif avg_global >= 6.5: level_msg = "Đường ngắm khá (Khá)."
+                elif avg_global >= 5.0: level_msg = "Đường ngắm đạt yêu cầu."
+                else: level_msg = "Đường ngắm chưa chuẩn (Yếu), cần tập ke đường ngắm cơ bản."
+            
+            self.ui.lbl_p_eval.setText(f"{eval_msg}\n{level_msg}")
+
+        # --- D. VẼ BIỂU ĐỒ (LUÔN VẼ NẾU CÓ DỮ LIỆU) ---
         self.p_figure.clear()
         ax = self.p_figure.add_subplot(111)
         
-        # Chọn màu sắc và giới hạn trục Y
-        line_color = '#3498db' if mode_filter == "SINGLE" else '#e67e22' # Xanh cho Single, Cam cho Burst
+        line_color = '#3498db' if mode_filter == "SINGLE" else '#e67e22'
         y_limit = 10 if mode_filter == "SINGLE" else 30
         
+        # Vẽ biểu đồ
         ax.plot(range(len(scores_for_chart)), scores_for_chart, marker='o', linestyle='-', color=line_color, linewidth=2)
+        
+        # Cấu hình trục X
         ax.set_xticks(range(len(dates_for_chart)))
         ax.set_xticklabels(dates_for_chart, color='white', rotation=0, fontsize=8)
         
-        title_chart = "BIỂU ĐỒ DIỄN BIẾN THÀNH TÍCH (ĐIỂM)" # Title chung
+        title_chart = "BIỂU ĐỒ TIẾN ĐỘ" if count >= MIN_DATA_THRESHOLD else "BIỂU ĐỒ KẾT QUẢ (Dữ liệu ban đầu)"
         ax.set_title(title_chart, color='white', fontsize=10)
         
-        ax.set_ylim(0, y_limit + (y_limit*0.1)) # Thêm chút khoảng trống bên trên
+        ax.set_ylim(0, y_limit + (y_limit*0.1))
         ax.tick_params(colors='white')
         ax.grid(True, linestyle='--', alpha=0.3)
         
