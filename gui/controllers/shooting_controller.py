@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPixmap, QImage
 from utils.camera import find_available_cameras
 from config import APP_DATA_DIR
-from gui.dialogs import ResultPopup, TraineeSessionPopup, show_confirmation_custom, show_warning
+from gui.dialogs import ResultPopup, TraineeSessionPopup, show_warning, show_info, show_confirmation_custom
 from core.saver import ImageSaver
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ class ShootingController(QObject):
         self.popup_queue = deque()
         self.is_popup_open = False 
         
+        # Khởi tạo Image Saver (Lưu ảnh bất đồng bộ)
         self.image_saver = ImageSaver()
         self.image_saver.start()
         
@@ -153,7 +154,7 @@ class ShootingController(QObject):
         target_slot = self.current_selecting_slot
         for slot, s in self.sess_manager.active_soldiers.items():
             if s and s['id'] == soldier_data['id'] and slot != target_slot:
-                show_warning(self.parent_window, "Trùng lặp", f"Chiến sĩ {soldier_data['name']} đang tập ở Camera {slot}.")
+                show_warning(self.parent_window, "Trùng lặp", f"Người tập {soldier_data['name']} đang tập ở Camera {slot}.")
                 return
         self.sess_manager.assign_soldier_to_slot(target_slot, soldier_data)
         self.update_trainee_info_ui(target_slot, soldier_data['name'])
@@ -247,17 +248,20 @@ class ShootingController(QObject):
         if hasattr(self.ui, 'dual_cam2_trainee_lbl'): self.ui.dual_cam2_trainee_lbl.setText("Người tập: Chưa chọn")
 
     def handle_mode_change(self, idx):
+        # Kiểm tra nếu đang có loạt bắn dở
         if self.sess_manager.is_any_burst_in_progress():
             reply = show_confirmation_custom(
                 self.parent_window, "Cảnh báo", "Đang có lượt bắn chưa hoàn thành.\nBạn có muốn hủy loạt này và chuyển chế độ không?",
                 btn_yes_text="Đồng ý", btn_no_text="Hủy"
             )
             if reply == "NO":
+                # Quay lại index cũ nếu người dùng chọn KHÔNG
                 self.ui.mode_selector.blockSignals(True)
                 self.ui.mode_selector.setCurrentIndex(self.sess_manager.current_mode)
                 self.ui.mode_selector.blockSignals(False)
                 return
             else:
+                # Hủy các loạt đang dở
                 for i in [0, 1, 2]:
                     if self.sess_manager.is_burst_in_progress(i): self.sess_manager.cancel_incomplete_burst(i)
         
@@ -267,7 +271,14 @@ class ShootingController(QObject):
         self.sess_manager.clear_active_soldiers() 
         self._reset_trainee_labels()
         self.popup_queue.clear()
+        
+        # --- [FIX CRASH] DỪNG HẾT CAM TRƯỚC KHI QUÉT ---
+        self.cam_manager.stop_all()
+        QApplication.processEvents() # Chờ xử lý sự kiện
+        
         self.populate_camera_sources()
+        # -----------------------------------------------
+        
         if idx == 1:
             if self.cam_manager.cam_indices[1] == self.cam_manager.cam_indices[2]:
                 available = find_available_cameras()
@@ -308,9 +319,11 @@ class ShootingController(QObject):
         self._set_trainee_btn_state(2, True)
 
     def on_manual_refresh(self, cam_id):
+        # [FIX] CHỈ RESTART ĐÚNG CAMERA ĐÓ, KHÔNG QUÉT LẠI PHẦN CỨNG GÂY CRASH
+        logger.info(f"Làm mới Camera {cam_id}...")
         self.cam_manager.stop_camera(cam_id)
         QApplication.processEvents()
-        self.populate_camera_sources()
+        # Đã xóa dòng self.populate_camera_sources() để tránh xung đột
         self.cam_manager.start_camera(cam_id)
 
     def populate_camera_sources(self):
@@ -395,6 +408,7 @@ class ShootingController(QObject):
         fname = f"s{sess_idx}_cam{target_cam}_{ts}.png"
         path = os.path.join(self.save_dir, fname)
         
+        # [TỐI ƯU] Gửi frame cho worker, không lưu file raw ở đây
         self.parent_window.request_processing.emit(frame, center, path)
 
         if self.sess_manager.current_mode == 1:
@@ -410,6 +424,7 @@ class ShootingController(QObject):
         final_img_numpy = res.get('result_frame')
         save_path = res.get('image_path')
         
+        # [TỐI ƯU] Chỉ lưu ảnh nếu là phiên có quản lý
         if self.sess_manager.is_managed_session and final_img_numpy is not None and save_path:
             if self.image_saver:
                 self.image_saver.save_image(final_img_numpy, save_path)
@@ -431,6 +446,7 @@ class ShootingController(QObject):
 
         self._update_result_image(sess_idx, pix)
         
+        # [ÂM THANH] Logic 2 Cam
         is_dual_mode = (self.sess_manager.current_mode == 1)
         
         if score > 0:
@@ -439,11 +455,12 @@ class ShootingController(QObject):
             score_sound = "miss"
             
         if is_dual_mode:
+            # sess_idx lúc này sẽ là 1 hoặc 2
             cam_sound = f"cam{sess_idx}" 
             self.audio_manager.play_sequence([cam_sound, score_sound])
         else:
             self.audio_manager.play_sound(score_sound)
-
+        
     @Slot(int, object)
     def update_camera_feed(self, cam_id, frame):
         pix = self._convert_cv_to_pixmap(frame)
@@ -552,7 +569,12 @@ class ShootingController(QObject):
         return None
 
     def set_zoom(self, c, v): self.cam_manager.set_zoom(c, v)
-    def on_manual_refresh(self, c): self.cam_manager.stop_camera(c); QApplication.processEvents(); self.populate_camera_sources(); self.cam_manager.start_camera(c)
+    def on_manual_refresh(self, c): 
+        logger.info(f"Làm mới Camera {c}...")
+        self.cam_manager.stop_camera(c)
+        QApplication.processEvents()
+        self.cam_manager.start_camera(c)
+        
     def toggle_calib(self, c):
         active = not self.cam_manager.is_calib_mode[c]; self.cam_manager.is_calib_mode[c] = active
         lbl = "Lưu" if active else "Hiệu chỉnh"; cursor = Qt.CrossCursor if active else Qt.ArrowCursor
