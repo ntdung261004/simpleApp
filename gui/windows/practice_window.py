@@ -2,7 +2,7 @@
 import logging
 import numpy as np
 from datetime import datetime
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QListWidgetItem, QTableWidgetItem, QAbstractItemView
+from PySide6.QtWidgets import QMainWindow, QListWidgetItem, QTableWidgetItem, QAbstractItemView
 from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QKeyEvent
 
@@ -12,6 +12,7 @@ from core.database import DatabaseManager
 from gui.managers.camera_manager import CameraManager
 from gui.managers.session_manager import SessionManager
 from gui.controllers.shooting_controller import ShootingController
+from gui.dialogs import show_warning, show_info, show_error, show_confirmation, show_confirmation_custom
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class PracticeWindow(QMainWindow):
         
         self.worker = worker
         self.bt_trigger = trigger
-        self.db_manager = DatabaseManager() # Singleton đã được xử lý ở core/database.py
+        self.db_manager = DatabaseManager() 
         self.audio_manager = AudioManager()
         
         self.cam_manager = CameraManager(config)
@@ -40,144 +41,95 @@ class PracticeWindow(QMainWindow):
         self.gui.stack.setCurrentWidget(self.gui.page_dashboard)
 
     def _init_connections(self):
-        # Menu Navigation
         self.gui.btn_create_session.clicked.connect(lambda: self.gui.stack.setCurrentWidget(self.gui.page_session_menu))
         self.gui.btn_back_main.clicked.connect(self.back_to_menu_signal.emit)
-        
-        # Session Menu
         self.gui.btn_new_session.clicked.connect(self.on_new_session_clicked)
         self.gui.btn_continue_session.clicked.connect(self.on_continue_session_clicked)
         self.gui.btn_back_dashboard_session.clicked.connect(lambda: self.gui.stack.setCurrentWidget(self.gui.page_dashboard))
-        
-        # Create Session Page
         self.gui.btn_confirm_setup.clicked.connect(self.on_confirm_create_session)
         self.gui.btn_back_create.clicked.connect(lambda: self.gui.stack.setCurrentWidget(self.gui.page_session_menu))
         self.gui.list_soldiers_select.itemSelectionChanged.connect(self.update_create_session_summary)
         self.gui.cmb_session_type.currentIndexChanged.connect(self.update_create_session_summary)
-        
-        # Continue Session Page
         self.gui.btn_cont_start.clicked.connect(self.on_continue_start_clicked)
         self.gui.btn_cont_delete.clicked.connect(self.on_continue_delete_clicked)
         self.gui.btn_cont_back.clicked.connect(lambda: self.gui.stack.setCurrentWidget(self.gui.page_session_menu))
-        
-        # Free Practice
         self.gui.btn_free_practice.clicked.connect(self.on_free_practice_clicked)
-        
-        # Practice View Header (Các nút điều khiển chính)
         self.gui.btn_back_header.clicked.connect(self.on_back_header_clicked)
         self.gui.back_to_dashboard_btn.clicked.connect(self.on_finish_session_clicked)
         self.gui.btn_save_session.clicked.connect(self.on_save_session_clicked)
-        
-        # Nút chọn người (Chế độ 1 Cam) - Kết nối Controller để hiện popup
         self.gui.btn_select_trainee.clicked.connect(lambda: self.controller.show_trainee_list(1))
-        
-        # Core Signals
         self.gui.mode_selector.currentIndexChanged.connect(self.controller.handle_mode_change)
         self.gui.shooting_mode_selector.currentIndexChanged.connect(self.controller.handle_shooting_mode_change)
         self.worker.finished.connect(self.controller.on_processing_finished)
 
-    # --- LOGIC QUAY VỀ (BACK) ---
     def on_back_header_clicked(self):
-        # 1. Chế độ Tự do -> Thoát luôn
         if not self.sess_manager.is_managed_session:
             self.on_return_to_dashboard()
             return
 
-        # 2. Kiểm tra bắn dở (Burst in progress)
         if self.sess_manager.is_any_burst_in_progress():
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("Đang bắn dở")
-            msg_box.setText("Đang có loạt bắn chưa hoàn thành.\nBạn muốn xử lý thế nào?")
-            msg_box.setIcon(QMessageBox.Warning)
+            result = show_confirmation_custom(
+                self, "Đang bắn dở", "Đang có loạt bắn chưa hoàn thành.\nBạn muốn xử lý thế nào?",
+                btn_yes_text="Hủy loạt & Tiếp tục thoát", btn_no_text="Ở lại bắn tiếp"
+            )
             
-            btn_cancel_burst = msg_box.addButton("Hủy loạt & Tiếp tục thoát", QMessageBox.DestructiveRole)
-            btn_stay = msg_box.addButton("Ở lại bắn tiếp", QMessageBox.RejectRole)
-            
-            msg_box.exec()
-            
-            if msg_box.clickedButton() == btn_cancel_burst:
-                # Hủy các loạt đang bắn dở
+            if result == "YES":
                 for i in [0, 1, 2]:
                     if self.sess_manager.is_burst_in_progress(i):
                         self.sess_manager.cancel_incomplete_burst(i)
-                # Sau khi hủy loạt, tiếp tục xuống logic hỏi Lưu/Thoát
+                # Sau khi hủy, tiếp tục logic thoát bên dưới
             else:
                 return # Ở lại
 
-        # 3. Logic Thoát/Lưu/Hủy
         is_resumed = self.sess_manager.managed_session_data.get('is_resumed', False)
         has_practiced = self.sess_manager.has_anyone_practiced()
         
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Xác nhận thoát")
-        msg_box.setIcon(QMessageBox.Question)
-        
-        btn_save_exit = msg_box.addButton("Lưu & Thoát", QMessageBox.AcceptRole)
-        btn_cancel = msg_box.addButton("Hủy", QMessageBox.RejectRole)
-        btn_discard = None
-
         if is_resumed:
-            # Nếu là phiên resume -> Hỏi Lưu hay Hoàn tác (Rollback)
-            msg_box.setText("Bạn đang tiếp tục một phiên cũ.\nBạn muốn LƯU thay đổi hay HOÀN TÁC về trạng thái trước khi load?")
-            btn_discard = msg_box.addButton("Thoát KHÔNG lưu (Hoàn tác)", QMessageBox.DestructiveRole)
-        else:
-            # Nếu là phiên mới
-            if not has_practiced:
-                # Chưa bắn gì -> Hỏi xóa phiên rỗng
-                msg_box.setText("Phiên tập chưa có dữ liệu.\nBạn muốn giữ phiên rỗng hay Xóa bỏ?")
-                btn_save_exit.setText("Giữ phiên rỗng & Thoát")
-                btn_discard = msg_box.addButton("Xóa phiên & Thoát", QMessageBox.DestructiveRole)
-            else:
-                # Đã bắn -> Hỏi Lưu hay Xóa
-                msg_box.setText("Phiên tập mới đã có dữ liệu.\nLưu lại vào danh sách hay Xóa bỏ toàn bộ?")
-                btn_discard = msg_box.addButton("Xóa phiên & Thoát", QMessageBox.DestructiveRole)
-        
-        msg_box.exec()
-        clicked = msg_box.clickedButton()
-
-        if clicked == btn_cancel:
-            return
-        
-        if clicked == btn_save_exit:
-            # Dữ liệu đã lưu realtime, chỉ cần thoát
-            self.on_return_to_dashboard()
-        
-        elif clicked == btn_discard:
-            if is_resumed:
-                # Nếu là phiên cũ -> Rollback các shot mới
+            result = show_confirmation_custom(
+                self, "Xác nhận thoát", 
+                "Bạn đang tiếp tục một phiên cũ.\nBạn muốn LƯU thay đổi hay HOÀN TÁC về trạng thái trước khi load?",
+                btn_yes_text="Lưu & Thoát", btn_no_text="Hủy", btn_cancel_text="Thoát KHÔNG lưu (Hoàn tác)"
+            )
+            
+            if result == "YES": self.on_return_to_dashboard()
+            elif result == "CANCEL": 
                 self.sess_manager.rollback_session_changes()
                 self.on_return_to_dashboard()
+        else:
+            if not has_practiced:
+                result = show_confirmation_custom(
+                    self, "Xác nhận thoát", "Phiên tập chưa có dữ liệu.\nBạn muốn giữ phiên rỗng hay Xóa bỏ?",
+                    btn_yes_text="Giữ phiên rỗng & Thoát", btn_no_text="Hủy", btn_cancel_text="Xóa phiên & Thoát"
+                )
             else:
-                # Nếu là phiên mới -> Xóa sạch phiên
+                result = show_confirmation_custom(
+                    self, "Xác nhận thoát", "Phiên tập mới đã có dữ liệu.\nLưu lại vào danh sách hay Xóa bỏ toàn bộ?",
+                    btn_yes_text="Lưu & Thoát", btn_no_text="Hủy", btn_cancel_text="Xóa phiên & Thoát"
+                )
+            
+            if result == "YES": self.on_return_to_dashboard()
+            elif result == "CANCEL":
                 ps_id = self.sess_manager.managed_session_data.get('ps_id')
                 if ps_id: self.db_manager.delete_practice_session(ps_id)
                 self.on_return_to_dashboard()
 
-    # --- LOGIC KẾT THÚC PHIÊN (FINISH) BẰNG TAY ---
     def on_finish_session_clicked(self):
         if not self.sess_manager.is_managed_session:
             self.on_return_to_dashboard()
             return
 
-        # Kiểm tra bắn dở
         if self.sess_manager.is_any_burst_in_progress():
-            QMessageBox.warning(self, "Cảnh báo", 
-                                "Đang có lượt bắn chưa hoàn thành.\nVui lòng bắn hết loạt hoặc Hủy loạt (nút Quay về) trước khi kết thúc.")
+            show_warning(self, "Cảnh báo", "Đang có lượt bắn chưa hoàn thành.\nVui lòng bắn hết loạt hoặc Hủy loạt (nút Quay về) trước khi kết thúc.")
             return
 
-        # Kiểm tra có dữ liệu chưa
         has_practiced = self.sess_manager.has_anyone_practiced()
         if not has_practiced:
-            reply = QMessageBox.question(self, "Chưa có dữ liệu", 
-                                         "Chưa có ai thực hiện bài bắn.\nBạn có muốn XÓA phiên này và thoát không?",
-                                         QMessageBox.Yes | QMessageBox.No)
-            if reply == QMessageBox.Yes:
+            if show_confirmation(self, "Chưa có dữ liệu", "Chưa có ai thực hiện bài bắn.\nBạn có muốn XÓA phiên này và thoát không?"):
                 ps_id = self.sess_manager.managed_session_data.get('ps_id')
                 if ps_id: self.db_manager.delete_practice_session(ps_id)
                 self.on_return_to_dashboard()
             return
 
-        # Kiểm tra người chưa tập
         not_started = []
         for s in self.sess_manager.managed_session_data['soldiers']:
             if s.get('shot_count', 0) == 0:
@@ -188,48 +140,32 @@ class PracticeWindow(QMainWindow):
             msg += "\n".join(f"- {name}" for name in not_started[:5])
             if len(not_started) > 5: msg += "\n..."
             msg += "\n\nBạn có chắc chắn muốn kết thúc phiên không?"
-            reply = QMessageBox.warning(self, "Chưa hoàn thành", msg, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply == QMessageBox.No: return
+            if not show_confirmation(self, "Chưa hoàn thành", msg): return
             
-        # Kết thúc thủ công -> Cần hiện thông báo thành công
         self._finalize_and_exit_session(show_success=True)
 
-    # --- KẾT THÚC PHIÊN TỰ ĐỘNG ---
     def on_auto_finish_session(self):
-        """Được gọi tự động từ Controller khi tất cả chiến sĩ đã hoàn thành bài bắn."""
-        # Thông báo này đã bao gồm xác nhận hoàn thành
-        QMessageBox.information(self, "Hoàn thành", "Tất cả chiến sĩ đã hoàn thành bài bắn.\nDữ liệu đã được lưu.\nPhiên tập kết thúc.")
-        
-        # Không cần hiện thêm thông báo trong hàm finalize nữa
+        show_info(self, "Hoàn thành", "Tất cả người tập đã hoàn thành bài bắn.\nDữ liệu đã được lưu.\nPhiên tập kết thúc.")
         self._finalize_and_exit_session(show_success=False)
 
     def _finalize_and_exit_session(self, show_success=True):
-        """
-        Logic chung để đánh dấu kết thúc phiên và thoát.
-        show_success: Có hiện thông báo thành công hay không (để tránh lặp lại khi auto finish).
-        """
         ps_id = self.sess_manager.managed_session_data.get('ps_id')
         if ps_id:
             if self.db_manager.mark_practice_session_finished(ps_id):
                 logger.info(f"Đã đánh dấu kết thúc phiên {ps_id}")
                 if show_success:
-                    QMessageBox.information(self, "Đã lưu", 
-                                            "Phiên tập đã được lưu thành công.\n"
-                                            "Bạn có thể xem lại chi tiết trong mục 'Quản lý - Thống kê'.")
+                    show_info(self, "Đã lưu", "Phiên tập đã được lưu thành công.\nBạn có thể xem lại chi tiết trong mục 'Quản lý - Thống kê'.")
             else:
-                QMessageBox.critical(self, "Lỗi", "Không thể cập nhật trạng thái kết thúc vào CSDL.")
+                show_error(self, "Lỗi", "Không thể cập nhật trạng thái kết thúc vào CSDL.")
         
         self.on_return_to_dashboard()
 
-    # --- LOGIC LƯU PHIÊN (SAVE) ---
     def on_save_session_clicked(self):
         if self.sess_manager.is_any_burst_in_progress():
-            QMessageBox.warning(self, "Cảnh báo", 
-                                "Đang có lượt bắn chưa hoàn thành.\nVui lòng bắn hết loạt trước khi lưu.")
+            show_warning(self, "Cảnh báo", "Đang có lượt bắn chưa hoàn thành.\nVui lòng bắn hết loạt trước khi lưu.")
             return
-        QMessageBox.information(self, "Đã lưu", "Đã lưu trạng thái phiên tập hiện tại thành công.")
+        show_info(self, "Đã lưu", "Đã lưu trạng thái phiên tập hiện tại thành công.")
 
-    # --- CÁC HÀM TIẾP TỤC PHIÊN ---
     def on_continue_session_clicked(self):
         self.gui.stack.setCurrentWidget(self.gui.page_continue_session)
         self.load_unfinished_sessions()
@@ -260,22 +196,19 @@ class PracticeWindow(QMainWindow):
     def on_continue_start_clicked(self):
         selected_row = self.gui.tbl_continue.currentRow()
         if selected_row < 0:
-            QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn một phiên tập để tiếp tục.")
+            show_warning(self, "Chưa chọn", "Vui lòng chọn một phiên tập để tiếp tục.")
             return
         session_data = self.gui.tbl_continue.item(selected_row, 0).data(Qt.UserRole)
-        # Gọi hàm RESTORE
         self.controller.restore_session(ps_id=session_data['id'], name=session_data['name'], mode=session_data['mode'])
 
     def on_continue_delete_clicked(self):
         selected_row = self.gui.tbl_continue.currentRow()
         if selected_row < 0: return
         session_data = self.gui.tbl_continue.item(selected_row, 0).data(Qt.UserRole)
-        reply = QMessageBox.question(self, "Xác nhận xóa", f"Bạn có chắc muốn xóa phiên '{session_data['name']}'?", QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
+        if show_confirmation(self, "Xác nhận xóa", f"Bạn có chắc muốn xóa phiên '{session_data['name']}'?"):
             self.db_manager.delete_practice_session(session_data['id'])
             self.load_unfinished_sessions()
 
-    # --- CÁC HÀM HỆ THỐNG & KHỞI TẠO ---
     def start_camera(self):
         self.gui.stack.setCurrentWidget(self.gui.page_dashboard)
         self.setFocus(); 
@@ -314,16 +247,33 @@ class PracticeWindow(QMainWindow):
         self.gui.lbl_sum_count.setText(f"{count} người")
         self.gui.lbl_sum_type.setText(self.gui.cmb_session_type.currentText())
         self.gui.lbl_sum_date.setText(datetime.now().strftime("%d/%m/%Y %H:%M"))
-        rec = "Đề xuất: Mỗi chiến sĩ nên bắn cơ số đạn bằng nhau." if self.gui.cmb_session_type.currentData() == "SINGLE" else "Quy định: Mỗi chiến sĩ sẽ thực hiện bắn 1 lượt (3 viên)."
+        
+        mode = self.gui.cmb_session_type.currentData()
+        if mode == "SINGLE":
+            rec = "• Đối với hình thức từng viên:\n" \
+                  "Nên cho toàn bộ người tập bắn số phát bắn bằng với nhau để làm cơ sở so sánh số liệu và đánh giá thống kê chính xác khách quan nhất.\n" \
+                  "Có thể quay lại lượt bắn đối với người đã tập rồi để đủ phát bắn.\n\n" \
+                  "• Đối với chế độ 2 Camera:\n" \
+                  "Thứ tự bắn sẽ là luân phiên, camera nào hiển thị viền xanh là camera đó đang trong lượt bắn.\n\n"\
+                  "• Quá trình tập luyện:\n" \
+                  "Trong quá trình tập luyện, tránh đụng tới các nút thao tác không liên quan để làm ảnh hưởng, gián đoạn kết quả.\n"\
+                  "Nhấn Kết thúc để xác nhận hoàn thành buổi tập, kết quả báo cáo thống kê sẽ được lưu trữ ở chức năng Quản Lý - Thống Kê." 
+        else: 
+            rec = "• Đối với hình thức 3 viên:\n" \
+                  "Mỗi người sẽ thực hiện duy nhất một lượt 3 viên tương tự như 1 bài bắn phân đoạn.\n" \
+                  "Có thể chọn thực hiện lại loạt bắn khi gặp các vấn đề như nhận diện sai, bắn nhầm.\n\n" \
+                  "• Đối với chế độ 2 Camera:\n" \
+                  "Thứ tự bắn sẽ là luân phiên, camera nào hiển thị viền xanh là camera đó đang trong lượt bắn.\n\n"\
+                  "• Quá trình tập luyện:\n" \
+                  "Trong quá trình tập luyện, tránh đụng tới các nút thao tác không liên quan để làm ảnh hưởng, gián đoạn kết quả.\n"\
+                  "Nhấn Kết thúc để xác nhận hoàn thành buổi tập, kết quả báo cáo thống kê sẽ được lưu trữ ở chức năng Quản Lý - Thống Kê." 
         self.gui.lbl_recommendation.setText(rec)
 
     def on_confirm_create_session(self):
         name = self.gui.inp_session_name.text().strip()
-        if not name: QMessageBox.warning(self, "Lỗi", "Vui lòng nhập tên phiên tập."); return
-        if self.db_manager.check_exercise_name_exists(name): QMessageBox.warning(self, "Lỗi", f"Tên phiên '{name}' đã tồn tại."); return
+        if not name: show_warning(self, "Lỗi", "Vui lòng nhập tên phiên tập."); return
+        if self.db_manager.check_exercise_name_exists(name): show_warning(self, "Lỗi", f"Tên phiên '{name}' đã tồn tại."); return
         selected = self.gui.list_soldiers_select.selectedItems()
-        if not selected: QMessageBox.warning(self, "Lỗi", "Vui lòng chọn ít nhất một người tập."); return
+        if not selected: show_warning(self, "Lỗi", "Vui lòng chọn ít nhất một người tập."); return
         soldiers = [item.data(Qt.UserRole) for item in selected]
-        
-        # Gọi hàm TẠO MỚI
         self.controller.setup_new_session(name, self.gui.cmb_session_type.currentData(), soldiers)

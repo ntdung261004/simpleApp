@@ -89,6 +89,22 @@ class MainGui(QWidget):
             QTableWidget {{ background-color: #34495e; border: 1px solid #4a6278; border-radius: 6px; font-size: {scale_font(14)}px; }}
             QTableWidget::item:selected {{ background-color: #1abc9c; color: white; }}
             QHeaderView::section {{ background-color: #2c3e50; color: #bdc3c7; padding: 8px; border: 1px solid #4a6278; }}
+            
+            /* [FIX] Style cho GroupBox chung */
+            QGroupBox {{
+                border: 1px solid #7f8c8d;
+                border-radius: 6px;
+                margin-top: {scale_size(25)}px; 
+                font-weight: bold;
+                color: #bdc3c7;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 10px;
+                padding: 0 5px;
+                color: #1abc9c; 
+            }}
         """)
 
         self.stack = QStackedWidget(self)
@@ -101,11 +117,9 @@ class MainGui(QWidget):
         self._setup_session_menu(self.page_session_menu, scale_size, scale_font)
         self.stack.addWidget(self.page_session_menu)
 
-        # --- TRANG MỚI: TIẾP TỤC PHIÊN ---
         self.page_continue_session = QWidget()
         self._setup_continue_session_page(self.page_continue_session, scale_size, scale_font)
         self.stack.addWidget(self.page_continue_session)
-        # --------------------------------
 
         self.page_create_session = QWidget()
         self._setup_create_session_page(self.page_create_session, scale_size, scale_font)
@@ -145,7 +159,6 @@ class MainGui(QWidget):
         btn_layout.addWidget(self.btn_new_session); btn_layout.addWidget(self.btn_continue_session); btn_layout.addSpacing(10); btn_layout.addWidget(self.btn_back_dashboard_session)
         layout.addWidget(btn_container, 0, Qt.AlignCenter); layout.addStretch()
 
-    # --- SETUP TRANG TIẾP TỤC PHIÊN ---
     def _setup_continue_session_page(self, parent, scale_size, scale_font):
         layout = QVBoxLayout(parent)
         layout.setContentsMargins(scale_size(30), scale_size(30), scale_size(30), scale_size(30))
@@ -155,7 +168,6 @@ class MainGui(QWidget):
         lbl_title.setStyleSheet(f"font-size: {scale_font(24)}px; font-weight: bold; color: #ecf0f1; border-bottom: 2px solid #1abc9c; padding-bottom: 10px;")
         layout.addWidget(lbl_title)
 
-        # Bảng danh sách
         self.tbl_continue = QTableWidget(0, 5)
         self.tbl_continue.setHorizontalHeaderLabels(["ID", "Ngày tạo", "Tên phiên", "Chế độ", "Tiến độ"])
         self.tbl_continue.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -168,7 +180,6 @@ class MainGui(QWidget):
         self.tbl_continue.setStyleSheet("alternate-background-color: #3b5266;")
         layout.addWidget(self.tbl_continue)
 
-        # Buttons footer
         btn_layout = QHBoxLayout()
         self.btn_cont_start = QPushButton("TIẾP TỤC")
         self.btn_cont_start.setMinimumHeight(scale_size(50))
@@ -180,7 +191,7 @@ class MainGui(QWidget):
         self.btn_cont_delete.setMinimumWidth(scale_size(150))
 
         self.btn_cont_back = QPushButton("QUAY LẠI")
-        self.btn_cont_back.setObjectName("danger") # Có thể đổi màu khác nếu muốn
+        self.btn_cont_back.setObjectName("danger")
         self.btn_cont_back.setMinimumHeight(scale_size(50))
         self.btn_cont_back.setMinimumWidth(scale_size(150))
 
@@ -189,10 +200,8 @@ class MainGui(QWidget):
         btn_layout.addStretch()
         btn_layout.addWidget(self.btn_cont_back)
         layout.addLayout(btn_layout)
-    # ---------------------------------
 
     def _setup_create_session_page(self, parent, scale_size, scale_font):
-        # ... (Giữ nguyên code cũ) ...
         main_layout = QVBoxLayout(parent)
         main_layout.setContentsMargins(scale_size(30), scale_size(30), scale_size(30), scale_size(30))
         main_layout.setSpacing(scale_size(20))
@@ -204,32 +213,87 @@ class MainGui(QWidget):
         content_layout = QHBoxLayout()
         content_layout.setSpacing(scale_size(30))
         
+        # --- CỘT TRÁI ---
         left_col = QVBoxLayout()
         lbl_name = QLabel("Tên phiên tập:"); self.inp_session_name = QLineEdit(); self.inp_session_name.setPlaceholderText("Nhập tên phiên tập...")
         lbl_type = QLabel("Chế độ bắn:"); self.cmb_session_type = QComboBox(); self.cmb_session_type.addItem("Bắn từng viên (Tính điểm/viên)", "SINGLE"); self.cmb_session_type.addItem("Bắn loạt (3 viên/lượt)", "BURST_3")
         lbl_list = QLabel("Chọn danh sách người tập:"); lbl_hint = QLabel("(Kéo chuột để chọn nhiều)")
         self.list_soldiers_select = QListWidget(); self.list_soldiers_select.setSelectionMode(QAbstractItemView.ExtendedSelection); self.list_soldiers_select.setAlternatingRowColors(True)
-        left_col.addWidget(lbl_name); left_col.addWidget(self.inp_session_name); left_col.addSpacing(15); left_col.addWidget(lbl_type); left_col.addWidget(self.cmb_session_type); left_col.addSpacing(15); left_col.addWidget(lbl_list); left_col.addWidget(lbl_hint); left_col.addWidget(self.list_soldiers_select)
         
+        left_col.addWidget(lbl_name); left_col.addWidget(self.inp_session_name); left_col.addSpacing(15)
+        left_col.addWidget(lbl_type); left_col.addWidget(self.cmb_session_type); left_col.addSpacing(15)
+        left_col.addWidget(lbl_list); left_col.addWidget(lbl_hint); left_col.addWidget(self.list_soldiers_select)
+        
+        # --- CỘT PHẢI ---
         right_col = QVBoxLayout()
-        grp_summary = QGroupBox("Tổng quan"); sum_layout = QFormLayout(grp_summary); self.lbl_sum_date = QLabel("..."); self.lbl_sum_count = QLabel("0 người"); self.lbl_sum_type = QLabel("Bắn từng phát")
-        sum_layout.addRow("Ngày tạo:", self.lbl_sum_date); sum_layout.addRow("Hình thức:", self.lbl_sum_type); sum_layout.addRow("Số người tập:", self.lbl_sum_count); right_col.addWidget(grp_summary)
         
-        grp_intro = QGroupBox("Mục đích & Ý nghĩa"); intro_layout = QVBoxLayout(grp_intro)
-        intro_text = QLabel("Chức năng này dùng cho một buổi tập thực tế nhằm theo dõi, đánh giá, thống kê kỹ năng, độ chính xác của từng người, thông qua đó làm cơ sở để đưa ra biện pháp huấn luyện hiệu quả.")
-        intro_text.setWordWrap(True); intro_text.setStyleSheet("font-style: italic; color: #ecf0f1; margin: 5px;"); intro_layout.addWidget(intro_text); right_col.addWidget(grp_intro)
+        # Group: Tổng quan
+        grp_summary = QGroupBox("Tổng quan"); 
+        sum_layout = QFormLayout(grp_summary)
+        self.lbl_sum_date = QLabel("..."); self.lbl_sum_date.setStyleSheet("background-color: transparent;")
+        self.lbl_sum_count = QLabel("0 người"); self.lbl_sum_count.setStyleSheet("background-color: transparent;")
+        self.lbl_sum_type = QLabel("Bắn từng phát"); self.lbl_sum_type.setStyleSheet("background-color: transparent;")
+        sum_layout.addRow("Ngày tạo:", self.lbl_sum_date); sum_layout.addRow("Hình thức:", self.lbl_sum_type); sum_layout.addRow("Số người tập:", self.lbl_sum_count)
+        right_col.addWidget(grp_summary)
         
-        grp_recommend = QGroupBox("Gợi ý tập luyện"); grp_recommend.setStyleSheet("QGroupBox { border: 1px solid #f39c12; } QGroupBox::title { background-color: #d35400; }"); rec_layout = QVBoxLayout(grp_recommend); rec_layout.setSpacing(10)
-        self.lbl_recommendation = QLabel("..."); self.lbl_recommendation.setWordWrap(True); self.lbl_recommendation.setStyleSheet("font-weight: bold; color: #f1c40f; line-height: 1.5;"); rec_layout.addWidget(self.lbl_recommendation); right_col.addWidget(grp_recommend)
+        # [FIX] Thêm khoảng cách giữa các GroupBox để tiêu đề không bị đè
+        right_col.addSpacing(scale_size(20))
+
+        # Group: Mục đích
+        grp_intro = QGroupBox("Mục đích & Ý nghĩa:"); 
+        intro_layout = QVBoxLayout(grp_intro)
+        intro_text = QLabel("Chức năng này dùng để ứng dụng vào 1 buổi học/ huấn luyện ngoài thực địa cho phép tổng hợp theo đầu mối buổi tập nhằm theo dõi, đánh giá, thống kê , xếp hạng kỹ năng, độ chính xác của từng người, thông qua đó làm cơ sở để đưa ra biện pháp huấn luyện tối ưu, hiệu quả nhất.")
+        # [FIX] Thêm background transparent để tránh bị nền đè xấu
+        intro_text.setWordWrap(True); intro_text.setStyleSheet("font-style: italic; color: #ecf0f1; margin: 5px; background-color: transparent;")
+        intro_layout.addWidget(intro_text); 
+        right_col.addWidget(grp_intro)
+        
+        # [FIX] Thêm khoảng cách giữa các GroupBox
+        right_col.addSpacing(scale_size(20))
+
+        # Group: Gợi ý
+        grp_recommend = QGroupBox("Gợi ý tập luyện"); 
+        # [FIX] Style đầy đủ để đảm bảo title hiển thị đúng vị trí
+        grp_recommend.setStyleSheet(f"""
+            QGroupBox {{ 
+                border: 1px solid #f39c12; 
+                border-radius: 6px;
+                margin-top: {scale_size(25)}px; 
+            }} 
+            QGroupBox::title {{ 
+                subcontrol-origin: margin; 
+                subcontrol-position: top left;
+                left: 10px; 
+                padding: 0 5px; 
+                color: #f1c40f;
+            }}
+        """)
+        rec_layout = QVBoxLayout(grp_recommend); rec_layout.setSpacing(10)
+        self.lbl_recommendation = QLabel("...")
+        self.lbl_recommendation.setWordWrap(True)
+        # [FIX] Nền trong suốt
+        self.lbl_recommendation.setStyleSheet("font-weight: bold; color: #f1c40f; line-height: 1.5; background-color: transparent;")
+        rec_layout.addWidget(self.lbl_recommendation)
+        right_col.addWidget(grp_recommend)
         
         right_col.addStretch()
-        self.btn_confirm_setup = QPushButton("XÁC NHẬN TẠO PHIÊN"); self.btn_confirm_setup.setMinimumHeight(scale_size(60))
-        self.btn_back_create = QPushButton("QUAY VỀ MENU"); self.btn_back_create.setObjectName("danger"); self.btn_back_create.setMinimumHeight(scale_size(60))
+        
+        # [FIX] Chỉnh nút bé lại và đẹp hơn
+        self.btn_confirm_setup = QPushButton("XÁC NHẬN TẠO PHIÊN")
+        self.btn_confirm_setup.setMinimumHeight(scale_size(45)) 
+        self.btn_confirm_setup.setStyleSheet(f"font-size: {scale_font(16)}px; background-color: #2ecc71;")
+        
+        self.btn_back_create = QPushButton("QUAY VỀ MENU")
+        self.btn_back_create.setObjectName("danger")
+        self.btn_back_create.setMinimumHeight(scale_size(45))
+        self.btn_back_create.setStyleSheet(f"font-size: {scale_font(16)}px;")
+        
         right_col.addWidget(self.btn_confirm_setup); right_col.addSpacing(10); right_col.addWidget(self.btn_back_create)
-        content_layout.addLayout(left_col, 5); content_layout.addLayout(right_col, 5); main_layout.addLayout(content_layout)
+        
+        content_layout.addLayout(left_col, 5); content_layout.addLayout(right_col, 5)
+        main_layout.addLayout(content_layout)
 
     def _setup_practice_view(self, parent, scale_size, scale_font):
-        # ... (Giữ nguyên code cũ) ...
         margin = scale_size(20); spacing = scale_size(15)
         root_layout = QVBoxLayout(parent); root_layout.setContentsMargins(margin, scale_size(10), margin, margin); root_layout.setSpacing(spacing)
 
@@ -331,7 +395,7 @@ class MainGui(QWidget):
             lbl_title = QLabel(title); lbl_title.setProperty("class", "panel-title")
             btn_trainee_cam = QPushButton("Chọn người tập"); btn_trainee_cam.setStyleSheet("background-color: #3498db; font-size: 13px; padding: 5px;"); btn_trainee_cam.setVisible(False) 
             cmb_source = QComboBox()
-            header_lo.addWidget(lbl_title); header_lo.addStretch(); header_lo.addWidget(btn_trainee_cam); header_lo.addWidget(QLabel("Src:")); header_lo.addWidget(cmb_source)
+            header_lo.addWidget(lbl_title); header_lo.addStretch(); header_lo.addWidget(btn_trainee_cam); header_lo.addWidget(QLabel("Nguồn:")); header_lo.addWidget(cmb_source)
             col_layout.addWidget(header_widget)
             lbl_trainee = QLabel("Người tập: Chưa chọn"); lbl_trainee.setStyleSheet("color: #f1c40f; font-weight: bold; font-size: 16px; margin: 5px;"); lbl_trainee.setAlignment(Qt.AlignCenter); lbl_trainee.setVisible(False)
             col_layout.addWidget(lbl_trainee)
@@ -342,14 +406,14 @@ class MainGui(QWidget):
             ctrl_lo.addWidget(btn_refresh); ctrl_lo.addWidget(QLabel("Zoom:")); ctrl_lo.addWidget(sld_zoom); ctrl_lo.addWidget(lbl_zoom); ctrl_lo.addWidget(btn_calib); col_layout.addWidget(ctrl_widget)
             grp_res = QGroupBox("Kết quả"); res_lo = QVBoxLayout(grp_res)
             lbl_score = QLabel("Điểm số: --"); lbl_score.setStyleSheet("font-size: 16px; font-weight: bold; color: #e74c3c;"); lbl_score.setAlignment(Qt.AlignCenter)
-            img_res = VideoLabel(); img_res.setText("Ảnh KQ"); res_lo.addWidget(lbl_score); res_lo.addWidget(img_res, 1); col_layout.addWidget(grp_res, 4)
+            img_res = VideoLabel(); img_res.setText("Ảnh Kết Quả"); res_lo.addWidget(lbl_score); res_lo.addWidget(img_res, 1); col_layout.addWidget(grp_res, 4)
             setattr(self, f"{prefix}_view", cam_view); setattr(self, f"{prefix}_source", cmb_source)
             setattr(self, f"{prefix}_refresh", btn_refresh); setattr(self, f"{prefix}_zoom", sld_zoom)
             setattr(self, f"{prefix}_calib", btn_calib); setattr(self, f"{prefix}_score", lbl_score)
             setattr(self, f"{prefix}_result_img", img_res)
             setattr(self, f"{prefix}_trainee_lbl", lbl_trainee); setattr(self, f"{prefix}_trainee_btn", btn_trainee_cam) 
             return panel
-        col1 = create_vertical_column("CAMERA 1", "dual_cam1"); col2 = create_vertical_column("CAMERA 2", "dual_cam2")
+        col1 = create_vertical_column("Bệ 1", "dual_cam1"); col2 = create_vertical_column("Bệ 2", "dual_cam2")
         layout.addWidget(col1); layout.addWidget(col2)
 
     def _convert_cv_to_pixmap(self, img):

@@ -1,11 +1,11 @@
 ; === Shooting App Installer Script ===
 
-#define MyAppName "Kiểm Tra Đường Ngắm STL"
-#define MyAppVersion "1.1.0"
+#define MyAppName "Kiểm Tra Đường Ngắm STL 2.0"
+#define MyAppVersion "2.0"
 #define MyAppPublisher "LTSoftware"
-#define MyAppExeName "ShootingApp.exe"
+#define MyAppExeName "ShootingApp2.exe"
 #define MyAppIconName "assets\app_icon.ico" 
-#define MyOutputFolder "dist\ShootingApp"
+#define MyOutputFolder "dist\ShootingApp2"
 
 [Setup]
 ; AppId là một mã định danh duy nhất cho ứng dụng của bạn. 

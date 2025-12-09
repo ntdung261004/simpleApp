@@ -5,11 +5,11 @@ import logging
 from collections import deque
 from datetime import datetime
 from PySide6.QtCore import QObject, Slot, Qt, QTimer
-from PySide6.QtWidgets import QMessageBox, QApplication
+from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPixmap, QImage
 from utils.camera import find_available_cameras
 from config import APP_DATA_DIR
-from gui.dialogs import ResultPopup, TraineeSessionPopup
+from gui.dialogs import ResultPopup, TraineeSessionPopup, show_confirmation_custom, show_warning
 from core.saver import ImageSaver
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,6 @@ class ShootingController(QObject):
         self.popup_queue = deque()
         self.is_popup_open = False 
         
-        # Khởi tạo Image Saver
         self.image_saver = ImageSaver()
         self.image_saver.start()
         
@@ -71,7 +70,6 @@ class ShootingController(QObject):
         self.sess_manager.soldier_session_started.connect(self.on_soldier_started)
         self.trigger.triggered.connect(self.execute_shot_logic)
 
-    # ... (Các hàm khác giữ nguyên) ...
     def start_free_practice(self):
         self.sess_manager.is_free_practice = True
         self.sess_manager.is_managed_session = False
@@ -155,7 +153,7 @@ class ShootingController(QObject):
         target_slot = self.current_selecting_slot
         for slot, s in self.sess_manager.active_soldiers.items():
             if s and s['id'] == soldier_data['id'] and slot != target_slot:
-                QMessageBox.warning(self.parent_window, "Trùng lặp", f"Chiến sĩ {soldier_data['name']} đang tập ở Camera {slot}.")
+                show_warning(self.parent_window, "Trùng lặp", f"Chiến sĩ {soldier_data['name']} đang tập ở Camera {slot}.")
                 return
         self.sess_manager.assign_soldier_to_slot(target_slot, soldier_data)
         self.update_trainee_info_ui(target_slot, soldier_data['name'])
@@ -175,11 +173,16 @@ class ShootingController(QObject):
     @Slot(int, list)
     def on_burst_completed(self, idx, data):
         self.popup_queue.append((idx, data))
+        
         should_wait_others = False
+
         if self.sess_manager.current_mode == 1: 
             if not self.sess_manager.are_all_active_cameras_finished():
                 should_wait_others = True
-        if should_wait_others: return 
+        
+        if should_wait_others:
+            return 
+
         QTimer.singleShot(1500, self.process_popup_queue)
 
     def process_popup_queue(self):
@@ -187,25 +190,35 @@ class ShootingController(QObject):
             idx, data = self.popup_queue.popleft()
             t = f"KẾT QUẢ - CAMERA {idx}" if self.sess_manager.current_mode == 1 else ""
             allow_retry = self.sess_manager.is_managed_session
+            
             self.is_popup_open = True
+            
             p = ResultPopup(data, camera_name=t, allow_retry=allow_retry, parent=self.parent_window)
             result_code = p.exec()
+            
             self.is_popup_open = False
+            
             target_ui_idx = 0 if self.sess_manager.current_mode == 0 else idx
+            
             if result_code == 2 and allow_retry: 
                 self.sess_manager.retry_burst(idx)
                 self.reset_result_display(target_ui_idx) 
-                if self.sess_manager.current_mode == 1: self.update_active_border(idx)
+                
+                if self.sess_manager.current_mode == 1: 
+                    self.update_active_border(idx)
                 return 
+
             if self.sess_manager.is_managed_session:
                 soldier = self.sess_manager.get_soldier_at_session_idx(idx)
                 if soldier: soldier['finished'] = True
                 self.sess_manager.end_session(idx)
                 self._set_trainee_btn_state(target_ui_idx, True)
                 self.reset_result_display(target_ui_idx)
+
                 if self.sess_manager.shooting_mode == "BURST_3" and self.sess_manager.are_all_soldiers_finished() and not self.popup_queue:
                     self.parent_window.on_auto_finish_session()
                     return
+
                 if self.sess_manager.current_mode == 0 and not self.popup_queue:
                     self.show_trainee_list(1)
             else:
@@ -220,9 +233,11 @@ class ShootingController(QObject):
         self.sess_manager.reset_all()
         self.reset_ui_state()
         self.popup_queue.clear()
+        
         if self.image_saver:
             self.image_saver.stop()
-            self.image_saver = None
+            self.image_saver = None 
+        
         self._set_trainee_btn_state(1, True)
         self._set_trainee_btn_state(2, True)
 
@@ -233,8 +248,11 @@ class ShootingController(QObject):
 
     def handle_mode_change(self, idx):
         if self.sess_manager.is_any_burst_in_progress():
-            reply = QMessageBox.warning(self.parent_window, "Cảnh báo", "Đang có lượt bắn chưa hoàn thành.\nBạn có muốn hủy loạt này và chuyển chế độ không?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply == QMessageBox.No:
+            reply = show_confirmation_custom(
+                self.parent_window, "Cảnh báo", "Đang có lượt bắn chưa hoàn thành.\nBạn có muốn hủy loạt này và chuyển chế độ không?",
+                btn_yes_text="Đồng ý", btn_no_text="Hủy"
+            )
+            if reply == "NO":
                 self.ui.mode_selector.blockSignals(True)
                 self.ui.mode_selector.setCurrentIndex(self.sess_manager.current_mode)
                 self.ui.mode_selector.blockSignals(False)
@@ -263,6 +281,7 @@ class ShootingController(QObject):
         if self.sess_manager.is_free_practice:
             if idx == 0: self.start_new_session(0)
             else: self.start_new_session(1); self.start_new_session(2)
+        
         if idx == 1: 
             QApplication.processEvents()
             self.update_active_border(self.sess_manager.next_shot_cam_id)
@@ -343,13 +362,13 @@ class ShootingController(QObject):
                 s1 = self.sess_manager.active_soldiers.get(1)
                 s2 = self.sess_manager.active_soldiers.get(2)
                 if not s1 or not s2:
-                    QMessageBox.warning(self.parent_window, "Thiếu người tập", "Chế độ 2 Camera yêu cầu phải chọn đủ 2 người tập.")
+                    show_warning(self.parent_window, "Thiếu người tập", "Chế độ 2 Camera yêu cầu phải chọn đủ 2 người tập.")
                     return 
             
             s_idx = 0 if self.sess_manager.current_mode == 0 else target_cam
             soldier = self.sess_manager.get_soldier_at_session_idx(s_idx)
             if not soldier: 
-                QMessageBox.warning(self.parent_window, "Chưa chọn người", "Vui lòng chọn người tập trước khi bắn.")
+                show_warning(self.parent_window, "Chưa chọn người", "Vui lòng chọn người tập trước khi bắn.")
                 return 
 
         target_cam = 1
@@ -376,7 +395,6 @@ class ShootingController(QObject):
         fname = f"s{sess_idx}_cam{target_cam}_{ts}.png"
         path = os.path.join(self.save_dir, fname)
         
-        # Gửi frame cho worker, không lưu file ở đây
         self.parent_window.request_processing.emit(frame, center, path)
 
         if self.sess_manager.current_mode == 1:
@@ -389,15 +407,12 @@ class ShootingController(QObject):
         pix = self._convert_cv_to_pixmap(res.get('result_frame'))
         score = res.get('score', 0)
         
-        # --- [QUAN TRỌNG] CHỈ LƯU ẢNH NẾU LÀ PHIÊN TẬP CÓ QUẢN LÝ ---
         final_img_numpy = res.get('result_frame')
         save_path = res.get('image_path')
         
-        # Kiểm tra is_managed_session: Nếu là False (Tự do) thì sẽ KHÔNG BAO GIỜ GỌI save_image
         if self.sess_manager.is_managed_session and final_img_numpy is not None and save_path:
             if self.image_saver:
                 self.image_saver.save_image(final_img_numpy, save_path)
-        # -----------------------------------------------------------
         
         self.sess_manager.process_shot_result(res, pix)
         
@@ -415,8 +430,19 @@ class ShootingController(QObject):
                     self._set_trainee_btn_state(sess_idx, True)
 
         self._update_result_image(sess_idx, pix)
-        if score > 0: self.audio_manager.play_score(score)
-        else: self.audio_manager.play_sound('miss')
+        
+        is_dual_mode = (self.sess_manager.current_mode == 1)
+        
+        if score > 0:
+            score_sound = f"score_{score}"
+        else:
+            score_sound = "miss"
+            
+        if is_dual_mode:
+            cam_sound = f"cam{sess_idx}" 
+            self.audio_manager.play_sequence([cam_sound, score_sound])
+        else:
+            self.audio_manager.play_sound(score_sound)
 
     @Slot(int, object)
     def update_camera_feed(self, cam_id, frame):

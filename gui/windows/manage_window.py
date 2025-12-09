@@ -24,32 +24,29 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 
 from gui.ui.ui_manage import ManageGui
-from gui.dialogs import PersonalProcessDialog
+from gui.dialogs import PersonalProcessDialog, show_info, show_warning, show_error, show_confirmation
 from core.database import DatabaseManager
 from utils.resource_path import resource_path
 
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# === CÁC CLASS DIALOG HỖ TRỢ (ĐÃ TỐI ƯU SCALE) ===
+# === CÁC CLASS DIALOG HỖ TRỢ ===
 # =============================================================================
 
 class ExcelPreviewDialog(QDialog):
     def __init__(self, data_list, parent=None):
         super().__init__(parent)
-        # --- SCALING ---
         screen = QApplication.primaryScreen().availableGeometry()
         self.scale_factor = screen.height() / 1080.0
         def s(val): return int(val * self.scale_factor)
-        # ---------------
 
         self.setWindowTitle("Xác nhận nhập dữ liệu")
         self.setMinimumSize(s(700), s(500))
         self.data_list = data_list
 
         layout = QVBoxLayout(self)
-        lbl_info = QLabel(f"<b>Đã tìm thấy {len(data_list)} bản ghi.</b><br>"
-                          "Vui lòng kiểm tra kỹ danh sách bên dưới trước khi nhập.")
+        lbl_info = QLabel(f"<b>Đã tìm thấy {len(data_list)} bản ghi.</b><br>Vui lòng kiểm tra kỹ danh sách bên dưới trước khi nhập.")
         lbl_info.setStyleSheet(f"font-size: {s(14)}px; margin-bottom: 10px;")
         layout.addWidget(lbl_info)
 
@@ -105,15 +102,12 @@ class ExcelPreviewDialog(QDialog):
 class AddSoldierDialog(QDialog):
     def __init__(self, config: dict, is_edit_mode: bool = False, parent=None):
         super().__init__(parent)
-        # --- SCALING ---
         screen = QApplication.primaryScreen().availableGeometry()
         self.scale_factor = screen.height() / 1080.0
         def s(val): return int(val * self.scale_factor)
-        # ---------------
 
         self.config = config
-        labels = self.config.get("labels", {})
-        title = labels.get("edit_trainee_dialog_title", "Chỉnh sửa thông tin") if is_edit_mode else labels.get("add_trainee_dialog_title", "Thêm mới")
+        title = "Chỉnh sửa thông tin Người tập" if is_edit_mode else "Thêm Người tập mới"
         self.setWindowTitle(title)
         self.setMinimumWidth(s(400))
         
@@ -143,8 +137,9 @@ class AddSoldierDialog(QDialog):
         self.class_name_input = QLineEdit()
         self.inputs = [self.name_input, self.class_name_input]
         
-        form_layout.addRow(labels.get("trainee_name_prompt", "Họ và Tên:"), self.name_input)
-        form_layout.addRow(labels.get("trainee_class_prompt", "Đơn vị:"), self.class_name_input)
+        form_layout.addRow("Họ và Tên:", self.name_input)
+        form_layout.addRow("Đơn vị:", self.class_name_input)
+        
         main_layout.addLayout(form_layout)
         
         buttons = QDialogButtonBox()
@@ -161,12 +156,13 @@ class AddSoldierDialog(QDialog):
 
     def get_data(self):
         return {"name": self.name_input.text().strip(), "class_name": self.class_name_input.text().strip()}
+    
     def validate_and_accept(self):
         for field in self.inputs: field.setStyleSheet(self.default_style)
         if self.name_input.text().strip(): self.accept()
         else:
             self.inputs[0].setStyleSheet(self.error_style)
-            QMessageBox.warning(self, "Thiếu thông tin", "Vui lòng điền Họ và Tên.")
+            show_warning(self, "Thiếu thông tin", "Vui lòng điền Họ và Tên.")
 
 # =============================================================================
 # === MANAGE WINDOW - LOGIC CHÍNH ===
@@ -184,15 +180,13 @@ class ManageWindow(QMainWindow):
         self.current_detail_data = [] 
         self.current_session_mode = "SINGLE"
         self.current_practice_session_id = None
-        self.all_soldiers_data = [] # Cache dữ liệu
+        self.all_soldiers_data = [] 
         
-        # Matplotlib Figure (General Report)
         self.figure = Figure(figsize=(8, 4), dpi=100, facecolor='#2c3e50')
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setStyleSheet("background-color: transparent;")
         self.ui.charts_layout.addWidget(self.canvas)
 
-        # Matplotlib Figure (Personal Stats) - NEW
         self.p_figure = Figure(figsize=(6, 3), dpi=100, facecolor='#2c3e50')
         self.p_canvas = FigureCanvas(self.p_figure)
         self.p_canvas.setStyleSheet("background-color: transparent;")
@@ -212,40 +206,33 @@ class ManageWindow(QMainWindow):
         self.ui.btn_import_excel.clicked.connect(self.import_excel_handler)
         self.ui.btn_back_to_menu.clicked.connect(self.show_menu)
         
-        # Filter & Sort
         self.ui.search_box.textChanged.connect(self.reload_soldier_table_view)
         self.ui.cmb_filter_unit.currentIndexChanged.connect(self.reload_soldier_table_view)
         self.ui.cmb_sort_trainees.currentIndexChanged.connect(self.reload_soldier_table_view)
         
-        # Table interactions
         self.ui.soldier_table.itemSelectionChanged.connect(self.on_soldier_selection_changed)
         self.ui.btn_note.clicked.connect(self.on_edit_note_clicked)
         
         self.ui.soldier_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ui.soldier_table.customContextMenuRequested.connect(self.show_soldier_context_menu)
         
-        # Session List
         self.ui.btn_back_from_session.clicked.connect(self.show_menu)
         self.ui.session_table.itemSelectionChanged.connect(self.on_session_selection_changed)
         self.ui.btn_view_report.clicked.connect(self.show_session_detail)
         self.ui.btn_delete_session.clicked.connect(self.on_delete_session_clicked)
 
-        # Session Detail
         self.ui.btn_back_to_session_list.clicked.connect(self.show_session_report)
         self.ui.cmb_sort.currentIndexChanged.connect(self.sort_session_detail)
         self.ui.detail_table.itemSelectionChanged.connect(self.on_detail_selection_changed)
         self.ui.btn_view_personal.clicked.connect(self.on_view_personal_process)
         self.ui.cmb_view_mode.currentIndexChanged.connect(self.toggle_view_mode)
         
-        # Personal Stats (NEW)
         self.ui.btn_personal_stats.clicked.connect(self.on_view_personal_stats_clicked)
         self.ui.btn_back_from_personal.clicked.connect(self.show_trainee_list)
         self.ui.btn_save_p_note.clicked.connect(self.save_personal_note_direct)
         
-        # Kết nối ComboBox lọc chế độ trong trang cá nhân
         self.ui.cmb_stats_filter.currentIndexChanged.connect(self.refresh_personal_stats_view)
 
-    # --- NAVIGATION ---
     def show_menu(self): self.ui.main_stack.setCurrentWidget(self.ui.page_menu)
     def show_trainee_list(self): self.ui.main_stack.setCurrentWidget(self.ui.page_trainees); self.load_soldiers()
     def show_session_report(self): 
@@ -254,28 +241,23 @@ class ManageWindow(QMainWindow):
         self.ui.btn_view_report.setEnabled(False)
         self.ui.btn_delete_session.setEnabled(False)
 
-    # --- THỐNG KÊ CÁ NHÂN (LOGIC MỚI) ---
     def on_view_personal_stats_clicked(self):
         selected_rows = self.ui.soldier_table.selectedItems()
         if not selected_rows: return
         row = selected_rows[0].row()
         
-        # Lấy ID và thông tin cơ bản
         soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
         name = self.ui.soldier_table.item(row, 1).text()
         unit = self.ui.soldier_table.item(row, 2).text()
         note = self.ui.soldier_table.item(row, 3).text()
         
-        # Lấy lịch sử từ DB
         self.current_history_cache = self.db.get_soldier_history(soldier_id)
         
         self.current_viewing_soldier_id = soldier_id
         
-        # Setup UI
         self.ui.lbl_personal_name.setText(f"{name.upper()} - {unit}")
         self.ui.txt_personal_note.setPlainText(note)
         
-        # Reset Filter về SINGLE
         self.ui.cmb_stats_filter.blockSignals(True)
         self.ui.cmb_stats_filter.setCurrentIndex(0)
         self.ui.cmb_stats_filter.blockSignals(False)
@@ -284,13 +266,9 @@ class ManageWindow(QMainWindow):
         self.ui.main_stack.setCurrentWidget(self.ui.page_personal_stats)
 
     def refresh_personal_stats_view(self):
-        """Hàm vẽ lại giao diện thống kê dựa trên chế độ đang chọn (Single/Burst)"""
-        mode_filter = self.ui.cmb_stats_filter.currentData() # "SINGLE" or "BURST_3"
-        
-        # Lọc dữ liệu theo chế độ
+        mode_filter = self.ui.cmb_stats_filter.currentData()
         filtered_history = [h for h in self.current_history_cache if h['mode'] == mode_filter] if self.current_history_cache else []
         
-        # --- A. CẬP NHẬT BẢNG LỊCH SỬ ---
         self.ui.personal_table.setRowCount(len(filtered_history))
         scores_for_chart = []
         dates_for_chart = []
@@ -302,7 +280,6 @@ class ManageWindow(QMainWindow):
             sc = h['total_score']
             cnt = h['shot_count']
             
-            # Tính giá trị hiển thị
             if mode_filter == "BURST_3":
                 res_str = f"{sc} điểm / 30"
                 chart_val = sc
@@ -319,7 +296,6 @@ class ManageWindow(QMainWindow):
             self.ui.personal_table.setItem(i, 1, QTableWidgetItem(h['session_name']))
             self.ui.personal_table.setItem(i, 2, QTableWidgetItem(res_str))
 
-        # --- B. CẬP NHẬT THẺ CHỈ SỐ VÀ ĐÁNH GIÁ (LOGIC TINH CHỈNH) ---
         count = len(filtered_history)
         self.ui.lbl_p_sessions.setText(f"{count} lần")
 
@@ -328,7 +304,6 @@ class ManageWindow(QMainWindow):
         else:
             self.ui.lbl_p_avg.parent().findChild(QLabel).setText("ĐIỂM TB / PHÁT")
 
-        # --- XỬ LÝ CÁC TRƯỜNG HỢP DỮ LIỆU ---
         eval_msg = ""; level_msg = ""
         MIN_DATA_THRESHOLD = 3 
 
@@ -375,7 +350,6 @@ class ManageWindow(QMainWindow):
             
             self.ui.lbl_p_eval.setText(f"{eval_msg}\n{level_msg}")
 
-        # --- D. VẼ BIỂU ĐỒ ---
         self.p_figure.clear()
         ax = self.p_figure.add_subplot(111)
         line_color = '#3498db' if mode_filter == "SINGLE" else '#e67e22'
@@ -397,16 +371,15 @@ class ManageWindow(QMainWindow):
         if self.current_viewing_soldier_id is None: return
         text = self.ui.txt_personal_note.toPlainText().strip()
         if self.db.update_soldier_note(self.current_viewing_soldier_id, text):
-            QMessageBox.information(self, "Đã lưu", "Cập nhật ghi chú thành công.")
+            show_info(self, "Đã lưu", "Cập nhật ghi chú thành công.")
             self.ui.txt_personal_note.clear() 
             for s in self.all_soldiers_data:
                 if s['id'] == self.current_viewing_soldier_id:
                     s['note'] = text
                     break
         else:
-            QMessageBox.warning(self, "Lỗi", "Không thể lưu ghi chú.")
+            show_warning(self, "Lỗi", "Không thể lưu ghi chú.")
 
-    # --- BÁO CÁO PHIÊN TẬP (LIST) ---
     def load_session_history(self):
         self.ui.session_table.setRowCount(0)
         try:
@@ -441,23 +414,15 @@ class ManageWindow(QMainWindow):
         row = selected_rows[0].row()
         session_data = self.ui.session_table.item(row, 0).data(Qt.UserRole)
         
-        reply = QMessageBox.question(
-            self, 
-            "Xác nhận xóa", 
-            f"Bạn có chắc chắn muốn xóa phiên tập:\n'{session_data['name']}'?\n\nDữ liệu không thể khôi phục.",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
+        if show_confirmation(self, "Xác nhận xóa", f"Bạn có chắc chắn muốn xóa phiên tập:\n'{session_data['name']}'?\n\nDữ liệu không thể khôi phục."):
             if self.db.delete_practice_session(session_data['id']):
-                QMessageBox.information(self, "Thành công", "Đã xóa phiên tập.")
+                show_info(self, "Thành công", "Đã xóa phiên tập.")
                 self.load_session_history()
                 self.ui.btn_delete_session.setEnabled(False)
                 self.ui.btn_view_report.setEnabled(False)
             else:
-                QMessageBox.critical(self, "Lỗi", "Không thể xóa phiên tập này.")
+                show_error(self, "Lỗi", "Không thể xóa phiên tập này.")
 
-    # --- CHI TIẾT PHIÊN TẬP ---
     def show_session_detail(self):
         selected_rows = self.ui.session_table.selectedItems()
         if not selected_rows: return
@@ -570,7 +535,6 @@ class ManageWindow(QMainWindow):
                 self.ui.detail_table.setItem(row, 4, score_item)
                 self.ui.detail_table.setItem(row, 5, avg_item)
 
-    # --- BÁO CÁO TỔNG QUAN (DASHBOARD) ---
     def render_general_report(self):
         if not self.current_detail_data: return
         
@@ -815,7 +779,7 @@ class ManageWindow(QMainWindow):
                     break
 
             if header_row_idx == -1:
-                QMessageBox.warning(self, "Không nhận diện được", "Không tìm thấy cột 'Họ và tên'.")
+                show_warning(self, "Không nhận diện được", "Không tìm thấy cột 'Họ và tên'.")
                 return
 
             data_to_import = []
@@ -832,7 +796,7 @@ class ManageWindow(QMainWindow):
                 data_to_import.append({'name': clean_name, 'class_name': raw_unit})
 
             if not data_to_import:
-                QMessageBox.information(self, "Rỗng", "Không có dữ liệu nào dưới dòng tiêu đề.")
+                show_info(self, "Rỗng", "Không có dữ liệu nào dưới dòng tiêu đề.")
                 return
 
             preview_dialog = ExcelPreviewDialog(data_to_import, self)
@@ -841,11 +805,11 @@ class ManageWindow(QMainWindow):
                 count = 0
                 for item in selected_data:
                     if self.db.add_soldier(item['name'], item['class_name']): count += 1
-                QMessageBox.information(self, "Thành công", f"Đã nhập {count} người.")
+                show_info(self, "Thành công", f"Đã nhập {count} người.")
                 self.load_soldiers()
         except Exception as e:
             logging.error(f"Lỗi nhập Excel: {e}")
-            QMessageBox.critical(self, "Lỗi", f"Có lỗi xảy ra:\n{e}")
+            show_error(self, "Lỗi", f"Có lỗi xảy ra:\n{e}")
 
     def show_soldier_context_menu(self, pos):
         selected_rows = set()
@@ -901,9 +865,9 @@ class ManageWindow(QMainWindow):
                     if s['id'] == soldier_id:
                         s['note'] = text
                         break
-                QMessageBox.information(self, "Thành công", "Đã lưu ghi chú.")
+                show_info(self, "Thành công", "Đã lưu ghi chú.")
             else:
-                QMessageBox.critical(self, "Lỗi", "Không thể lưu ghi chú.")
+                show_error(self, "Lỗi", "Không thể lưu ghi chú.")
 
     def edit_soldier(self, row):
         soldier_id = self.ui.soldier_table.item(row, 0).data(Qt.UserRole)
@@ -912,13 +876,13 @@ class ManageWindow(QMainWindow):
         d.class_name_input.setText(self.ui.soldier_table.item(row, 2).text())
         if d.exec() == QDialog.Accepted:
             if self.db.update_soldier(soldier_id, **d.get_data()):
-                QMessageBox.information(self, "Thành công", "Đã cập nhật thông tin."); self.load_soldiers()
-            else: QMessageBox.critical(self, "Lỗi", "Không thể cập nhật thông tin.")
+                show_info(self, "Thành công", "Đã cập nhật thông tin."); self.load_soldiers()
+            else: show_error(self, "Lỗi", "Không thể cập nhật thông tin.")
 
     def delete_multiple_soldiers(self, soldier_ids):
         if not soldier_ids: return
-        if QMessageBox.warning(self, "Xác nhận Xóa", f"Bạn có chắc chắn muốn xóa {len(soldier_ids)} người được chọn?\nTOÀN BỘ dữ liệu lịch sử sẽ mất.", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+        if show_confirmation(self, "Xác nhận Xóa", f"Bạn có chắc chắn muốn xóa {len(soldier_ids)} người được chọn?\nTOÀN BỘ dữ liệu lịch sử sẽ mất."):
             c = 0
             for sid in soldier_ids:
                 if self.db.delete_soldier(sid): c += 1
-            QMessageBox.information(self, "Thành công", f"Đã xóa {c} người."); self.load_soldiers()
+            show_info(self, "Thành công", f"Đã xóa {c} người."); self.load_soldiers()

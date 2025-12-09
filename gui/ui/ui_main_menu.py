@@ -10,7 +10,7 @@ class Ui_MainMenuWindow(object):
     def setupUi(self, MainMenuWindow):
         MainMenuWindow.setObjectName("MainMenuWindow")
         
-        # --- [MỚI] TÍNH TOÁN TỶ LỆ MÀN HÌNH ---
+        # --- [TÍNH TOÁN TỶ LỆ MÀN HÌNH] ---
         screen = QApplication.primaryScreen().availableGeometry()
         self.scale_factor = screen.height() / 1080.0
         
@@ -91,7 +91,7 @@ class Ui_MainMenuWindow(object):
         buttons_layout.setSpacing(scale_size(15))
         buttons_layout.setAlignment(Qt.AlignCenter)
 
-        # Các nút (Đã áp dụng scale_size)
+        # Các nút
         self.practice_button = QPushButton("LUYỆN TẬP", buttons_container)
         self.practice_button.setMinimumSize(QSize(scale_size(350), scale_size(75)))
         buttons_layout.addWidget(self.practice_button)
@@ -110,5 +110,12 @@ class Ui_MainMenuWindow(object):
         self.main_layout.addStretch(1)
         self.main_layout.addWidget(buttons_container)
         self.main_layout.addStretch(2)
+        
+        # --- [MỚI] THÊM DÒNG PHIÊN BẢN ---
+        self.version_label = QLabel("- Phiên bản 2.0 -", self.centralwidget)
+        self.version_label.setAlignment(Qt.AlignCenter)
+        # Style: màu xám nhạt (#7f8c8d), chữ nhỏ, in nghiêng
+        self.version_label.setStyleSheet(f"color: #7f8c8d; font-size: {scale_font(12)}px; font-style: italic; margin-top: {scale_size(5)}px;")
+        self.main_layout.addWidget(self.version_label)
         
         MainMenuWindow.setCentralWidget(self.centralwidget)

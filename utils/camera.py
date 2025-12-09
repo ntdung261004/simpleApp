@@ -5,6 +5,7 @@ import sys
 import time
 from PySide6.QtCore import QThread, Signal
 
+# Lưu ý: Chúng ta không khởi tạo logger global để dùng trong run() nữa để tránh xung đột
 logger = logging.getLogger(__name__)
 
 def _get_os_backend():
@@ -17,6 +18,9 @@ def _get_os_backend():
 class CameraThread(QThread):
     frame_received = Signal(object)
     error_occurred = Signal(int)
+    
+    # [MỚI] Signal để gửi log về Main Thread (Level, Message)
+    log_signal = Signal(str, str) 
 
     def __init__(self, index: int):
         super().__init__()
@@ -28,6 +32,10 @@ class CameraThread(QThread):
         self.WATCHDOG_TIMEOUT = 2.0 
 
     def run(self):
+        # Hàm helper nội bộ để gửi log an toàn qua signal
+        def log_safe(level, msg):
+            self.log_signal.emit(level, msg)
+
         api_preference = _get_os_backend()
         self.cap = cv2.VideoCapture(self.index, api_preference)
 
@@ -36,53 +44,52 @@ class CameraThread(QThread):
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
         if not self.cap.isOpened():
-            logger.error(f"CAMERA {self.index}: Không thể mở thiết bị.")
+            log_safe("ERROR", f"CAMERA {self.index}: Không thể mở thiết bị.")
             self.error_occurred.emit(self.index)
             return
         
-        logger.info(f"CAMERA {self.index}: Bắt đầu stream.")
+        log_safe("INFO", f"CAMERA {self.index}: Bắt đầu stream.")
         self.last_frame_time = time.time()
 
         while self._is_running:
             # 1. Cơ chế Watchdog: Kiểm tra thời gian trôi qua
             if time.time() - self.last_frame_time > self.WATCHDOG_TIMEOUT:
-                logger.error(f"Cam {self.index}: WATCHDOG TIMEOUT (Mất kết nối quá lâu).")
+                log_safe("ERROR", f"Cam {self.index}: WATCHDOG TIMEOUT (Mất kết nối quá lâu).")
                 self.error_occurred.emit(self.index)
                 break
 
             try:
-                # Đọc frame (non-blocking nếu có thể, nhưng OpenCV thường block)
+                # Đọc frame
                 ret, frame = self.cap.read()
                 
                 if ret and frame is not None and frame.size > 0:
                     self.last_frame_time = time.time() # Cập nhật thời gian sống
                     self.frame_received.emit(frame)
                 else:
-                    # Nếu read trả về False (mất kết nối tức thì)
-                    time.sleep(0.05) # Nghỉ nhẹ để tránh spam CPU
+                    # Nếu read trả về False
+                    time.sleep(0.05)
                     
             except Exception as e:
-                logger.error(f"Cam {self.index}: Lỗi ngoại lệ: {e}")
+                log_safe("ERROR", f"Cam {self.index}: Lỗi ngoại lệ: {e}")
                 time.sleep(0.05)
             
-            # Giới hạn FPS khoảng ~60fps để mượt mà nhưng không ngốn CPU
+            # Giới hạn FPS
             time.sleep(0.015)
 
         if self.cap:
             self.cap.release()
-        logger.info(f"CAMERA {self.index}: Thread kết thúc.")
+        log_safe("INFO", f"CAMERA {self.index}: Thread kết thúc.")
 
     def stop(self):
         self._is_running = False
         # Chờ luồng kết thúc an toàn
         self.quit()
         
-        # --- FIX CRASH: Wait kỹ hơn và xử lý terminate đúng cách ---
         if not self.wait(2000): # Chờ tối đa 2s để luồng tự đóng
+            # Hàm stop được gọi từ Main Thread nên có thể dùng logger trực tiếp an toàn
             logger.warning(f"Cam {self.index}: Không phản hồi, buộc dừng (terminate).")
             self.terminate() # Cưỡng chế tắt
-            self.wait() # QUAN TRỌNG: Chờ cho đến khi terminate hoàn tất trước khi hủy object
-        # -----------------------------------------------------------
+            self.wait() 
 
     def is_active(self):
         return self._is_running and self.cap is not None and self.cap.isOpened()

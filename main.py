@@ -17,10 +17,98 @@ from core.triggers import BluetoothTrigger
 from config import APP_DATA_DIR
 from utils.license_manager import verify_key
 
+# --- CẤU HÌNH LOGGING ---
 log_file_path = os.path.join(APP_DATA_DIR, "app_log.txt")
 root_logger = logging.getLogger(); root_logger.setLevel(logging.INFO)
 fh = logging.FileHandler(log_file_path, encoding='utf-8'); fh.setLevel(logging.INFO)
 root_logger.addHandler(fh)
+
+# --- GLOBAL STYLESHEET ---
+GLOBAL_STYLESHEET = """
+    /* 1. Cấu hình chung cho mọi Widget */
+    QWidget {
+        background-color: #2c3e50; /* Nền tối */
+        color: #ecf0f1;            /* Chữ trắng sáng */
+        font-family: 'Segoe UI';
+    }
+
+    /* 2. Hộp thoại Thông báo (QMessageBox) */
+    QMessageBox {
+        background-color: #34495e;
+    }
+    QMessageBox QLabel {
+        color: #ecf0f1;
+        font-size: 14px;
+    }
+    QMessageBox QPushButton {
+        background-color: #1abc9c;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        padding: 6px 20px;
+        font-weight: bold;
+        min-width: 80px;
+    }
+    QMessageBox QPushButton:hover {
+        background-color: #16a085;
+    }
+    QMessageBox QPushButton:pressed {
+        background-color: #148f77;
+    }
+
+    /* 3. Menu chuột phải (Context Menu) & Menu Bar */
+    QMenu {
+        background-color: #34495e;
+        border: 1px solid #4a6278;
+    }
+    QMenu::item {
+        padding: 8px 25px 8px 20px; /* Top Right Bottom Left */
+        color: #ecf0f1;
+    }
+    QMenu::item:selected {
+        background-color: #1abc9c;
+        color: white;
+    }
+
+    /* 4. ToolTip (Chú thích khi di chuột) */
+    QToolTip {
+        background-color: #2c3e50;
+        color: #f1c40f;
+        border: 1px solid #f1c40f;
+        padding: 5px;
+    }
+
+    /* 5. ComboBox Popup (Danh sách xổ xuống) */
+    QComboBox QAbstractItemView {
+        background-color: #34495e;
+        color: #ecf0f1;
+        selection-background-color: #1abc9c;
+        selection-color: white;
+        border: 1px solid #4a6278;
+        outline: none;
+    }
+
+    /* 6. Hộp thoại nhập liệu (QInputDialog) */
+    QInputDialog {
+        background-color: #34495e;
+    }
+    QInputDialog QLabel {
+        color: #ecf0f1;
+        font-size: 14px;
+        font-weight: bold;
+    }
+    QInputDialog QLineEdit, QInputDialog QTextEdit {
+        background-color: #2c3e50;
+        color: #ecf0f1;
+        border: 1px solid #4a6278;
+        border-radius: 4px;
+        padding: 6px;
+        font-size: 14px;
+    }
+    QInputDialog QLineEdit:focus, QInputDialog QTextEdit:focus {
+        border: 1px solid #1abc9c;
+    }
+"""
 
 def check_or_request_license() -> bool:
     license_file_path = os.path.join(APP_DATA_DIR, 'license.key')
@@ -42,6 +130,7 @@ class ApplicationController(QMainWindow):
         self.config = self._load_config()
         self._ensure_assets()
         self.setWindowTitle(self.config.get("labels", {}).get("app_title", "Phần Mềm Bắn Súng"))
+        
         self.setStyleSheet("background-color: #2c3e50;")
         
         self.processing_thread = QThread()
@@ -89,18 +178,23 @@ class ApplicationController(QMainWindow):
         self.main_menu.stats_button.clicked.connect(self.show_manage)
         
         self.practice_screen.back_to_menu_signal.connect(self.show_menu)
-        
-        # --- KẾT NỐI TÍN HIỆU QUAY VỀ TỪ QUẢN LÝ ---
         self.manage_screen.back_to_menu_signal.connect(self.show_menu)
-        # Nút con "Quay lại Menu" trong các trang con cũng gọi show_menu
         self.manage_screen.ui.btn_back_to_menu.clicked.connect(self.show_menu)
-        # -------------------------------------------
         
         self.main_menu.exit_button.clicked.connect(self.close)
         self.practice_screen.request_processing.connect(self.processing_worker.process_image)
 
     def cleanup_before_exit(self):
-        if self.bt_trigger: self.bt_trigger.stop_global_listener()
+        """Hàm dọn dẹp tài nguyên trước khi thoát ứng dụng."""
+        # 1. Dừng trigger toàn cục
+        if self.bt_trigger: 
+            self.bt_trigger.stop_global_listener()
+        
+        # 2. [FIX] Dừng các thành phần trong màn hình Luyện tập (Camera, ImageSaver, v.v.)
+        if self.practice_screen:
+            self.practice_screen.shutdown_components()
+
+        # 3. Dừng luồng xử lý ảnh AI
         if self.processing_thread.isRunning():
             self.processing_thread.quit()
             self.processing_thread.wait(3000)
@@ -120,10 +214,15 @@ class ApplicationController(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    
+    app.setStyleSheet(GLOBAL_STYLESHEET)
+    
     icon_path = resource_path("assets/app_icon.ico")
     app.setWindowIcon(QIcon(icon_path))
+    
     if check_or_request_license():
         controller = ApplicationController()
+        # Kết nối sự kiện đóng ứng dụng với hàm dọn dẹp
         app.aboutToQuit.connect(controller.cleanup_before_exit)
         controller.showMaximized()
         sys.exit(app.exec())

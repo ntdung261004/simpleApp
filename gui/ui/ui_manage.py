@@ -504,8 +504,8 @@ class ManageGui(QWidget):
         
         # --- THÊM: ComboBox chọn chế độ xem ---
         self.cmb_stats_filter = QComboBox()
-        self.cmb_stats_filter.addItem("Xem: Bắn từng viên (Single)", "SINGLE")
-        self.cmb_stats_filter.addItem("Xem: Bắn loạt 3 (Burst)", "BURST_3")
+        self.cmb_stats_filter.addItem("Xem: Bắn từng viên", "SINGLE")
+        self.cmb_stats_filter.addItem("Xem: Bắn loạt 3", "BURST_3")
         self.cmb_stats_filter.setMinimumWidth(200)
         self.cmb_stats_filter.setMinimumHeight(40)
         self.cmb_stats_filter.setStyleSheet("background-color: #34495e; color: white; font-weight: bold; border: 1px solid #1abc9c; padding: 5px;")
@@ -560,7 +560,7 @@ class ManageGui(QWidget):
             v.addWidget(l1); v.addWidget(l2)
             return fr, l2
             
-        c1, self.lbl_p_sessions = mk_mini_card("SỐ LƯỢT", "vp1")
+        c1, self.lbl_p_sessions = mk_mini_card("SỐ PHIÊN TẬP", "vp1")
         c2, self.lbl_p_avg = mk_mini_card("TRUNG BÌNH", "vp2") # Title động sẽ set trong logic
         c3, self.lbl_p_best = mk_mini_card("TỐT NHẤT", "vp3")
         
@@ -581,7 +581,7 @@ class ManageGui(QWidget):
         r_lo.addWidget(self.lbl_p_eval)
         
         # Notes
-        note_group = QGroupBox("Ghi chú & Nhận xét (GV/CB)")
+        note_group = QGroupBox("Ghi chú & Nhận xét (Giáo Viên / Cán Bộ)")
         note_group.setStyleSheet("QGroupBox { font-weight: bold; color: #f39c12; border: 1px solid #f39c12; margin-top: 20px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }")
         n_lo = QVBoxLayout(note_group)
         self.txt_personal_note = QTextEdit()

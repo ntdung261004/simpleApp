@@ -20,7 +20,6 @@ class CameraManager(QObject):
         self.calib_centers = {1: None, 2: None}
         self.is_calib_mode = {1: False, 2: False}
         
-        # Frame sạch để lưu (Quan trọng: Phải reset về None khi mất kết nối)
         self.clean_frames = {1: None, 2: None} 
         self.shot_points = {1: None, 2: None}
         self.final_size = (480, 640)
@@ -32,7 +31,6 @@ class CameraManager(QObject):
         idx = self.cam_indices.get(cam_id)
         if idx is None: return
         
-        # Tắt camera cũ trước khi bật mới
         self.stop_camera(cam_id)
         QApplication.processEvents()
         
@@ -43,6 +41,9 @@ class CameraManager(QObject):
             
             thread.error_occurred.connect(lambda err: self.error_occurred.emit(cam_id, err))
             
+            # [MỚI] Kết nối signal log từ thread về hàm xử lý log của manager
+            thread.log_signal.connect(self._handle_thread_log)
+            
             self.cameras[cam_id] = thread
             thread.start()
             logger.info(f"CameraManager: Đã khởi động Cam {cam_id} (Index {idx})")
@@ -50,7 +51,6 @@ class CameraManager(QObject):
             logger.error(f"CameraManager: Lỗi khởi động Cam {cam_id}: {e}")
 
     def stop_camera(self, cam_id):
-        # QUAN TRỌNG: Xóa frame ngay lập tức để tránh bắn vào ảnh cũ
         self.clean_frames[cam_id] = None 
         
         if self.cameras[cam_id] is not None:
@@ -63,7 +63,6 @@ class CameraManager(QObject):
         self.stop_camera(1); self.stop_camera(2)
 
     def is_camera_ready(self, cam_id):
-        """Kiểm tra xem camera có đang hoạt động và có frame hợp lệ không."""
         return (self.cameras[cam_id] is not None) and (self.clean_frames[cam_id] is not None)
 
     def set_zoom(self, cam_id, value): self.zoom_levels[cam_id] = value / 10.0
@@ -86,6 +85,12 @@ class CameraManager(QObject):
     def _handle_frame_1(self, frame): self._process_frame(1, frame)
     @Slot(object)
     def _handle_frame_2(self, frame): self._process_frame(2, frame)
+    
+    @Slot(str, str)
+    def _handle_thread_log(self, level, msg):
+        """[MỚI] Nhận log từ thread con và ghi vào logger chính."""
+        lvl = getattr(logging, level.upper(), logging.INFO)
+        logger.log(lvl, msg)
 
     def _process_frame(self, cam_id, frame):
         if frame is None: return

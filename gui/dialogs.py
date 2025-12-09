@@ -6,7 +6,61 @@ from PySide6.QtWidgets import (
     QHeaderView, QAbstractItemView, QMessageBox, QFrame, QSizePolicy, QApplication
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap, QColor, QFont
+from PySide6.QtGui import QPixmap, QColor, QFont, QIcon
+from utils.resource_path import resource_path
+
+# --- [MỚI] BỘ HÀM HELPER HỘP THOẠI CÓ ICON APP ---
+def _create_msg_box(parent, title, text, icon_type):
+    """Hàm nội bộ tạo QMessageBox chuẩn với icon ứng dụng."""
+    msg = QMessageBox(parent)
+    msg.setWindowTitle(title)
+    msg.setText(text)
+    msg.setIcon(icon_type)
+    
+    # Thiết lập Icon cho cửa sổ thông báo từ file .ico
+    app_icon_path = resource_path("assets/app_icon.ico")
+    if os.path.exists(app_icon_path):
+        msg.setWindowIcon(QIcon(app_icon_path))
+    
+    return msg
+
+def show_info(parent, title, text):
+    msg = _create_msg_box(parent, title, text, QMessageBox.Information)
+    msg.exec()
+
+def show_warning(parent, title, text):
+    msg = _create_msg_box(parent, title, text, QMessageBox.Warning)
+    msg.exec()
+
+def show_error(parent, title, text):
+    msg = _create_msg_box(parent, title, text, QMessageBox.Critical)
+    msg.exec()
+
+def show_confirmation(parent, title, text):
+    """Trả về True nếu chọn Yes, False nếu chọn No."""
+    msg = _create_msg_box(parent, title, text, QMessageBox.Question)
+    msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+    msg.setDefaultButton(QMessageBox.No)
+    return msg.exec() == QMessageBox.Yes
+
+def show_confirmation_custom(parent, title, text, btn_yes_text, btn_no_text, btn_cancel_text=None):
+    """Hộp thoại xác nhận tùy chỉnh nút bấm."""
+    msg = _create_msg_box(parent, title, text, QMessageBox.Question)
+    
+    btn_yes = msg.addButton(btn_yes_text, QMessageBox.AcceptRole)
+    btn_no = msg.addButton(btn_no_text, QMessageBox.RejectRole)
+    btn_cancel = None
+    if btn_cancel_text:
+        btn_cancel = msg.addButton(btn_cancel_text, QMessageBox.DestructiveRole)
+        
+    msg.exec()
+    
+    clicked = msg.clickedButton()
+    if clicked == btn_yes: return "YES"
+    if clicked == btn_no: return "NO"
+    if clicked == btn_cancel: return "CANCEL"
+    return None
+# -------------------------------------------------
 
 class ResultPopup(QDialog):
     def __init__(self, shots_data, camera_name="", allow_retry=True, parent=None):
@@ -22,6 +76,11 @@ class ResultPopup(QDialog):
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
         self.setMinimumSize(s(700), s(650))
         self.setStyleSheet(f"background-color: #2c3e50; color: white; font-size: {s(14)}px;")
+        
+        # Set Icon App cho Popup
+        app_icon_path = resource_path("assets/app_icon.ico")
+        if os.path.exists(app_icon_path):
+            self.setWindowIcon(QIcon(app_icon_path))
         
         self.shots_data = shots_data
         self.current_idx = 0
@@ -57,7 +116,6 @@ class ResultPopup(QDialog):
         self.lbl_index = QLabel("1/3"); self.lbl_index.setAlignment(Qt.AlignCenter); self.lbl_index.setStyleSheet(f"font-size: {s(16)}px; font-weight: bold;")
         self.btn_next = QPushButton("Sau >>"); self.btn_next.setMinimumHeight(s(40)); self.btn_next.clicked.connect(self.next_image)
         
-        # Style buttons
         btn_style = f"font-size: {s(14)}px; padding: {s(5)}px; background-color: #1abc9c; border-radius: 5px;"
         self.btn_prev.setStyleSheet(btn_style); self.btn_next.setStyleSheet(btn_style)
         
@@ -102,15 +160,18 @@ class TraineeSessionPopup(QDialog):
     def __init__(self, session_name, soldiers_data, current_ids, mode_str, parent=None):
         super().__init__(parent)
         
-        # --- SCALING ---
         screen = QApplication.primaryScreen().availableGeometry()
         self.scale_factor = screen.height() / 1080.0
         def s(val): return int(val * self.scale_factor)
-        # ---------------
 
         self.setWindowTitle(f"QUẢN LÝ PHIÊN: {session_name.upper()}")
         self.setMinimumSize(s(950), s(500))
         self.setStyleSheet(f"background-color: #2c3e50; color: white; font-size: {s(14)}px;")
+        
+        # Set Icon App
+        app_icon_path = resource_path("assets/app_icon.ico")
+        if os.path.exists(app_icon_path):
+            self.setWindowIcon(QIcon(app_icon_path))
         
         self.mode_str = mode_str
         layout = QVBoxLayout(self)
@@ -175,34 +236,38 @@ class TraineeSessionPopup(QDialog):
         selected_rows = self.table.selectedItems()
         if selected_rows:
             soldier_data = selected_rows[0].data(Qt.UserRole)
+            # Dùng show_warning thay vì QMessageBox trực tiếp
             if self.mode_str == "BURST_3" and soldier_data.get('finished', False):
-                QMessageBox.warning(self, "Không thể chọn", f"Chiến sĩ {soldier_data['name']} đã hoàn thành bài bắn loạt.\nKhông thể chọn lại.")
+                show_warning(self, "Không thể chọn", f"Người tập {soldier_data['name']} đã hoàn thành bài bắn loạt.\nKhông thể chọn lại.")
                 return
             self.trainee_selected.emit(soldier_data)
             self.accept()
-        else: QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn một người tập từ danh sách.")
+        else: 
+            show_warning(self, "Chưa chọn", "Vui lòng chọn một người tập từ danh sách.")
 
 class PersonalProcessDialog(QDialog):
     def __init__(self, soldier_info, shots_data, parent=None):
         super().__init__(parent)
         
-        # --- SCALING ---
         screen = QApplication.primaryScreen().availableGeometry()
         self.scale_factor = screen.height() / 1080.0
         def s(val): return int(val * self.scale_factor)
-        # ---------------
 
         self.setWindowTitle(f"QUẢN LÝ: {soldier_info['name'].upper()}")
         self.setWindowFlags(Qt.Window)
         self.setMinimumSize(s(900), s(700))
         self.setStyleSheet(f"background-color: #2c3e50; color: white; font-size: {s(14)}px;")
         
+        # Set Icon App
+        app_icon_path = resource_path("assets/app_icon.ico")
+        if os.path.exists(app_icon_path):
+            self.setWindowIcon(QIcon(app_icon_path))
+        
         self.shots_data = shots_data
         self.current_idx = 0
         
         layout = QVBoxLayout(self)
         
-        # --- INFO AREA ---
         info_frame = QFrame()
         info_frame.setStyleSheet("background-color: #34495e; border-radius: 8px;")
         info_layout = QHBoxLayout(info_frame)
@@ -220,14 +285,12 @@ class PersonalProcessDialog(QDialog):
         
         layout.addSpacing(10)
 
-        # --- IMAGE AREA ---
         self.img_label = QLabel()
         self.img_label.setAlignment(Qt.AlignCenter)
         self.img_label.setStyleSheet("background-color: #212f3d; border: 2px solid #7f8c8d; border-radius: 5px;")
         self.img_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout.addWidget(self.img_label, 1)
 
-        # --- NAVIGATION ---
         nav_layout = QHBoxLayout()
         self.btn_prev = QPushButton("<< Phát trước")
         self.btn_prev.setMinimumHeight(s(50))
@@ -248,7 +311,6 @@ class PersonalProcessDialog(QDialog):
         nav_layout.addWidget(self.btn_next)
         layout.addLayout(nav_layout)
         
-        # --- CLOSE BUTTON ---
         btn_close = QPushButton("Đóng")
         btn_close.setMinimumHeight(s(40))
         btn_close.setStyleSheet(f"background-color: #95a5a6; border-radius: 5px; font-size: {s(14)}px;")
@@ -266,7 +328,6 @@ class PersonalProcessDialog(QDialog):
         if not self.shots_data: return
         data = self.shots_data[self.current_idx]
         
-        # Load Image
         img_path = data.get('image_path')
         pix = QPixmap()
         if img_path and os.path.exists(img_path):
@@ -277,7 +338,6 @@ class PersonalProcessDialog(QDialog):
         else:
             self.img_label.setText(f"Không tìm thấy ảnh: {os.path.basename(img_path) if img_path else 'N/A'}")
             
-        # Update Info
         score = data.get('score', 0)
         result_text = "TRÚNG" if score > 0 else "TRƯỢT"
         
