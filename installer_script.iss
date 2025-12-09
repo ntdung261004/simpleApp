@@ -1,6 +1,6 @@
 ; === Shooting App Installer Script ===
 
-#define MyAppName "Kiểm Tra Đường Ngắm STL 2.0"
+#define MyAppName "Kiểm Tra Đường Ngắm STL"
 #define MyAppVersion "2.0"
 #define MyAppPublisher "LTSoftware"
 #define MyAppExeName "ShootingApp2.exe"
