@@ -162,7 +162,7 @@ def calculate_score_bia4(pt: Tuple[float, float], original_img: np.ndarray, mask
     if not (0 <= x < w and 0 <= y < h): return 0
     
     # Bia 4 đặc biệt: Tâm là tâm ảnh
-    cx, cy = w // 2, h // 2
+    cx, cy = 253, 251
     distance = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
     
     if mask[y, x] == 255:
