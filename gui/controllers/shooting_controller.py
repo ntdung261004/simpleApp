@@ -278,7 +278,20 @@ class ShootingController(QObject):
         
         self.populate_camera_sources()
         # -----------------------------------------------
-        
+        # --- [FIX ZOOM] ĐỒNG BỘ SLIDER ZOOM ---
+        # Lấy giá trị zoom hiện tại đang lưu trong CameraManager
+        z1_val = int(self.cam_manager.zoom_levels.get(1, 1.0) * 10)
+        z2_val = int(self.cam_manager.zoom_levels.get(2, 1.0) * 10)
+
+        # Cập nhật Slider tương ứng với chế độ mới
+        if idx == 0: # Single
+            self.ui.zoom_slider.setValue(z1_val)
+        elif idx == 1: # Dual
+            if hasattr(self.ui, 'dual_cam1_zoom'):
+                self.ui.dual_cam1_zoom.setValue(z1_val)
+            if hasattr(self.ui, 'dual_cam2_zoom'):
+                self.ui.dual_cam2_zoom.setValue(z2_val)
+        # --------------------------------------
         if idx == 1:
             if self.cam_manager.cam_indices[1] == self.cam_manager.cam_indices[2]:
                 available = find_available_cameras()
