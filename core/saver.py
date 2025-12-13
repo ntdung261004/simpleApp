@@ -2,6 +2,7 @@
 import cv2
 import logging
 import queue
+import numpy as np
 from PySide6.QtCore import QThread
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,12 @@ class ImageSaver(QThread):
                 image, path = self.queue.get(timeout=1)
                 try:
                     # Ghi ảnh xuống đĩa (Blocking I/O)
-                    success = cv2.imwrite(path, image)
+                    is_success, im_buf_arr = cv2.imencode(".png", image)
+                    if is_success:
+                        im_buf_arr.tofile(path)
+                        success = True
+                    else:
+                        success = False
                     if success:
                         logger.info(f"ImageSaver: Đã lưu {path}")
                     else:
