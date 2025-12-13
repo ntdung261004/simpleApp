@@ -11,11 +11,11 @@ class MainMenuWindow(QMainWindow):
     sử dụng lớp Ui_MainMenuWindow (từ file ui_main_menu.py) để thiết lập 
     giao diện người dùng.
     """
-    def __init__(self):
+    def __init__(self, parent=None):
         """
         Hàm khởi tạo của cửa sổ Menu chính.
         """
-        super().__init__()
+        super().__init__(parent)
 
         # Khởi tạo giao diện người dùng từ lớp Ui_MainMenuWindow
         self.ui = Ui_MainMenuWindow()

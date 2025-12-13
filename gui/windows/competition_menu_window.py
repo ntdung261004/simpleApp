@@ -6,8 +6,8 @@ class CompetitionMenuWindow(QMainWindow):
     """
     Lớp điều khiển logic cho cửa sổ Menu Thi đấu.
     """
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.ui = Ui_CompetitionMenuWindow()
         self.ui.setupUi(self)
         
