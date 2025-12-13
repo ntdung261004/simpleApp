@@ -2,7 +2,7 @@
 import cv2
 import logging
 import queue
-import numpy as np
+import numpy as np  # [FIX] Thêm thư viện numpy
 from PySide6.QtCore import QThread
 
 logger = logging.getLogger(__name__)
@@ -27,17 +27,18 @@ class ImageSaver(QThread):
                 # Chờ lấy ảnh từ queue với timeout 1s để kiểm tra cờ _is_running
                 image, path = self.queue.get(timeout=1)
                 try:
-                    # Ghi ảnh xuống đĩa (Blocking I/O)
+                    # [FIX] Thay thế cv2.imwrite để hỗ trợ đường dẫn tiếng Việt (Unicode)
+                    # Encode ảnh sang định dạng mong muốn (ví dụ .png) trong bộ nhớ
                     is_success, im_buf_arr = cv2.imencode(".png", image)
+                    
                     if is_success:
+                        # Ghi dữ liệu binary xuống đĩa bằng phương thức của numpy
+                        # Cách này bypass được lỗi Unicode của OpenCV trên Windows
                         im_buf_arr.tofile(path)
-                        success = True
-                    else:
-                        success = False
-                    if success:
                         logger.info(f"ImageSaver: Đã lưu {path}")
                     else:
-                        logger.error(f"ImageSaver: Thất bại khi lưu {path}")
+                        logger.error(f"ImageSaver: Thất bại khi encode ảnh {path}")
+
                 except Exception as e:
                     logger.error(f"ImageSaver: Lỗi ngoại lệ khi lưu {path}: {e}")
                 finally:
