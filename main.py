@@ -4,6 +4,9 @@ import sys
 import logging
 import json
 import shutil
+# [FIX] Thêm thư viện multiprocessing
+from multiprocessing import freeze_support 
+
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QInputDialog, QMessageBox
 from PySide6.QtCore import QThread
 from PySide6.QtGui import QIcon
@@ -78,7 +81,7 @@ GLOBAL_STYLESHEET = """
         padding: 5px;
     }
 
-    /* 5. ComboBox Popup (Danh sách xổ xuống) */
+    /* 5. ComboBox Popup */
     QComboBox QAbstractItemView {
         background-color: #34495e;
         color: #ecf0f1;
@@ -107,6 +110,32 @@ GLOBAL_STYLESHEET = """
     }
     QInputDialog QLineEdit:focus, QInputDialog QTextEdit:focus {
         border: 1px solid #1abc9c;
+    }
+
+    /* 7. [MỚI] Bảng dữ liệu (QTableWidget) - Sửa lỗi màu xen kẽ */
+    QTableWidget, QTableView {
+        background-color: #34495e;
+        color: #ecf0f1;
+        gridline-color: #4a6278;
+        selection-background-color: #1abc9c;
+        selection-color: white;
+        border: 1px solid #4a6278;
+        alternate-background-color: #2c3e50; /* Màu dòng xen kẽ (Chẵn/Lẻ) */
+    }
+    QHeaderView::section {
+        background-color: #2c3e50; /* Màu nền tiêu đề cột */
+        color: #ecf0f1;
+        padding: 5px;
+        border: 1px solid #4a6278;
+        font-weight: bold;
+    }
+    /* Sửa lỗi ô checkbox trong bảng bị lệch màu */
+    QTableWidget::indicator {
+        background-color: #2c3e50;
+        border: 1px solid #bdc3c7;
+    }
+    QTableWidget::item:hover {
+        background-color: #3e5871;
     }
 """
 
@@ -186,15 +215,12 @@ class ApplicationController(QMainWindow):
 
     def cleanup_before_exit(self):
         """Hàm dọn dẹp tài nguyên trước khi thoát ứng dụng."""
-        # 1. Dừng trigger toàn cục
         if self.bt_trigger: 
             self.bt_trigger.stop_global_listener()
         
-        # 2. [FIX] Dừng các thành phần trong màn hình Luyện tập (Camera, ImageSaver, v.v.)
         if self.practice_screen:
             self.practice_screen.shutdown_components()
 
-        # 3. Dừng luồng xử lý ảnh AI
         if self.processing_thread.isRunning():
             self.processing_thread.quit()
             self.processing_thread.wait(3000)
@@ -213,6 +239,8 @@ class ApplicationController(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.manage_screen)
 
 if __name__ == '__main__':
+    freeze_support()
+    
     app = QApplication(sys.argv)
     
     app.setStyleSheet(GLOBAL_STYLESHEET)
@@ -222,7 +250,6 @@ if __name__ == '__main__':
     
     if check_or_request_license():
         controller = ApplicationController()
-        # Kết nối sự kiện đóng ứng dụng với hàm dọn dẹp
         app.aboutToQuit.connect(controller.cleanup_before_exit)
         controller.showMaximized()
         sys.exit(app.exec())

@@ -5,7 +5,7 @@ import logging
 from collections import deque
 from datetime import datetime
 from PySide6.QtCore import QObject, Slot, Qt, QTimer
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QPixmap, QImage
 from utils.camera import find_available_cameras
 from config import APP_DATA_DIR
@@ -31,7 +31,6 @@ class ShootingController(QObject):
         self.popup_queue = deque()
         self.is_popup_open = False 
         
-        # Khởi tạo Image Saver lần đầu
         self.image_saver = ImageSaver()
         self.image_saver.start()
         
@@ -90,6 +89,10 @@ class ShootingController(QObject):
     def start_managed_practice(self):
         self.sess_manager.is_free_practice = False
         self.sess_manager.is_managed_session = True
+        
+        # [FIX] Reset giao diện tên người tập khi bắt đầu phiên mới
+        self._reset_trainee_labels()
+        
         self._setup_ui_for_mode("MANAGED")
         self._init_camera_and_session()
 
@@ -121,14 +124,10 @@ class ShootingController(QObject):
         self._set_trainee_btn_state(1, True); self._set_trainee_btn_state(2, True)
 
     def _init_camera_and_session(self):
-        # --- [FIX QUAN TRỌNG] KHỞI ĐỘNG LẠI IMAGESAVER NẾU ĐÃ BỊ TẮT ---
-        # Khi kết thúc phiên trước, image_saver đã bị set thành None.
-        # Cần tạo lại nó để phiên mới có thể lưu ảnh.
         if self.image_saver is None:
-            logger.info("ShootingController: Khởi động lại ImageSaver cho phiên mới.")
+            logger.info("ShootingController: Khởi động lại ImageSaver.")
             self.image_saver = ImageSaver()
             self.image_saver.start()
-        # -------------------------------------------------------------
 
         self.populate_camera_sources()
         self.ui.mode_selector.setCurrentIndex(0)
@@ -216,12 +215,7 @@ class ShootingController(QObject):
         self.sess_manager.reset_all()
         self.reset_ui_state()
         self.popup_queue.clear()
-        
-        # Dừng thread lưu ảnh khi thoát ra dashboard để tiết kiệm tài nguyên
-        if self.image_saver: 
-            self.image_saver.stop()
-            self.image_saver = None 
-        
+        if self.image_saver: self.image_saver.stop(); self.image_saver = None 
         self._set_trainee_btn_state(1, True); self._set_trainee_btn_state(2, True)
 
     def _reset_trainee_labels(self):
@@ -245,11 +239,13 @@ class ShootingController(QObject):
         self._reset_trainee_labels()
         self.popup_queue.clear()
         
-        # --- [FIX CRASH] ---
+        # [FIX CRASH] Stop all cameras and wait for release
         self.cam_manager.stop_all()
-        QApplication.processEvents() 
-        self.populate_camera_sources()
-        # -------------------
+        QApplication.processEvents()
+        import time; time.sleep(0.3) # Delay for driver release
+
+        # [FIX CRASH] Populate source only after stopping
+        available_cams = self.populate_camera_sources() # Returns list
 
         # [FIX ZOOM SYNC]
         z1 = int(self.cam_manager.zoom_levels.get(1, 1.0) * 10)
@@ -259,13 +255,39 @@ class ShootingController(QObject):
             if hasattr(self.ui, 'dual_cam1_zoom'): self.ui.dual_cam1_zoom.setValue(z1)
             if hasattr(self.ui, 'dual_cam2_zoom'): self.ui.dual_cam2_zoom.setValue(z2)
 
-        if idx == 1:
-            if self.cam_manager.cam_indices[1] == self.cam_manager.cam_indices[2]:
-                available = find_available_cameras()
-                if len(available) >= 2:
-                    new_idx = available[1] if available[0] == self.cam_manager.cam_indices[1] else available[0]
-                    self.cam_manager.cam_indices[2] = new_idx
-                    self._sync_combo_selection(2)
+        if idx == 1: # Chế độ 2 Cam
+            # [LOGIC THÔNG MINH] Phân bổ Camera để tránh xung đột
+            cam_count = len(available_cams)
+            
+            if cam_count == 0:
+                # Không có cam nào -> Disable cả 2
+                self.cam_manager.cam_indices[1] = -1
+                self.cam_manager.cam_indices[2] = -1
+            elif cam_count == 1:
+                # Chỉ có 1 cam -> Gán Cam 1, Tắt Cam 2
+                self.cam_manager.cam_indices[1] = available_cams[0]
+                self.cam_manager.cam_indices[2] = -1 # Đánh dấu tắt
+                # Đồng bộ lại Combo Box Cam 2 (về -1 hoặc None)
+                if hasattr(self.ui, 'dual_cam2_source'): self.ui.dual_cam2_source.setCurrentIndex(-1)
+                
+            else: # Có >= 2 cams
+                # Nếu index hiện tại không hợp lệ hoặc trùng nhau, tự động gán lại
+                c1 = self.cam_manager.cam_indices.get(1, 0)
+                c2 = self.cam_manager.cam_indices.get(2, 1)
+                
+                if c1 not in available_cams: c1 = available_cams[0]
+                if c2 not in available_cams or c2 == c1: 
+                    # Tìm index khác c1
+                    for c in available_cams:
+                        if c != c1: c2 = c; break
+                
+                self.cam_manager.cam_indices[1] = c1
+                self.cam_manager.cam_indices[2] = c2
+            
+            # Đồng bộ lại giao diện Combo Box sau khi tự động gán
+            self._sync_combo_selection(1)
+            self._sync_combo_selection(2)
+
         self._start_cameras()
         self._setup_ui_for_mode("MANAGED" if self.sess_manager.is_managed_session else "FREE")
         self.reset_result_display()
@@ -283,8 +305,21 @@ class ShootingController(QObject):
         else: self.start_new_session(1); self.start_new_session(2)
 
     def _start_cameras(self):
-        if self.sess_manager.current_mode == 0: self.cam_manager.stop_camera(2); self.cam_manager.start_camera(1)
-        else: self.cam_manager.start_camera(1); self.cam_manager.start_camera(2)
+        # [FIX] Chỉ start camera nếu index hợp lệ (>= 0)
+        idx1 = self.cam_manager.cam_indices.get(1, -1)
+        idx2 = self.cam_manager.cam_indices.get(2, -1)
+
+        if self.sess_manager.current_mode == 0: # 1 Cam Mode
+            self.cam_manager.stop_camera(2)
+            if idx1 >= 0: self.cam_manager.start_camera(1)
+            else: self.cam_manager.stop_camera(1)
+        else: # 2 Cam Mode
+            if idx1 >= 0: self.cam_manager.start_camera(1)
+            else: self.cam_manager.stop_camera(1)
+            
+            # Chỉ bật cam 2 nếu có thiết bị và khác cam 1
+            if idx2 >= 0 and idx2 != idx1: self.cam_manager.start_camera(2)
+            else: self.cam_manager.stop_camera(2)
 
     def start_new_session(self, idx):
         self.reset_result_display(idx); self.sess_manager.start_session(idx)
@@ -298,30 +333,58 @@ class ShootingController(QObject):
         self.cam_manager.start_camera(cam_id)
 
     def populate_camera_sources(self):
-        available = find_available_cameras() or [0, 1]
+        # [MODIFIED] Trả về danh sách camera để logic khác sử dụng
+        available = find_available_cameras() or []
+        # Nếu không tìm thấy gì, thử mặc định 0, 1 (fallback)
+        if not available: available = [0] 
+
         combos = [self.ui.single_cam_source]
         if hasattr(self.ui, 'dual_cam1_source'): combos.extend([self.ui.dual_cam1_source, self.ui.dual_cam2_source])
+        
         for combo in combos:
             combo.blockSignals(True)
             cur = combo.currentData(); combo.clear()
             for idx in available: combo.addItem(f"Camera {idx}", idx)
-            if cur is not None:
-                i = combo.findData(cur)
-                if i >= 0: combo.setCurrentIndex(i)
+            
+            if cur is not None and cur in available:
+                idx_combo = combo.findData(cur)
+                if idx_combo >= 0: combo.setCurrentIndex(idx_combo)
+            elif available:
+                combo.setCurrentIndex(0) # Default to first available
+                
             combo.blockSignals(False)
+            
         self._sync_combo_selection(1); self._sync_combo_selection(2)
+        return available
 
     def _sync_combo_selection(self, cam_id):
         combo = self._get_combo(cam_id)
         if not combo: return
         current_idx = combo.currentData()
-        if current_idx is not None and current_idx != -1: self.cam_manager.cam_indices[cam_id] = current_idx
+        # Cho phép -1 (None)
+        self.cam_manager.cam_indices[cam_id] = current_idx if current_idx is not None else -1
 
     def change_cam_source(self, cam_id, idx):
         combo = self._get_combo(cam_id)
         if combo:
             val = combo.itemData(idx)
-            if val is not None: self.cam_manager.cam_indices[cam_id] = val; self.cam_manager.start_camera(cam_id)
+            if val is not None: 
+                # [FIX] Ngăn chọn trùng camera khi đang ở chế độ 2 cam
+                if self.sess_manager.current_mode == 1:
+                    other_cam_id = 2 if cam_id == 1 else 1
+                    other_idx = self.cam_manager.cam_indices.get(other_cam_id)
+                    if val == other_idx and val != -1:
+                        show_warning(self.parent_window, "Xung đột", f"Camera {val} đang được sử dụng bởi khung hình kia.")
+                        # Reset combo box về cũ
+                        old_val = self.cam_manager.cam_indices.get(cam_id)
+                        idx_old = combo.findData(old_val)
+                        combo.blockSignals(True)
+                        combo.setCurrentIndex(idx_old if idx_old >=0 else -1)
+                        combo.blockSignals(False)
+                        return
+
+                self.cam_manager.cam_indices[cam_id] = val
+                self.cam_manager.start_camera(cam_id)
 
     def _set_trainee_btn_state(self, slot, enabled):
         if self.sess_manager.current_mode == 0:
@@ -377,14 +440,8 @@ class ShootingController(QObject):
         score = res.get('score', 0)
         final_img_numpy = res.get('result_frame')
         save_path = res.get('image_path')
-        
-        # [QUAN TRỌNG] Lưu ảnh vào đĩa thông qua ImageSaver
-        # Cần kiểm tra image_saver khác None vì nó có thể chưa được khởi tạo nếu không qua hàm init
         if self.sess_manager.is_managed_session and final_img_numpy is not None and save_path:
-            if self.image_saver: 
-                self.image_saver.save_image(final_img_numpy, save_path)
-            else:
-                logger.error("ImageSaver chưa khởi chạy, không thể lưu ảnh!")
+            if self.image_saver: self.image_saver.save_image(final_img_numpy, save_path)
         
         self.sess_manager.process_shot_result(res, pix)
         sess_idx = 0
@@ -495,10 +552,7 @@ class ShootingController(QObject):
 
     def set_zoom(self, c, v): self.cam_manager.set_zoom(c, v)
     def on_manual_refresh(self, c): 
-        logger.info(f"Làm mới Camera {c}...")
-        self.cam_manager.stop_camera(c)
-        QApplication.processEvents()
-        self.cam_manager.start_camera(c)
+        self.cam_manager.stop_camera(c); QApplication.processEvents(); self.cam_manager.start_camera(c)
         
     def toggle_calib(self, c):
         active = not self.cam_manager.is_calib_mode[c]; self.cam_manager.is_calib_mode[c] = active
