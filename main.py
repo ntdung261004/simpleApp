@@ -128,30 +128,48 @@ class ApplicationController(QMainWindow):
         return {}
 
     def _ensure_assets_are_in_appdata(self):
+        """
+        Đảm bảo Model và 2 file Logo tồn tại trong AppData để config có thể đọc được.
+        """
+        # 1. Đảm bảo thư mục assets tồn tại trong AppData
+        dest_assets_dir = os.path.join(APP_DATA_DIR, "assets")
+        os.makedirs(dest_assets_dir, exist_ok=True)
+
+        # --- PHẦN SAO CHÉP MODEL (Giữ nguyên) ---
         model_filename = self.config.get("yolo_model_name")
-        if not model_filename:
-            logging.error("Config thiếu key 'yolo_model_name'. Không thể tải model.")
-            return
+        if model_filename:
+            dest_model_path = os.path.join(APP_DATA_DIR, model_filename)
+            if not os.path.exists(dest_model_path):
+                source_model_path = resource_path(os.path.join("assets", "models", model_filename))
+                if os.path.exists(source_model_path):
+                    try:
+                        shutil.copyfile(source_model_path, dest_model_path)
+                        logging.info(f"Đã sao chép model '{model_filename}' vào AppData.")
+                    except Exception as e:
+                        logging.error(f"Lỗi sao chép model: {e}")
 
-        dest_model_path = os.path.join(APP_DATA_DIR, model_filename)
+        # --- PHẦN SAO CHÉP LOGO (CHỈ 2 FILE NÀY) ---
+        # Danh sách các file logo cần thiết
+        target_logos = ["logo_left.png", "logo_right.png"]
 
-        if not os.path.exists(dest_model_path):
-            logging.info(f"Model '{model_filename}' không tìm thấy trong AppData. Sao chép từ file mặc định.")
+        for filename in target_logos:
+            dest_path = os.path.join(dest_assets_dir, filename)
             
-            source_model_path = resource_path(os.path.join("assets", "models", model_filename))
-            
-            if os.path.exists(source_model_path):
-                try:
-                    os.makedirs(os.path.dirname(dest_model_path), exist_ok=True)
-                    shutil.copyfile(source_model_path, dest_model_path)
-                    logging.info(f"Đã sao chép thành công model mặc định vào AppData.")
-                except (IOError, shutil.SameFileError) as e:
-                    logging.error(f"Không thể sao chép file model mặc định: {e}")
-                    QMessageBox.critical(None, "Lỗi Sao chép Model", f"Không thể sao chép model AI cần thiết vào thư mục dữ liệu.\nLỗi: {e}")
-            else:
-                logging.error(f"Lỗi nghiêm trọng: Không tìm thấy file model gốc tại '{source_model_path}'.")
-                QMessageBox.critical(None, "Lỗi Thiếu Model", f"Không tìm thấy file model AI '{model_filename}' trong gói cài đặt.")
-     
+            # Chỉ copy nếu file chưa tồn tại trong AppData (để không ghi đè logo người dùng đã đổi)
+            if not os.path.exists(dest_path):
+                # Tìm file gốc trong thư mục assets của mã nguồn
+                source_path = resource_path(os.path.join("assets", filename))
+                
+                if os.path.exists(source_path):
+                    try:
+                        shutil.copyfile(source_path, dest_path)
+                        logging.info(f"Đã sao chép '{filename}' sang AppData/assets.")
+                    except Exception as e:
+                        logging.error(f"Lỗi khi copy {filename}: {e}")
+                else:
+                    # Chỉ log debug để tránh spam lỗi nếu bạn chưa chuẩn bị logo gốc
+                    logging.debug(f"Không tìm thấy file gốc '{filename}' để tự động sao chép.")
+                    
     def connect_signals(self):
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)       
         self.main_menu.stats_button.clicked.connect(self.show_manage_screen)

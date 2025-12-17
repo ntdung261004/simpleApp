@@ -141,6 +141,7 @@ class MainGui(QWidget):
         main_layout.setContentsMargins(margin, margin, margin, margin)
         main_layout.setSpacing(margin)
 
+        # --- Title ---
         title_widget = QWidget()
         title_layout = QHBoxLayout(title_widget)
         title_layout.setContentsMargins(0, 0, 0, 0)
@@ -153,17 +154,32 @@ class MainGui(QWidget):
         title_layout.addStretch(1)
         main_layout.addWidget(title_widget)
 
+        # --- Video View ---
         self.camera_view_label = VideoLabel()
         self.camera_view_label.setText("Vui lòng kết nối camera")
         main_layout.addWidget(self.camera_view_label, 1)
 
+        # --- Controls Panel ---
         controls_panel = QWidget()
         controls_layout = QHBoxLayout(controls_panel)
-        controls_layout.setContentsMargins(int(10*self.scale_factor), int(5*self.scale_factor), int(10*self.scale_factor), 0)
+        # Tinh chỉnh padding để các nút không bị dính
+        controls_layout.setContentsMargins(int(5*self.scale_factor), int(5*self.scale_factor), int(5*self.scale_factor), 0)
         controls_layout.setSpacing(int(10 * self.scale_factor))
+        
+        # 1. Selector chọn Camera (MỚI THÊM)
+        self.camera_selector = QComboBox()
+        self.camera_selector.setPlaceholderText("Chọn Camera...")
+        self.camera_selector.setMinimumWidth(int(150 * self.scale_factor))
+        controls_layout.addWidget(self.camera_selector)
+
+        # 2. Nút Refresh
         self.refresh_button = QPushButton("Làm mới")
         self.refresh_button.setObjectName("refreshButton")
+        # Đặt icon hoặc ký tự refresh nếu muốn gọn hơn
+        self.refresh_button.setToolTip("Quét lại danh sách thiết bị")
         controls_layout.addWidget(self.refresh_button)
+
+        # 3. Zoom Slider
         controls_layout.addStretch(1)
         zoom_text_label = QLabel("Khoảng cách:")
         self.zoom_slider = QSlider(Qt.Horizontal)
@@ -172,16 +188,21 @@ class MainGui(QWidget):
         self.zoom_slider.setValue(10)
         self.zoom_value_label = QLabel("1.0x")
         self.zoom_value_label.setObjectName("zoomValueLabel")
+        
         controls_layout.addWidget(zoom_text_label)
         controls_layout.addWidget(self.zoom_slider, 2)
         controls_layout.addWidget(self.zoom_value_label)
         controls_layout.addStretch(1)
+
+        # 4. Calibrate Button
         self.calibrate_button = QPushButton("Hiệu chỉnh tâm")
         controls_layout.addWidget(self.calibrate_button)
+        
         main_layout.addWidget(controls_panel)
         self.zoom_slider.valueChanged.connect(self._update_zoom_value_label)
+        
         return panel
-
+    
     def _update_zoom_value_label(self, value):
         zoom_factor = value / 10.0
         self.zoom_value_label.setText(f"{zoom_factor:.1f}x")

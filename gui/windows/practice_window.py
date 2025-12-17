@@ -35,39 +35,156 @@ class PracticeWindow(QMainWindow):
         self.setWindowTitle(app_title)
         screen = QScreen.availableGeometry(QApplication.primaryScreen())
         self.setGeometry(screen)
+        
         self.gui = MainGui(self.config)
         self.setCentralWidget(self.gui)
+        
         self.worker = worker
         self.bt_trigger = trigger
-        self.active_session_id = None; self.cam = None; self.final_size = (480, 640)
-        self.zoom_level = 1.0; self.calibrated_center = None; self.is_session_active = False
-        self.is_camera_connected = False; self.shot_counter = 0; self.frame_read_failures = 0
+        self.active_session_id = None
+        self.cam = None
+        self.final_size = (480, 640)
+        self.zoom_level = 1.0
+        self.calibrated_center = None
+        self.is_session_active = False
+        self.is_camera_connected = False
+        self.shot_counter = 0
+        self.frame_read_failures = 0
         self.FRAME_FAILURE_THRESHOLD = 3
         
         self.clean_zoomed_frame_for_processing = None
         self.shot_point_on_zoomed_frame = None
         
-        self.audio_manager = AudioManager(); self.video_timer = QTimer(self)
+        self.audio_manager = AudioManager()
+        self.video_timer = QTimer(self)
         self.db_manager = DatabaseManager()
+        
+        # --- KẾT NỐI TÍN HIỆU ---
         self.video_timer.timeout.connect(self.update_frame)
         self.gui.calibrate_button.clicked.connect(self.toggle_calibration_mode)
         self.gui.zoom_slider.valueChanged.connect(self.on_zoom_changed)
-        self.gui.refresh_button.clicked.connect(self.refresh_camera_connection)
+        
+        # Kết nối mới cho Camera Selector và nút Refresh
+        self.gui.camera_selector.currentIndexChanged.connect(self.on_camera_selected)
+        self.gui.refresh_button.clicked.connect(self.refresh_camera_list)
+        
         self.gui.camera_view_label.clicked.connect(self.set_new_center)
         self.gui.session_button.clicked.connect(self.toggle_session)
         self.gui.soldier_selector.currentIndexChanged.connect(self.reset_ui_state)
-        self.populate_soldier_selector(); self.reset_ui_state()
+        
+        self.populate_soldier_selector()
+        self.reset_ui_state()
 
+        # Configured index (chỉ dùng để làm default khi refresh, không kết nối cứng ngay lập tức)
         try:
             self.configured_camera_index = int(self.config.get("camera_index", 0))
-            logger.info(f"PracticeWindow: Sử dụng camera index = {self.configured_camera_index} từ config.")
         except (ValueError, TypeError):
-            logger.warning("Giá trị camera_index trong config không hợp lệ. Dùng mặc định là 0.")
             self.configured_camera_index = 0
             
         self.save_dir = os.path.join(APP_DATA_DIR, "captured_images")
         os.makedirs(self.save_dir, exist_ok=True)
         logger.info(f"Thư mục lưu ảnh được thiết lập tại: {self.save_dir}")
+
+    # --- CÁC HÀM XỬ LÝ CAMERA MỚI ---
+    
+    def on_camera_selected(self, index):
+        """Được gọi khi người dùng chọn một camera khác từ ComboBox."""
+        # Lấy ID camera từ data của item
+        cam_idx = self.gui.camera_selector.currentData()
+        
+        if cam_idx is None:
+            return
+
+        # Nếu camera này đang chạy rồi thì thôi
+        if self.cam and hasattr(self.cam, 'index') and self.cam.index == cam_idx and self.cam.isOpened():
+            return
+
+        logger.info(f"Người dùng chọn chuyển sang Camera {cam_idx}")
+        self.connect_camera(cam_idx)
+        
+        # Lưu vào ram config để dùng tạm trong phiên làm việc
+        self.config["camera_index"] = cam_idx
+
+    def refresh_camera_list(self):
+        """Quét danh sách camera, đổ vào ComboBox và tự động chọn camera."""
+        logger.info("Đang làm mới danh sách camera...")
+        self.gui.camera_selector.blockSignals(True) # Chặn tín hiệu để không trigger loop
+        self.gui.camera_selector.clear()
+        
+        available_indexes = find_available_cameras()
+        
+        if not available_indexes:
+            self.gui.camera_selector.addItem("Không tìm thấy Camera", None)
+            self.disconnect_camera("Không tìm thấy thiết bị nào")
+        else:
+            # Lấy index camera đang được chọn trong config
+            target_index = self.config.get("camera_index", 0)
+            best_match_index = 0 
+            
+            for i, cam_idx in enumerate(available_indexes):
+                display_name = f"Camera {cam_idx}"
+                self.gui.camera_selector.addItem(display_name, cam_idx)
+                
+                if cam_idx == target_index:
+                    best_match_index = i
+
+            self.gui.camera_selector.setCurrentIndex(best_match_index)
+            
+            # Kết nối ngay lập tức tới camera vừa tìm thấy
+            selected_cam_idx = self.gui.camera_selector.itemData(best_match_index)
+            self.connect_camera(selected_cam_idx)
+
+        self.gui.camera_selector.blockSignals(False) # Mở lại tín hiệu
+
+    def start_camera(self):
+        logger.info("Màn hình luyện tập: Kích hoạt camera và trigger...")
+        self.populate_soldier_selector()
+        if self.bt_trigger:
+            self.bt_trigger.activate()
+        
+        # Gọi hàm refresh list để nó tự quét và connect thay vì kết nối thủ công
+        self.refresh_camera_list()
+
+    def connect_camera(self, index):
+        self.disconnect_camera() # Ngắt cái cũ trước
+        
+        logger.info(f"Đang thử kết nối camera index {index}...")
+        self.cam = Camera(index) # Khởi tạo wrapper Camera
+        
+        if not self.cam.isOpened():
+            logger.error(f"Lỗi driver camera {index}.")
+            self.gui.clear_video_feed(f"Lỗi kết nối Camera {index}")
+            return
+
+        # Thử đọc frame vài lần để chắc chắn camera hoạt động
+        attempts = 0
+        success = False
+        while attempts < 5:
+            ret, frame = self.cam.read()
+            if ret and frame is not None:
+                success = True
+                break
+            time.sleep(0.1)
+            attempts += 1
+            
+        if success:
+            self.is_camera_connected = True
+            self.video_timer.start(30)
+            logger.info(f"Kết nối thành công Camera {index}")
+        else:
+            logger.error(f"Camera {index} mở được nhưng không trả về hình ảnh.")
+            self.disconnect_camera("Camera không phản hồi hình ảnh")
+
+    def disconnect_camera(self, message="Vui lòng chọn camera"):
+        self.video_timer.stop()
+        if self.cam:
+            self.cam.release()
+        self.cam = None
+        self.is_camera_connected = False
+        self.gui.clear_video_feed(message)
+        logger.info(f"Đã ngắt kết nối camera. Lý do: {message}")
+
+    # --- CÁC HÀM CŨ GIỮ NGUYÊN ---
 
     def update_frame(self):
         if not (self.cam and self.cam.isOpened()):
@@ -110,7 +227,7 @@ class PracticeWindow(QMainWindow):
 
         frame_to_display = self.clean_zoomed_frame_for_processing.copy()
         if self.shot_point_on_zoomed_frame:
-            cv2.drawMarker(frame_to_display, self.shot_point_on_zoomed_frame, (0, 0, 255), cv2.MARKER_CROSS, 40, 2)
+            cv2.drawMarker(frame_to_display, self.shot_point_on_zoomed_frame, (0, 0, 255), cv2.MARKER_CROSS, 15, 1)
         
         self.gui.display_frame(frame_to_display)
 
@@ -254,50 +371,6 @@ class PracticeWindow(QMainWindow):
         self.toggle_calibration_mode()
 
     def on_zoom_changed(self, value): self.zoom_level = value / 10.0
-
-    def connect_camera(self, index):
-        self.disconnect_camera(); self.cam = Camera(index)
-        if not self.cam.isOpened(): logger.error(f"PRACTICE: Không thể mở camera index {index} ở tầng driver."); self.disconnect_camera(f"Vui lòng kết nối với thiết bị camera"); return
-        is_frame_read_successfully = False; attempts = 0; max_attempts = 10
-        while attempts < max_attempts:
-            ret, frame = self.cam.read()
-            if ret and frame is not None: is_frame_read_successfully = True; break
-            logger.debug(f"Đọc frame lần {attempts + 1} thất bại, thử lại sau 100ms..."); attempts += 1; time.sleep(0.1)
-        if is_frame_read_successfully: self.video_timer.start(30); logger.info(f"PRACTICE: Kết nối và xác thực thành công camera index {index}.")
-        else: logger.error(f"PRACTICE: Kết nối thất bại, không đọc được frame từ camera index {index} sau {max_attempts} lần thử."); self.disconnect_camera("Lỗi: Không thể lấy ảnh từ camera")
-
-    def disconnect_camera(self, message="Vui lòng kết nối camera"):
-        self.video_timer.stop()
-        if self.cam: self.cam.release()
-        self.cam = None; self.is_camera_connected = False; self.gui.clear_video_feed(message); logger.info(f"Đã ngắt kết nối camera. Lý do: {message}")
-
-    def refresh_camera_connection(self):
-        """
-        Cố gắng kết nối với camera được chỉ định trong config.
-        Logic được tối ưu để không phụ thuộc vào số lượng camera.
-        """
-        logger.info("PRACTICE: Bắt đầu làm mới kết nối camera...")
-        
-        # 1. Quét để xem có camera nào khả dụng hay không.
-        available_cameras = find_available_cameras()
-        
-        # 2. Nếu không có camera nào, dừng lại và thông báo lỗi.
-        if not available_cameras:
-            logger.warning("Không tìm thấy bất kỳ camera nào được kết nối.")
-            self.disconnect_camera(message="Không tìm thấy camera")
-            return
-
-        # 3. Luôn thử kết nối với chỉ số camera lấy từ config.
-        target_index = self.configured_camera_index
-        logger.info(f"Tìm thấy {len(available_cameras)} camera. Sẽ thử kết nối với camera được cấu hình tại index: {target_index}.")
-        
-        # 4. Hàm connect_camera sẽ tự xử lý việc kết nối và báo lỗi nếu thất bại.
-        self.connect_camera(target_index)
-
-    def start_camera(self):
-        logger.info("Màn hình luyện tập: Kích hoạt camera và trigger..."); self.populate_soldier_selector()
-        if self.bt_trigger: self.bt_trigger.activate()
-        if self.cam is None or not self.cam.isOpened(): self.refresh_camera_connection()
 
     def reset_ui_state(self):
         logger.info("Resetting Practice UI to default state."); self.gui.time_label.setText("Thời gian: --:--:--"); self.gui.target_name_label.setText("Tên mục tiêu: --")
