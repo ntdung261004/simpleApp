@@ -4,6 +4,10 @@
     "labels": {
         "customer_unit_name": "TÊN ĐƠN VỊ KHÁCH HÀNG",
         "app_title": "PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM",
-        "app_subtitle": "SÚNG TIỂU LIÊN"
+        "app_subtitle": "SÚNG TIỂU LIÊN",
+        "app_footer": "Bản quyền © 2025",
+        "title_color": "#f1c40f", 
+        "logo_filename": "logo_watermark.png",
+        "logo_opacity": 0.35
     }
 }
