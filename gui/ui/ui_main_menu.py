@@ -1,12 +1,10 @@
 # file: gui/ui/ui_main_menu.py
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
-    QLabel, QPushButton, QSpacerItem, QSizePolicy
+    QLabel, QPushButton
 )
 
-# 1. Import scaler để sử dụng các hàm tính toán tỷ lệ
 from utils.scaler import scaler
 
 class Ui_MainMenuWindow(object):
@@ -24,29 +22,39 @@ class Ui_MainMenuWindow(object):
         self.centralwidget = QWidget(MainMenuWindow)
         self.centralwidget.setObjectName("centralwidget")
 
-        # 2. Sử dụng scaler để tính toán các giá trị lề và khoảng cách
         margin = scaler.scale(50)
         spacing = scaler.scale(15)
         self.verticalLayout = QVBoxLayout(self.centralwidget)
         self.verticalLayout.setContentsMargins(margin, margin, margin, margin)
         self.verticalLayout.setSpacing(spacing)
 
-        # Title Label
+        # --- TITLE LABEL ---
         self.title_label = QLabel(self.centralwidget)
         self.title_label.setAlignment(Qt.AlignCenter)
         
-        # 3. Sử dụng scaler.font() để tạo font có kích thước động
-        self.title_label.setFont(scaler.font(28, bold=True))
+        # [QUAN TRỌNG] Tính toán size chữ bằng Scaler
+        title_size = scaler.scale(26)
+        
+        # [FIX LỖI] Đưa font-size vào styleSheet để đè Global Style (14px)
+        self.title_label.setStyleSheet(f"""
+            QLabel {{
+                color: #ecf0f1;
+                font-size: {title_size}px;
+                font-weight: bold;
+                font-family: "Segoe UI", Arial, sans-serif;
+            }}
+        """)
         
         self.title_label.setText("PHẦN MỀM TẬP LUYỆN VÀ KIỂM TRA\nĐƯỜNG NGẮM SÚNG NGẮN K54")
-        self.title_label.setStyleSheet("color: #ecf0f1;")
         self.verticalLayout.addWidget(self.title_label)
         
         self.verticalLayout.addStretch(1)
 
-        # 4. Sử dụng f-string và scaler.scale() để tạo stylesheet động
+        # --- BUTTONS ---
         button_padding = scaler.scale(15)
-        button_font_size = scaler.scale(20)
+        button_font_size = scaler.scale(17) # Giữ nguyên size to
+        
+        # Style cho nút (Đã có font-size bên trong nên sẽ không bị ảnh hưởng, nhưng tôi gia cố thêm)
         button_style = f"""
             QPushButton {{
                 background-color: #1abc9c;
@@ -56,6 +64,7 @@ class Ui_MainMenuWindow(object):
                 padding: {button_padding}px;
                 font-size: {button_font_size}px;
                 font-weight: bold;
+                font-family: "Segoe UI", Arial, sans-serif;
             }}
             QPushButton:hover {{
                 background-color: #16a085;
@@ -65,9 +74,8 @@ class Ui_MainMenuWindow(object):
             }}
         """
 
-        # 5. Sử dụng scaler.scale() để đặt kích thước tối thiểu cho các nút
         min_btn_w = scaler.scale(300)
-        min_btn_h = scaler.scale(75)
+        min_btn_h = scaler.scale(70)
 
         self.competition_button = QPushButton("KIỂM TRA", self.centralwidget)
         self.competition_button.setMinimumSize(QSize(min_btn_w, min_btn_h))
@@ -84,7 +92,7 @@ class Ui_MainMenuWindow(object):
         self.stats_button.setStyleSheet(button_style)
         self.verticalLayout.addWidget(self.stats_button, 0, Qt.AlignHCenter)
 
-        # Exit Button (tương tự)
+        # --- EXIT BUTTON ---
         exit_button_style = f"""
             QPushButton {{
                 background-color: rgba(231, 76, 60, 0.85);
@@ -94,6 +102,7 @@ class Ui_MainMenuWindow(object):
                 padding: {button_padding}px;
                 font-size: {button_font_size}px;
                 font-weight: bold;
+                font-family: "Segoe UI", Arial, sans-serif;
             }}
             QPushButton:hover {{
                 background-color: rgba(192, 57, 43, 1);

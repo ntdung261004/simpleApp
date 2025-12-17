@@ -1,5 +1,15 @@
 {
-    "camera_index": 0,
-    "yolo_confidence_threshold": 0.45,
-    "yolo_model_path": "assets/models/K54v2.pt"
+  "camera_index": 0,
+  "yolo_model_path": "assets/models/K54v2.pt",
+  "yolo_confidence_threshold": 0.45,
+  "labels": {
+    "app_title": "Phần Mềm Bắn Súng K54"
+  },
+  "branding": {
+    "top_text": "TỔNG CỤC KỸ THUẬT - TRƯỜNG ĐẠI HỌC QUÂN SỰ",
+    "footer_text": "Phần mềm huấn luyện bắn súng K54 - Phiên bản 2025 - Liên hệ: admin@donvi.com",
+    "left_logo_path": "logo_left.png",
+    "right_logo_path": "logo_right.png",
+    "logo_size": [200, 200]
+  }
 }

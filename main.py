@@ -2,7 +2,108 @@
 import os
 import sys
 import traceback
+from multiprocessing import freeze_support
 
+APP_STYLESHEET = """
+    /* 1. Cấu hình chung cho toàn bộ Widget */
+    QWidget {
+        color: #ecf0f1;                 /* Chữ màu trắng xám */
+        font-family: "Segoe UI", Arial, sans-serif;
+        font-size: 14px;
+    }
+    
+    /* 2. Cấu hình nền chính cho Cửa sổ và Dialog */
+    QMainWindow, QDialog, QWidget#centralwidget {
+        background-color: #2c3e50;      /* Nền xanh đậm chủ đạo */
+    }
+
+    /* 3. Cấu hình các ô nhập liệu (Input, SpinBox) */
+    QLineEdit, QSpinBox, QDoubleSpinBox {
+        background-color: #34495e;      /* Nền input tối hơn nền app một chút */
+        color: white;
+        border: 1px solid #7f8c8d;
+        border-radius: 4px;
+        padding: 4px;
+    }
+    QLineEdit:focus, QSpinBox:focus {
+        border: 1px solid #1abc9c;      /* Viền xanh khi đang nhập */
+    }
+
+    /* 4. Cấu hình ComboBox (Danh sách chọn) */
+    QComboBox {
+        background-color: #34495e;
+        color: white;
+        border: 1px solid #7f8c8d;
+        border-radius: 4px;
+        padding: 4px;
+    }
+    QComboBox::drop-down {
+        border: 0px; 
+    }
+    /* Quan trọng: Phần danh sách xổ xuống */
+    QComboBox QAbstractItemView {
+        background-color: #34495e;
+        color: white;
+        selection-background-color: #1abc9c;
+        selection-color: white;
+        border: 1px solid #7f8c8d;
+    }
+
+    /* 5. Cấu hình ListWidget và TableWidget (Danh sách xạ thủ, bảng điểm) */
+    QListWidget, QTableWidget {
+        background-color: #34495e;
+        color: white;
+        gridline-color: #7f8c8d;
+        border: 1px solid #7f8c8d;
+    }
+    QListWidget::item:selected, QTableWidget::item:selected {
+        background-color: #16a085;
+        color: white;
+    }
+    /* Header của bảng */
+    QHeaderView::section {
+        background-color: #2c3e50;
+        color: #ecf0f1;
+        padding: 4px;
+        border: 1px solid #7f8c8d;
+        font-weight: bold;
+    }
+
+    /* 6. Cấu hình QMessageBox và QInputDialog (Hộp thoại thông báo) */
+    QMessageBox, QInputDialog {
+        background-color: #2c3e50;
+    }
+    QMessageBox QLabel, QInputDialog QLabel {
+        color: #ecf0f1;                 /* Đảm bảo chữ thông báo màu trắng */
+    }
+    /* Nút bấm trong hộp thoại */
+    QMessageBox QPushButton, QInputDialog QPushButton {
+        background-color: #3498db;
+        color: white;
+        border: none;
+        padding: 6px 15px;
+        border-radius: 4px;
+        min-width: 60px;
+    }
+    QMessageBox QPushButton:hover, QInputDialog QPushButton:hover {
+        background-color: #2980b9;
+    }
+
+    /* 7. GroupBox */
+    QGroupBox {
+        border: 1px solid #7f8c8d;
+        border-radius: 5px;
+        margin-top: 10px; /* Chừa chỗ cho title */
+        font-weight: bold;
+        color: #1abc9c;
+    }
+    QGroupBox::title {
+        subcontrol-origin: margin;
+        subcontrol-position: top center;
+        padding: 0 3px;
+        background-color: #2c3e50; /* Để title đè lên đường viền đẹp hơn */
+    }
+"""
 # =============================================================================
 # === BẪY LỖI SIÊU SỚM (CRITICAL ERROR TRAP) ===
 # Ghi lại lỗi xảy ra ở tầng import trước khi logging kịp khởi động.
@@ -21,13 +122,15 @@ except Exception as e:
 
 try:
     # --- TOÀN BỘ CODE GỐC CỦA BẠN SẼ NẰM TRONG KHỐI TRY NÀY ---
-
+    if __name__ == "__main__":
+        freeze_support() 
     # === SỬA LỖI CRASH THẦM LẶNG ===
     # Khởi tạo QApplication LÊN ĐẦU TIÊN, trước khi import bất cứ thứ gì.
     # Việc này đảm bảo các module (như scaler.py) có thể hoạt động.
     from PySide6.QtWidgets import QApplication
     app = QApplication(sys.argv)
     # === KẾT THÚC SỬA LỖI ===
+    app.setStyleSheet(APP_STYLESHEET)
 
     import logging
     import json
@@ -108,7 +211,7 @@ try:
             self.processing_worker.moveToThread(self.processing_thread)
             
             # Khởi tạo các cửa sổ gốc
-            self.main_menu = MainMenuWindow() 
+            self.main_menu = MainMenuWindow(config=self.config) 
             self.practice_screen = PracticeWindow(worker=self.processing_worker, trigger=self.bt_trigger, config=self.config)
             self.manage_screen = ManageWindow(self.config)
             
@@ -344,13 +447,14 @@ try:
     app_icon = QIcon(icon_path)
     app.setWindowIcon(app_icon)
     
-    if check_or_request_license():
-        controller = ApplicationController() # Bây giờ gọi Controller là an toàn
-        app.aboutToQuit.connect(controller.cleanup_before_exit)
-        controller.showMaximized()
-        sys.exit(app.exec())
-    else:
-        sys.exit()
+    if __name__ == "__main__":
+        if check_or_request_license():
+            controller = ApplicationController() # Bây giờ gọi Controller là an toàn
+            app.aboutToQuit.connect(controller.cleanup_before_exit)
+            controller.showMaximized()
+            sys.exit(app.exec())
+        else:
+            sys.exit()
 
 # =============================================================================
 # === KẾT THÚC BẪY LỖI ===
