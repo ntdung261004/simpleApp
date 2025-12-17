@@ -2,7 +2,7 @@
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QApplication, QSizePolicy
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QApplication
 )
 
 class Ui_MainMenuWindow(object):
@@ -58,73 +58,81 @@ class Ui_MainMenuWindow(object):
         self.centralwidget.setObjectName("centralwidget")
 
         self.main_layout = QVBoxLayout(self.centralwidget)
-        self.main_layout.setContentsMargins(scale_size(40), scale_size(20), scale_size(40), scale_size(10))
+        self.main_layout.setContentsMargins(scale_size(40), scale_size(10), scale_size(40), scale_size(10))
         self.main_layout.setSpacing(scale_size(15))
 
         # =================================================================
-        # VÙNG HEADER (LOGO - TIÊU ĐỀ - LOGO)
+        # VÙNG HEADER
         # =================================================================
         header_widget = QWidget()
         header_layout = QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(scale_size(20)) # Khoảng cách giữa logo và tiêu đề
+        header_layout.setContentsMargins(scale_size(30), scale_size(20), scale_size(30), 0)
+        header_layout.setSpacing(scale_size(20))
 
+        logo_size_val = scale_size(120)
+        
         # 1. Logo Trái
         self.logo_left = QLabel(header_widget)
-        logo_size = scale_size(240) # Kích thước logo (vuông) đã scale
-        self.logo_left.setFixedSize(logo_size, logo_size)
-        self.logo_left.setContentsMargins(scale_size(30), scale_size(30), scale_size(30), scale_size(30)    )
-        self.logo_left.setScaledContents(True) # Cho phép ảnh tự co giãn vừa khung
-        # self.logo_left.setStyleSheet("border: 1px solid red;") # Bật dòng này nếu muốn debug vị trí
+        self.logo_left.setFixedSize(logo_size_val, logo_size_val)
+        self.logo_left.setScaledContents(False) # Tắt auto scale, dùng logic giữ tỷ lệ
+        self.logo_left.setAlignment(Qt.AlignCenter)
         header_layout.addWidget(self.logo_left)
 
-        # 2. Cụm Tiêu Đề (Nằm giữa)
+        # 2. Cụm Tiêu Đề
         title_container = QWidget()
         title_layout = QVBoxLayout(title_container)
         title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(scale_size(5))
 
+        # --- DÒNG TRÊN CÙNG (Khách hàng) ---
         self.customer_title_label = QLabel(title_container)
         self.customer_title_label.setAlignment(Qt.AlignCenter)
-        customer_font = QFont()
-        customer_font.setPixelSize(scale_font(24))
-        self.customer_title_label.setFont(customer_font)
-        self.customer_title_label.setStyleSheet(f"color: #bdc3c7; margin-bottom: {scale_size(5)}px;")
+        
+        # Áp dụng font size và màu vàng trực tiếp vào style để ưu tiên cao nhất
+        self.customer_title_label.setStyleSheet(f"""
+            color: #f1c40f; 
+            font-size: {scale_font(22)}px; 
+            font-weight: bold;
+            margin-bottom: {scale_size(5)}px;
+        """)
         title_layout.addWidget(self.customer_title_label)
         
+        # --- DÒNG TIÊU ĐỀ CHÍNH ---
         self.title_label = QLabel(title_container)
         self.title_label.setAlignment(Qt.AlignCenter)
-        font = QFont()
-        font.setPixelSize(scale_font(32))
-        font.setBold(True)
-        self.title_label.setFont(font)
-        self.title_label.setStyleSheet("color: #ecf0f1;")
+        
+        # Trả về màu trắng, font to
+        self.title_label.setStyleSheet(f"""
+            color: #ecf0f1; 
+            font-size: {scale_font(34)}px; 
+            font-weight: bold;
+        """)
         title_layout.addWidget(self.title_label)
         
-        # Thêm cụm tiêu đề vào giữa Header với stretch=1 để nó chiếm hết khoảng trống còn lại
         header_layout.addWidget(title_container, 1)
 
         # 3. Logo Phải
         self.logo_right = QLabel(header_widget)
-        self.logo_right.setFixedSize(logo_size, logo_size)
-        self.logo_right.setScaledContents(True)
-        self.logo_right.setContentsMargins(scale_size(30), scale_size(30), scale_size(30), scale_size(30)   )
+        self.logo_right.setFixedSize(logo_size_val, logo_size_val)
+        self.logo_right.setScaledContents(False)
+        self.logo_right.setAlignment(Qt.AlignCenter)
         header_layout.addWidget(self.logo_right)
 
-        # Thêm Header Widget vào Main Layout
         self.main_layout.addWidget(header_widget)
         # =================================================================
 
+        # --- ĐIỀU CHỈNH VỊ TRÍ NÚT ---
+        # Stretch(1) ở trên nút
         self.main_layout.addStretch(1)
 
         # Vùng Nút Bấm
         buttons_container = QWidget()
         buttons_layout = QVBoxLayout(buttons_container)
         buttons_layout.setContentsMargins(0, 0, 0, 0)
-        buttons_layout.setSpacing(scale_size(15))
+        buttons_layout.setSpacing(scale_size(20))
         buttons_layout.setAlignment(Qt.AlignCenter)
 
-        btn_size = QSize(scale_size(350), scale_size(75))
+        btn_size = QSize(scale_size(300), scale_size(70))
 
         self.practice_button = QPushButton("LUYỆN TẬP", buttons_container)
         self.practice_button.setMinimumSize(btn_size)
@@ -140,17 +148,21 @@ class Ui_MainMenuWindow(object):
         buttons_layout.addWidget(self.exit_button)
 
         self.main_layout.addWidget(buttons_container)
+
+        # Stretch(2) ở dưới nút -> Đẩy cụm nút lên cao hơn (tỷ lệ 1 trên : 2 dưới)
         self.main_layout.addStretch(2)
 
         # Footer Label
         self.footer_label = QLabel(self.centralwidget)
         self.footer_label.setAlignment(Qt.AlignCenter)
-        footer_font = QFont()
-        footer_font.setPixelSize(scale_font(18))
-        footer_font.setItalic(True)
-        self.footer_label.setContentsMargins(scale_size(5), scale_size(5), scale_size(5), scale_size(5))
-        self.footer_label.setFont(footer_font)
-        self.footer_label.setStyleSheet(f"color: #95a5a6; padding-bottom: {scale_size(5)}px;")
+        
+        # Footer cũng gán font size trực tiếp
+        self.footer_label.setStyleSheet(f"""
+            color: #95a5a6; 
+            font-size: {scale_font(16)}px;
+            font-style: italic;
+            padding-bottom: {scale_size(10)}px;
+        """)
         
         self.main_layout.addWidget(self.footer_label)
         
