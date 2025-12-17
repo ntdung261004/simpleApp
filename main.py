@@ -210,14 +210,10 @@ class ApplicationController(QMainWindow):
         return {}
 
     def _ensure_assets_are_in_appdata(self):
-        """
-        Đảm bảo Model và 2 file Logo tồn tại trong AppData để config có thể đọc được.
-        """
-        # 1. Đảm bảo thư mục assets tồn tại trong AppData
         dest_assets_dir = os.path.join(APP_DATA_DIR, "assets")
         os.makedirs(dest_assets_dir, exist_ok=True)
 
-        # --- PHẦN SAO CHÉP MODEL ---
+        # 1. Sao chép Model (Giữ nguyên)
         model_filename = self.config.get("yolo_model_name")
         if model_filename:
             dest_model_path = os.path.join(APP_DATA_DIR, model_filename)
@@ -230,24 +226,24 @@ class ApplicationController(QMainWindow):
                     except Exception as e:
                         logging.error(f"Lỗi sao chép model: {e}")
 
-        # --- PHẦN SAO CHÉP LOGO (CHỈ 2 FILE QUAN TRỌNG) ---
-        target_logos = ["logo_left.png", "logo_right.png"]
+        # 2. Sao chép Logo nền (MỚI)
+        # Chỉ quan tâm đến file main_logo.png
+        target_logos = ["main_logo.png"] 
 
         for filename in target_logos:
             dest_path = os.path.join(dest_assets_dir, filename)
             
-            # Chỉ copy nếu file chưa tồn tại (để tránh ghi đè logo user đã đổi)
+            # Chỉ copy nếu chưa có (để người dùng có thể thay thế file này trong AppData)
             if not os.path.exists(dest_path):
                 source_path = resource_path(os.path.join("assets", filename))
-                
                 if os.path.exists(source_path):
                     try:
                         shutil.copyfile(source_path, dest_path)
-                        logging.info(f"Đã sao chép '{filename}' sang AppData/assets.")
+                        logging.info(f"Đã khởi tạo '{filename}' trong AppData để người dùng tùy chỉnh.")
                     except Exception as e:
                         logging.error(f"Lỗi khi copy {filename}: {e}")
                 else:
-                    logging.debug(f"Không tìm thấy file gốc '{filename}' trong assets để sao chép.")
+                    logging.debug(f"Chưa có file gốc '{filename}' trong mã nguồn.")
 
     def connect_signals(self):
         # Navigation

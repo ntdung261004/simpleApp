@@ -1,14 +1,13 @@
 {
     "camera_index": 0,
     "yolo_model_name": "my_modelv8m.pt",
+    "main_logo": "main_logo.png",
     "yolo_confidence_threshold": 0.75,
     "labels": {
-        "customer_unit_name": "TÊN ĐƠN VỊ KHÁCH HÀNG",
+        "customer_unit_name": "Bộ Chỉ huy quân sự tỉnh Quảng Ninh\nBan Chỉ huy quân sự phường Mông Dương",
         "app_title": "PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM",
         "app_subtitle": "SÚNG TIỂU LIÊN",
-        "app_footer": "Hỗ trợ kỹ thuật: 0987.654.321 (Đ/c Dũng) - Phiên bản 1.0",
-        "logo_left": "logo_left.png", 
-        "logo_right": "logo_right.png",
+        "app_footer": "Tên tác giả",
         "trainee": "Chiến sĩ",
         "trainee_class": "Đơn vị",
         "trainee_list_title": "Danh sách Chiến sĩ",

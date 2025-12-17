@@ -1,8 +1,8 @@
 # file: gui/ui/ui_main_menu.py
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QColor
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QApplication
+    QWidget, QVBoxLayout, QLabel, QPushButton, QApplication, QGridLayout
 )
 
 class Ui_MainMenuWindow(object):
@@ -25,145 +25,146 @@ class Ui_MainMenuWindow(object):
         MainMenuWindow.setStyleSheet(f"""
             #MainMenuWindow {{
                 background-color: qlineargradient(spread:pad, x1:0.5, y1:0, x2:0.5, y2:1, 
-                                                  stop:0 #34495e, 
-                                                  stop:1 #2c3e50);
+                                                  stop:0 #2c3e50, 
+                                                  stop:1 #1a252f);
             }}
+            
+            /* --- STYLE CHUNG CHO NÚT (Mặc định là Xanh) --- */
             QPushButton {{
-                background-color: #1abc9c;
-                color: white;
-                border: none;
-                border-radius: {scale_size(10)}px;
+                background-color: transparent; /* Nền trong suốt để thấy background */
+                color: #1abc9c;                /* Chữ màu xanh */
+                border: 2px solid #1abc9c;     /* Viền màu xanh */
+                border-radius: {scale_size(15)}px;
                 padding: {scale_size(15)}px;
                 font-size: {scale_font(20)}px;
                 font-weight: bold;
+                letter-spacing: 1px;
             }}
+            
+            /* Khi di chuột vào: Nền chuyển xanh, chữ trắng */
             QPushButton:hover {{
-                background-color: #16a085;
+                background-color: #1abc9c;
+                color: #ffffff;
+                border: 2px solid #1abc9c;
             }}
+            
+            /* Khi bấm: Tối hơn chút */
             QPushButton:pressed {{
-                background-color: #148f77;
+                background-color: #16a085;
+                border-color: #16a085;
             }}
+            
+            /* --- STYLE RIÊNG CHO NÚT THOÁT (Màu Đỏ) --- */
             QPushButton#exitButton {{
-                background-color: #e74c3c;
+                color: #e74c3c;            /* Chữ đỏ */
+                border: 2px solid #e74c3c; /* Viền đỏ */
             }}
+            
+            /* Hover nút thoát: Nền đỏ, chữ trắng */
             QPushButton#exitButton:hover {{
-                background-color: #c0392b;
+                background-color: #e74c3c;
+                color: #ffffff;
+                border: 2px solid #e74c3c;
             }}
+            
             QPushButton#exitButton:pressed {{
-                background-color: #a93226;
+                background-color: #c0392b;
+                border-color: #c0392b;
             }}
         """)
 
         self.centralwidget = QWidget(MainMenuWindow)
         self.centralwidget.setObjectName("centralwidget")
 
-        self.main_layout = QVBoxLayout(self.centralwidget)
-        self.main_layout.setContentsMargins(scale_size(40), scale_size(10), scale_size(40), scale_size(10))
-        self.main_layout.setSpacing(scale_size(15))
-
-        # =================================================================
-        # VÙNG HEADER
-        # =================================================================
-        header_widget = QWidget()
-        header_layout = QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(scale_size(30), scale_size(20), scale_size(30), 0)
-        header_layout.setSpacing(scale_size(20))
-
-        logo_size_val = scale_size(120)
+        self.main_grid = QGridLayout(self.centralwidget)
+        self.main_grid.setContentsMargins(0, 0, 0, 0)
         
-        # 1. Logo Trái
-        self.logo_left = QLabel(header_widget)
-        self.logo_left.setFixedSize(logo_size_val, logo_size_val)
-        self.logo_left.setScaledContents(False) # Tắt auto scale, dùng logic giữ tỷ lệ
-        self.logo_left.setAlignment(Qt.AlignCenter)
-        header_layout.addWidget(self.logo_left)
+        # LAYER 1: BACKGROUND LOGO (To, nằm giữa)
+        self.background_container = QWidget(self.centralwidget)
+        bg_layout = QVBoxLayout(self.background_container)
+        bg_layout.setAlignment(Qt.AlignCenter)
+        
+        self.watermark_logo = QLabel(self.background_container)
+        self.watermark_logo.setAlignment(Qt.AlignCenter)
+        self.watermark_logo.setScaledContents(False)
+        
+        # Kích thước logo to
+        logo_dim = scale_size(800) 
+        self.watermark_logo.setFixedSize(logo_dim, logo_dim)
+        self.watermark_logo.setStyleSheet("background: transparent;") 
+        
+        bg_layout.addWidget(self.watermark_logo)
+        self.main_grid.addWidget(self.background_container, 0, 0, -1, -1)
 
-        # 2. Cụm Tiêu Đề
-        title_container = QWidget()
-        title_layout = QVBoxLayout(title_container)
-        title_layout.setContentsMargins(0, 0, 0, 0)
-        title_layout.setSpacing(scale_size(5))
+        # LAYER 2: FOREGROUND CONTENT
+        self.foreground_container = QWidget(self.centralwidget)
+        self.foreground_container.setStyleSheet("background: transparent;") 
+        
+        self.content_layout = QVBoxLayout(self.foreground_container)
+        self.content_layout.setContentsMargins(scale_size(40), scale_size(40), scale_size(40), scale_size(30))
+        self.content_layout.setSpacing(scale_size(20))
 
-        # --- DÒNG TRÊN CÙNG (Khách hàng) ---
-        self.customer_title_label = QLabel(title_container)
+        # Tiêu đề
+        self.content_layout.addStretch(1)
+        
+        self.customer_title_label = QLabel(self.foreground_container)
         self.customer_title_label.setAlignment(Qt.AlignCenter)
-        
-        # Áp dụng font size và màu vàng trực tiếp vào style để ưu tiên cao nhất
         self.customer_title_label.setStyleSheet(f"""
             color: #f1c40f; 
-            font-size: {scale_font(22)}px; 
+            font-size: {scale_font(24)}px; 
             font-weight: bold;
-            margin-bottom: {scale_size(5)}px;
+            letter-spacing: 3px;
         """)
-        title_layout.addWidget(self.customer_title_label)
+        self.content_layout.addWidget(self.customer_title_label)
         
-        # --- DÒNG TIÊU ĐỀ CHÍNH ---
-        self.title_label = QLabel(title_container)
+        self.title_label = QLabel(self.foreground_container)
         self.title_label.setAlignment(Qt.AlignCenter)
-        
-        # Trả về màu trắng, font to
         self.title_label.setStyleSheet(f"""
             color: #ecf0f1; 
-            font-size: {scale_font(34)}px; 
-            font-weight: bold;
+            font-size: {scale_font(38)}px; 
+            font-weight: 600;
         """)
-        title_layout.addWidget(self.title_label)
-        
-        header_layout.addWidget(title_container, 1)
+        self.content_layout.addWidget(self.title_label)
 
-        # 3. Logo Phải
-        self.logo_right = QLabel(header_widget)
-        self.logo_right.setFixedSize(logo_size_val, logo_size_val)
-        self.logo_right.setScaledContents(False)
-        self.logo_right.setAlignment(Qt.AlignCenter)
-        header_layout.addWidget(self.logo_right)
+        self.content_layout.addStretch(1)
 
-        self.main_layout.addWidget(header_widget)
-        # =================================================================
-
-        # --- ĐIỀU CHỈNH VỊ TRÍ NÚT ---
-        # Stretch(1) ở trên nút
-        self.main_layout.addStretch(1)
-
-        # Vùng Nút Bấm
+        # Nút bấm
         buttons_container = QWidget()
         buttons_layout = QVBoxLayout(buttons_container)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)
-        buttons_layout.setSpacing(scale_size(20))
+        buttons_layout.setSpacing(scale_size(30))
         buttons_layout.setAlignment(Qt.AlignCenter)
 
-        btn_size = QSize(scale_size(300), scale_size(70))
+        btn_size = QSize(scale_size(400), scale_size(80))
 
         self.practice_button = QPushButton("LUYỆN TẬP", buttons_container)
         self.practice_button.setMinimumSize(btn_size)
+        self.practice_button.setCursor(Qt.PointingHandCursor)
         buttons_layout.addWidget(self.practice_button)
 
         self.stats_button = QPushButton("QUẢN LÝ - THỐNG KÊ", buttons_container)
         self.stats_button.setMinimumSize(btn_size)
+        self.stats_button.setCursor(Qt.PointingHandCursor)
         buttons_layout.addWidget(self.stats_button)
 
-        self.exit_button = QPushButton("ĐÓNG ỨNG DỤNG", buttons_container)
+        self.exit_button = QPushButton("THOÁT CHƯƠNG TRÌNH", buttons_container)
         self.exit_button.setMinimumSize(btn_size)
-        self.exit_button.setObjectName("exitButton")
+        self.exit_button.setCursor(Qt.PointingHandCursor)
+        self.exit_button.setObjectName("exitButton") # ID quan trọng để nhận màu đỏ
         buttons_layout.addWidget(self.exit_button)
 
-        self.main_layout.addWidget(buttons_container)
+        self.content_layout.addWidget(buttons_container)
+        self.content_layout.addStretch(2)
 
-        # Stretch(2) ở dưới nút -> Đẩy cụm nút lên cao hơn (tỷ lệ 1 trên : 2 dưới)
-        self.main_layout.addStretch(2)
-
-        # Footer Label
-        self.footer_label = QLabel(self.centralwidget)
+        # Footer
+        self.footer_label = QLabel(self.foreground_container)
         self.footer_label.setAlignment(Qt.AlignCenter)
-        
-        # Footer cũng gán font size trực tiếp
         self.footer_label.setStyleSheet(f"""
-            color: #95a5a6; 
-            font-size: {scale_font(16)}px;
+            color: rgba(189, 195, 199, 0.6); 
+            font-size: {scale_font(20)}px;
             font-style: italic;
-            padding-bottom: {scale_size(10)}px;
         """)
-        
-        self.main_layout.addWidget(self.footer_label)
+        self.content_layout.addWidget(self.footer_label)
+
+        self.main_grid.addWidget(self.foreground_container, 0, 0, -1, -1)
         
         MainMenuWindow.setCentralWidget(self.centralwidget)
