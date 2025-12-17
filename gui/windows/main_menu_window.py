@@ -10,44 +10,36 @@ from config import APP_DATA_DIR
 class MainMenuWindow(QWidget):
     def __init__(self, config):
         super().__init__()
-        self.ui = Ui_MainMenu()
-        self.ui.setupUi(self)
         self.config = config
+        self.ui = Ui_MainMenu()
+        self.ui.setupUi(self) # Giao diện đã được scale sẵn trong setupUi
         
+        # --- 1. Load Text từ Config ---
         labels = self.config.get("labels", {})
         
-        # --- MÀU SẮC ---
-        gold_color = labels.get("title_color", "#f1c40f")
-
-        # 1. TÊN ĐƠN VỊ
-        unit_name = labels.get("customer_unit_name", "TÊN ĐƠN VỊ").upper()
+        # Tên đơn vị (Màu lấy từ config nếu có, không thì theo CSS mặc định)
+        unit_name = labels.get("customer_unit_name", "TÊN ĐƠN VỊ")
         self.ui.label_unit.setText(unit_name)
-        self.ui.label_unit.setStyleSheet(f"color: {gold_color}; background: transparent; letter-spacing: 1px;")
         
-        # 2. TIÊU ĐỀ CHÍNH
-        title_text = labels.get("app_title", "PHẦN MỀM BẮN SÚNG")
-        self.ui.label_title.setText(title_text)
-        self.ui.label_title.setStyleSheet("color: white; background: transparent;")
+        # Cập nhật màu vàng từ config (ghi đè CSS nếu cần)
+        gold_color = labels.get("title_color", "#f1c40f")
+        current_style = self.ui.label_unit.styleSheet()
+        # Chèn thêm màu vào style hiện tại
+        self.ui.label_unit.setStyleSheet(current_style + f"color: {gold_color};")
+
+        # Tiêu đề
+        self.ui.label_title.setText(labels.get("app_title", "PHẦN MỀM BẮN SÚNG"))
+        self.ui.label_subtitle.setText(labels.get("app_subtitle", "SÚNG TIỂU LIÊN"))
+        self.ui.label_footer.setText(labels.get("app_footer", "Bản quyền © 2025"))
         
-        # 3. TIÊU ĐỀ PHỤ
-        subtitle_text = labels.get("app_subtitle", "SÚNG TIỂU LIÊN")
-        self.ui.label_subtitle.setText(subtitle_text)
-        self.ui.label_subtitle.setStyleSheet("color: white; background: transparent;")
-        
-        # 4. FOOTER
-        footer_text = labels.get("app_footer", "Bản quyền © 2025")
-        self.ui.label_footer.setText(footer_text)
-        
-        # 5. LOGO CHÌM
+        # --- 2. Load Logo Watermark ---
         self.logo_pixmap = None
         logo_name = labels.get("logo_filename", "logo_watermark.png")
         self.logo_opacity = labels.get("logo_opacity", 0.35)
         
-        # [THAY ĐỔI] Chỉ tìm file logo do người dùng cấu hình hoặc file mặc định trong assets
-        # KHÔNG thêm app_icon.ico vào danh sách này nữa.
         possible_paths = [
-            os.path.join(APP_DATA_DIR, logo_name),            # Ưu tiên 1: Thư mục dữ liệu người dùng
-            resource_path(os.path.join("assets", logo_name))  # Ưu tiên 2: File assets đi kèm
+            os.path.join(APP_DATA_DIR, logo_name),
+            resource_path(os.path.join("assets", logo_name))
         ]
         
         for p in possible_paths:
@@ -57,28 +49,29 @@ class MainMenuWindow(QWidget):
                     self.logo_pixmap = pix
                     break
         
-        # Map buttons
+        # --- 3. Map Buttons ---
+        # Ánh xạ để main.py có thể gọi
         self.practice_button = self.ui.practice_button
         self.stats_button = self.ui.stats_button
         self.exit_button = self.ui.exit_button
 
     def paintEvent(self, event):
-        """Vẽ logo chìm ở chính giữa màn hình"""
+        """Vẽ Logo Watermark (Giữ nguyên logic vẽ nền)"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
         
-        # Nền tối
+        # Vẽ nền tối
         painter.fillRect(self.rect(), QColor("#2c3e50"))
         
         if self.logo_pixmap:
-            # [THAY ĐỔI] Giảm xuống 70% chiều cao cửa sổ
+            # Logo chiếm 70% chiều cao cửa sổ
             target_h = int(self.height() * 0.70)
             
             if target_h > 0:
                 scaled_pixmap = self.logo_pixmap.scaledToHeight(target_h, Qt.SmoothTransformation)
                 
-                # Center calculation
+                # Căn giữa màn hình
                 x = (self.width() - scaled_pixmap.width()) // 2
                 y = (self.height() - scaled_pixmap.height()) // 2
                 
