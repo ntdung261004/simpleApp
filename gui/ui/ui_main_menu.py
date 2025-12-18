@@ -2,7 +2,7 @@
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QFont, QColor
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QPushButton, QApplication, QGridLayout
+    QWidget, QVBoxLayout, QLabel, QPushButton, QApplication, QGridLayout, QSizePolicy
 )
 
 class Ui_MainMenuWindow(object):
@@ -24,49 +24,40 @@ class Ui_MainMenuWindow(object):
         # Stylesheet
         MainMenuWindow.setStyleSheet(f"""
             #MainMenuWindow {{
-                background-color: qlineargradient(spread:pad, x1:0.5, y1:0, x2:0.5, y2:1, 
-                                                  stop:0 #2c3e50, 
-                                                  stop:1 #1a252f);
+                background-color: #2c3e50; /* Màu nền dự phòng nếu ảnh chưa load */
             }}
             
-            /* --- STYLE CHUNG CHO NÚT (Mặc định là Xanh) --- */
+            /* --- BUTTON STYLE --- */
             QPushButton {{
-                background-color: transparent; /* Nền trong suốt để thấy background */
-                color: #1abc9c;                /* Chữ màu xanh */
-                border: 2px solid #1abc9c;     /* Viền màu xanh */
+                background-color: transparent;
+                color: #1abc9c;
+                border: 2px solid #1abc9c;
                 border-radius: {scale_size(15)}px;
                 padding: {scale_size(15)}px;
                 font-size: {scale_font(20)}px;
                 font-weight: bold;
                 letter-spacing: 1px;
             }}
-            
-            /* Khi di chuột vào: Nền chuyển xanh, chữ trắng */
             QPushButton:hover {{
                 background-color: #1abc9c;
                 color: #ffffff;
                 border: 2px solid #1abc9c;
             }}
-            
-            /* Khi bấm: Tối hơn chút */
             QPushButton:pressed {{
                 background-color: #16a085;
                 border-color: #16a085;
             }}
             
-            /* --- STYLE RIÊNG CHO NÚT THOÁT (Màu Đỏ) --- */
+            /* --- NÚT THOÁT --- */
             QPushButton#exitButton {{
-                color: #e74c3c;            /* Chữ đỏ */
-                border: 2px solid #e74c3c; /* Viền đỏ */
+                color: #e74c3c;
+                border: 2px solid #e74c3c;
             }}
-            
-            /* Hover nút thoát: Nền đỏ, chữ trắng */
             QPushButton#exitButton:hover {{
                 background-color: #e74c3c;
                 color: #ffffff;
                 border: 2px solid #e74c3c;
             }}
-            
             QPushButton#exitButton:pressed {{
                 background-color: #c0392b;
                 border-color: #c0392b;
@@ -79,24 +70,29 @@ class Ui_MainMenuWindow(object):
         self.main_grid = QGridLayout(self.centralwidget)
         self.main_grid.setContentsMargins(0, 0, 0, 0)
         
-        # LAYER 1: BACKGROUND LOGO (To, nằm giữa)
+        # ============================================================
+        # LAYER 1: BACKGROUND FULL SCREEN
+        # ============================================================
         self.background_container = QWidget(self.centralwidget)
+        
+        # Layout căn giữa, không margin để ảnh tràn viền
         bg_layout = QVBoxLayout(self.background_container)
-        bg_layout.setAlignment(Qt.AlignCenter)
+        bg_layout.setContentsMargins(0, 0, 0, 0)
+        bg_layout.setSpacing(0)
         
         self.watermark_logo = QLabel(self.background_container)
         self.watermark_logo.setAlignment(Qt.AlignCenter)
-        self.watermark_logo.setScaledContents(False)
+        self.watermark_logo.setScaledContents(False) # Tắt auto-stretch để tránh méo, ta sẽ tự scale
         
-        # Kích thước logo to
-        logo_dim = scale_size(800) 
-        self.watermark_logo.setFixedSize(logo_dim, logo_dim)
-        self.watermark_logo.setStyleSheet("background: transparent;") 
+        # QUAN TRỌNG: Cho phép Label co giãn tự do, không bị giới hạn
+        self.watermark_logo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         
         bg_layout.addWidget(self.watermark_logo)
         self.main_grid.addWidget(self.background_container, 0, 0, -1, -1)
 
+        # ============================================================
         # LAYER 2: FOREGROUND CONTENT
+        # ============================================================
         self.foreground_container = QWidget(self.centralwidget)
         self.foreground_container.setStyleSheet("background: transparent;") 
         
@@ -121,8 +117,9 @@ class Ui_MainMenuWindow(object):
         self.title_label.setAlignment(Qt.AlignCenter)
         self.title_label.setStyleSheet(f"""
             color: #ecf0f1; 
-            font-size: {scale_font(38)}px; 
-            font-weight: 600;
+            font-size: {scale_font(42)}px; 
+            font-weight: 700;
+            text-transform: uppercase;
         """)
         self.content_layout.addWidget(self.title_label)
 
@@ -134,7 +131,7 @@ class Ui_MainMenuWindow(object):
         buttons_layout.setSpacing(scale_size(30))
         buttons_layout.setAlignment(Qt.AlignCenter)
 
-        btn_size = QSize(scale_size(400), scale_size(80))
+        btn_size = QSize(scale_size(450), scale_size(90))
 
         self.practice_button = QPushButton("LUYỆN TẬP", buttons_container)
         self.practice_button.setMinimumSize(btn_size)
@@ -149,7 +146,7 @@ class Ui_MainMenuWindow(object):
         self.exit_button = QPushButton("THOÁT CHƯƠNG TRÌNH", buttons_container)
         self.exit_button.setMinimumSize(btn_size)
         self.exit_button.setCursor(Qt.PointingHandCursor)
-        self.exit_button.setObjectName("exitButton") # ID quan trọng để nhận màu đỏ
+        self.exit_button.setObjectName("exitButton")
         buttons_layout.addWidget(self.exit_button)
 
         self.content_layout.addWidget(buttons_container)
@@ -159,8 +156,8 @@ class Ui_MainMenuWindow(object):
         self.footer_label = QLabel(self.foreground_container)
         self.footer_label.setAlignment(Qt.AlignCenter)
         self.footer_label.setStyleSheet(f"""
-            color: rgba(189, 195, 199, 0.6); 
-            font-size: {scale_font(20)}px;
+            color: rgba(189, 195, 199, 1); 
+            font-size: {scale_font(23)}px;
             font-style: italic;
         """)
         self.content_layout.addWidget(self.footer_label)

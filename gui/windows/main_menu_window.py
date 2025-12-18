@@ -16,8 +16,11 @@ class MainMenuWindow(QMainWindow):
         self.ui = Ui_MainMenuWindow()
         self.ui.setupUi(self)
 
+        # Biến lưu trữ ảnh nền gốc (đã xử lý mờ) để resize dần
+        self.cached_bg_pixmap = None 
+
         self._apply_labels()
-        self._load_watermark_logo()
+        self._prepare_background_image() # Chuẩn bị ảnh
 
         self.practice_button = self.ui.practice_button
         self.stats_button = self.ui.stats_button
@@ -26,30 +29,21 @@ class MainMenuWindow(QMainWindow):
     def _apply_labels(self):
         labels = self.config.get("labels", {})
         self.ui.customer_title_label.setText(labels.get("customer_unit_name", "").upper())
-        
         title = labels.get("app_title", "PHẦN MỀM BẮN SÚNG")
         subtitle = labels.get("app_subtitle", "")
         self.ui.title_label.setText(f"{title}\n{subtitle}" if subtitle else title)
-        
         self.ui.footer_label.setText(labels.get("app_footer", ""))
 
-    def _load_watermark_logo(self):
+    def _prepare_background_image(self):
         """
-        Tìm và hiển thị main_logo.png từ AppData (ưu tiên) hoặc Resource.
+        Nạp ảnh 1 lần, làm mờ nó và lưu vào biến cache.
+        Việc này giúp resize mượt mà hơn vì không phải làm mờ lại liên tục.
         """
-        # Tên file mặc định
-        target_filename = "main_logo.png"
-        
-        # User có thể override tên file trong config nếu muốn
-        config_filename = self.config.get("main_logo") or self.config.get("labels", {}).get("main_logo")
-        if config_filename:
-            target_filename = config_filename
-
+        target_filename = self.config.get("main_logo") or "main_logo.png"
         from config import APP_DATA_DIR
         
-        # Logic tìm kiếm file (Ưu tiên AppData để User dễ thay đổi)
         possible_paths = [
-            os.path.join(APP_DATA_DIR, "assets", target_filename), # Chuẩn nhất
+            os.path.join(APP_DATA_DIR, "assets", target_filename),
             os.path.join(APP_DATA_DIR, target_filename),
             resource_path(os.path.join("assets", target_filename)),
             resource_path(target_filename)
@@ -62,24 +56,48 @@ class MainMenuWindow(QMainWindow):
                 break
         
         if final_path:
-            pixmap = QPixmap(final_path)
-            if not pixmap.isNull():
-                # Xử lý ảnh: Scale giữ tỷ lệ + Làm mờ
-                target_size = self.ui.watermark_logo.size()
-                
-                scaled = pixmap.scaled(target_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                
-                transparent = QPixmap(scaled.size())
+            original_pixmap = QPixmap(final_path)
+            if not original_pixmap.isNull():
+                # Tạo một bản copy trong suốt
+                transparent = QPixmap(original_pixmap.size())
                 transparent.fill(Qt.transparent)
                 
                 painter = QPainter(transparent)
-                painter.setOpacity(0.25) # Độ mờ 15%
-                painter.drawPixmap(0, 0, scaled)
+                # Độ mờ 15% (0.15). Chỉnh lên 0.2 hoặc 0.3 nếu muốn rõ hơn.
+                painter.setOpacity(0.45) 
+                
+                # Vẽ ảnh gốc lên nền trong suốt với opacity đã set
+                painter.drawPixmap(0, 0, original_pixmap)
                 painter.end()
                 
-                self.ui.watermark_logo.setPixmap(transparent)
-                logger.info(f"✅ Đã nạp logo nền từ: {final_path}")
+                # Lưu vào cache để dùng cho resizeEvent
+                self.cached_bg_pixmap = transparent
+                logger.info(f"✅ Đã chuẩn bị ảnh nền từ: {final_path}")
+                
+                # Cập nhật lần đầu
+                self._update_background_size()
             else:
                 logger.error(f"❌ File ảnh lỗi: {final_path}")
         else:
-            logger.warning(f"⚠️ Không tìm thấy '{target_filename}'. Hãy copy file ảnh vào thư mục assets trong AppData.")
+            logger.warning(f"⚠️ Không tìm thấy '{target_filename}'.")
+
+    def resizeEvent(self, event):
+        """Sự kiện khi cửa sổ thay đổi kích thước"""
+        self._update_background_size()
+        super().resizeEvent(event)
+
+    def _update_background_size(self):
+        """Cắt và phóng ảnh để lấp đầy màn hình (Aspect Fill)"""
+        if self.cached_bg_pixmap:
+            # Lấy kích thước hiện tại của cửa sổ
+            window_size = self.ui.watermark_logo.size()
+            
+            # Scale ảnh theo kiểu: Giữ tỷ lệ, nhưng PHÓNG TO ĐỂ LẤP ĐẦY (Expanding)
+            scaled_pixmap = self.cached_bg_pixmap.scaled(
+                window_size, 
+                Qt.KeepAspectRatioByExpanding, 
+                Qt.SmoothTransformation
+            )
+            
+            # Gán vào Label (Label sẽ tự động hiển thị phần trung tâm của ảnh)
+            self.ui.watermark_logo.setPixmap(scaled_pixmap)
