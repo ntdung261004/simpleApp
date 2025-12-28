@@ -57,3 +57,4 @@ tzdata==2025.2
 ultralytics==8.3.173
 ultralytics-thop==2.0.14
 urllib3==2.5.0
+PyMuPDF

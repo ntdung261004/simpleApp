@@ -16,14 +16,17 @@ class MainMenuWindow(QMainWindow):
         self.ui = Ui_MainMenuWindow()
         self.ui.setupUi(self)
 
-        # Biến lưu trữ ảnh nền gốc (đã xử lý mờ) để resize dần
+        # Cache ảnh nền
         self.cached_bg_pixmap = None 
 
         self._apply_labels()
-        self._prepare_background_image() # Chuẩn bị ảnh
+        self._prepare_background_image() 
 
+        # --- MAPPING NÚT ---
+        # Ánh xạ các nút từ UI sang thuộc tính của class
         self.practice_button = self.ui.practice_button
         self.stats_button = self.ui.stats_button
+        self.guide_button = self.ui.guide_button  # MỚI: Thêm dòng này
         self.exit_button = self.ui.exit_button
         
     def _apply_labels(self):
@@ -35,10 +38,6 @@ class MainMenuWindow(QMainWindow):
         self.ui.footer_label.setText(labels.get("app_footer", ""))
 
     def _prepare_background_image(self):
-        """
-        Nạp ảnh 1 lần, làm mờ nó và lưu vào biến cache.
-        Việc này giúp resize mượt mà hơn vì không phải làm mờ lại liên tục.
-        """
         target_filename = self.config.get("main_logo") or "main_logo.png"
         from config import APP_DATA_DIR
         
@@ -58,23 +57,13 @@ class MainMenuWindow(QMainWindow):
         if final_path:
             original_pixmap = QPixmap(final_path)
             if not original_pixmap.isNull():
-                # Tạo một bản copy trong suốt
                 transparent = QPixmap(original_pixmap.size())
                 transparent.fill(Qt.transparent)
-                
                 painter = QPainter(transparent)
-                # Độ mờ 15% (0.15). Chỉnh lên 0.2 hoặc 0.3 nếu muốn rõ hơn.
                 painter.setOpacity(0.45) 
-                
-                # Vẽ ảnh gốc lên nền trong suốt với opacity đã set
                 painter.drawPixmap(0, 0, original_pixmap)
                 painter.end()
-                
-                # Lưu vào cache để dùng cho resizeEvent
                 self.cached_bg_pixmap = transparent
-                logger.info(f"✅ Đã chuẩn bị ảnh nền từ: {final_path}")
-                
-                # Cập nhật lần đầu
                 self._update_background_size()
             else:
                 logger.error(f"❌ File ảnh lỗi: {final_path}")
@@ -82,22 +71,15 @@ class MainMenuWindow(QMainWindow):
             logger.warning(f"⚠️ Không tìm thấy '{target_filename}'.")
 
     def resizeEvent(self, event):
-        """Sự kiện khi cửa sổ thay đổi kích thước"""
         self._update_background_size()
         super().resizeEvent(event)
 
     def _update_background_size(self):
-        """Cắt và phóng ảnh để lấp đầy màn hình (Aspect Fill)"""
         if self.cached_bg_pixmap:
-            # Lấy kích thước hiện tại của cửa sổ
             window_size = self.ui.watermark_logo.size()
-            
-            # Scale ảnh theo kiểu: Giữ tỷ lệ, nhưng PHÓNG TO ĐỂ LẤP ĐẦY (Expanding)
             scaled_pixmap = self.cached_bg_pixmap.scaled(
                 window_size, 
                 Qt.KeepAspectRatioByExpanding, 
                 Qt.SmoothTransformation
             )
-            
-            # Gán vào Label (Label sẽ tự động hiển thị phần trung tâm của ảnh)
             self.ui.watermark_logo.setPixmap(scaled_pixmap)
