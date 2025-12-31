@@ -17,7 +17,7 @@ from utils.resource_path import resource_path
 from gui.windows.main_menu_window import MainMenuWindow
 from gui.windows.practice_window import PracticeWindow
 from gui.windows.manage_window import ManageWindow
-from gui.windows.guide_window import GuideWindow # <--- MỚI: Import GuideWindow
+from gui.windows.guide_window import GuideWindow
 from core.worker import ProcessingWorker
 from core.triggers import BluetoothTrigger
 from config import APP_DATA_DIR
@@ -36,7 +36,6 @@ root_logger.addHandler(file_handler)
 
 logging.info("--- Application Started ---")
 
-# --- GLOBAL STYLESHEET ---
 GLOBAL_STYLESHEET = """
     QWidget { color: #ecf0f1; font-family: 'Segoe UI', sans-serif; }
     QMessageBox { background-color: #2c3e50; }
@@ -92,26 +91,23 @@ class ApplicationController(QMainWindow):
         self.setWindowTitle(app_title)
         self.setStyleSheet("background-color: #2c3e50;")
         
-        # --- Worker & Trigger ---
         self.processing_thread = QThread()
         self.processing_worker = ProcessingWorker(self.config)
         self.bt_trigger = BluetoothTrigger()
         self.processing_thread.setObjectName("ProcessingThread")
         self.processing_worker.moveToThread(self.processing_thread)
         
-        # --- Khởi tạo các màn hình ---
         self.main_menu = MainMenuWindow(self.config)
         self.practice_screen = PracticeWindow(worker=self.processing_worker, trigger=self.bt_trigger, config=self.config)
         self.manage_screen = ManageWindow(self.config)
-        self.guide_screen = GuideWindow() # <--- MỚI: Khởi tạo màn hình hướng dẫn
+        self.guide_screen = GuideWindow()
         
-        # --- Stacked Widget ---
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
-        self.stacked_widget.addWidget(self.main_menu)       # index 0
-        self.stacked_widget.addWidget(self.practice_screen) # index 1
-        self.stacked_widget.addWidget(self.manage_screen)   # index 2
-        self.stacked_widget.addWidget(self.guide_screen)    # index 3
+        self.stacked_widget.addWidget(self.main_menu)
+        self.stacked_widget.addWidget(self.practice_screen)
+        self.stacked_widget.addWidget(self.manage_screen)
+        self.stacked_widget.addWidget(self.guide_screen)
 
         self.connect_signals()
         
@@ -121,37 +117,76 @@ class ApplicationController(QMainWindow):
     def _load_config(self) -> dict:
         config_filename = "config.json"
         dest_path = os.path.join(APP_DATA_DIR, config_filename)
+        # Nếu chưa có config trong AppData -> Copy từ assets
         if not os.path.exists(dest_path):
             source_path = resource_path(config_filename)
             if os.path.exists(source_path):
                 shutil.copyfile(source_path, dest_path)
+        
+        # Đọc file config
         if os.path.exists(dest_path):
-            with open(dest_path, 'r', encoding='utf-8') as f: return json.load(f)
+            try:
+                with open(dest_path, 'r', encoding='utf-8') as f: return json.load(f)
+            except Exception as e: logging.error(f"Lỗi đọc config.json: {e}")
         return {}
 
     def _ensure_assets_are_in_appdata(self):
+        """Đảm bảo tài nguyên (Model, Logo, PDF) tồn tại trong AppData dựa trên Config"""
         dest_assets_dir = os.path.join(APP_DATA_DIR, "assets")
         os.makedirs(dest_assets_dir, exist_ok=True)
-        # Copy model & logo logic (Giữ nguyên)
-        pass 
+
+        # 1. Sao chép Model
+        model_filename = self.config.get("yolo_model_name")
+        if model_filename:
+            dest_model_path = os.path.join(APP_DATA_DIR, model_filename)
+            if not os.path.exists(dest_model_path):
+                source_model_path = resource_path(os.path.join("assets", "models", model_filename))
+                if os.path.exists(source_model_path):
+                    try:
+                        shutil.copyfile(source_model_path, dest_model_path)
+                    except Exception as e: logging.error(f"Lỗi sao chép model: {e}")
+
+        # 2. Sao chép Logo (Dựa trên tên trong Config)
+        # Lấy tên file từ config, nếu không có thì dùng mặc định
+        logos_to_check = [
+            self.config.get("main_logo", "main_logo.png"),
+            self.config.get("left_logo", "left_logo.png"),
+            self.config.get("right_logo", "right_logo.png")
+        ]
+
+        for filename in logos_to_check:
+            if not filename: continue # Bỏ qua nếu tên rỗng
+
+            dest_path = os.path.join(dest_assets_dir, filename)
+            if not os.path.exists(dest_path):
+                # Tìm file gốc để copy
+                source_path = resource_path(os.path.join("assets", filename))
+                if not os.path.exists(source_path): source_path = resource_path(filename)
+                
+                if os.path.exists(source_path):
+                    try:
+                        shutil.copyfile(source_path, dest_path)
+                        logging.info(f"Đã khởi tạo '{filename}' trong AppData.")
+                    except Exception as e: logging.error(f"Lỗi khi copy {filename}: {e}")
+
+        # 3. Sao chép HDSD.pdf
+        pdf_filename = "HDSD.pdf"
+        dest_pdf_path = os.path.join(dest_assets_dir, pdf_filename)
+        if not os.path.exists(dest_pdf_path):
+            source_pdf_path = resource_path(os.path.join("assets", pdf_filename))
+            if not os.path.exists(source_pdf_path): source_pdf_path = resource_path(pdf_filename)
+            if os.path.exists(source_pdf_path):
+                try: shutil.copyfile(source_pdf_path, dest_pdf_path)
+                except Exception as e: logging.error(f"Lỗi khi trích xuất PDF: {e}")
 
     def connect_signals(self):
-        # Menu -> Các màn hình khác
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)       
         self.main_menu.stats_button.clicked.connect(self.show_manage_screen)
-        
-        # Menu -> Hướng dẫn (MỚI)
         self.main_menu.guide_button.clicked.connect(self.show_guide_screen)
-
-        # Các màn hình con -> Quay lại Menu
         self.practice_screen.gui.back_button.clicked.connect(self.show_main_menu)
         self.manage_screen.ui.back_button.clicked.connect(self.show_main_menu)
-        self.guide_screen.request_back_menu.connect(self.show_main_menu) # (MỚI)
-
-        # Thoát
+        self.guide_screen.request_back_menu.connect(self.show_main_menu)
         self.main_menu.exit_button.clicked.connect(self.close)
-
-        # Worker Logic
         self.practice_screen.request_processing.connect(self.processing_worker.process_image)
         self.processing_worker.finished.connect(self.practice_screen.on_processing_finished)
         self.bt_trigger.triggered.connect(self.practice_screen.capture_photo)
@@ -176,7 +211,6 @@ class ApplicationController(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.manage_screen)
 
     def show_guide_screen(self):
-        # Load lại file PDF mỗi khi mở để đảm bảo cập nhật nếu file thay đổi
         self.guide_screen.load_pdf() 
         self.stacked_widget.setCurrentWidget(self.guide_screen)
 

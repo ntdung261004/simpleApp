@@ -2,9 +2,11 @@
     "camera_index": 0,
     "yolo_model_name": "my_modelv8m.pt",
     "main_logo": "main_logo.png",
+    "left_logo": "left_logo.png",
+    "right_logo": "right_logo.png",
     "yolo_confidence_threshold": 0.75,
     "labels": {
-        "customer_unit_name": "Bộ Chỉ huy quân sự tỉnh Quảng Ninh\nBan Chỉ huy quân sự phường Mông Dương",
+        "customer_unit_name": "Tên đơn vị",
         "app_title": "PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM",
         "app_subtitle": "SÚNG TIỂU LIÊN",
         "app_footer": "Tên tác giả",
