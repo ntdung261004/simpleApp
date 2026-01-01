@@ -7,7 +7,7 @@ import shutil
 import multiprocessing
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QStackedWidget, QInputDialog, 
-    QMessageBox, QProxyStyle, QStyleFactory
+    QMessageBox, QProxyStyle, QStyleFactory, QLineEdit
 )
 from PySide6.QtCore import QThread, QUrl
 from PySide6.QtGui import QIcon, QFont, QPalette, QColor, QDesktopServices
@@ -22,6 +22,9 @@ from core.worker import ProcessingWorker
 from core.triggers import BluetoothTrigger
 from config import APP_DATA_DIR
 from utils.license_manager import verify_key
+from utils.password_manager import is_enabled, verify_password, set_password, clear_password, get_info
+from gui.windows.password_dialog import PasswordEntryDialog
+from gui.windows.password_dialog import PasswordManagerDialog
 
 # --- CẤU HÌNH LOGGING ---
 log_file_path = os.path.join(APP_DATA_DIR, "app_log.txt")
@@ -183,6 +186,12 @@ class ApplicationController(QMainWindow):
         self.main_menu.practice_button.clicked.connect(self.show_practice_screen)       
         self.main_menu.stats_button.clicked.connect(self.show_manage_screen)
         self.main_menu.guide_button.clicked.connect(self.show_guide_screen)
+        # Open password/settings page
+        try:
+            if getattr(self.main_menu, 'settings_button', None):
+                self.main_menu.settings_button.clicked.connect(lambda: PasswordManagerDialog.open(self.main_menu))
+        except Exception:
+            pass
         self.practice_screen.gui.back_button.clicked.connect(self.show_main_menu)
         self.manage_screen.ui.back_button.clicked.connect(self.show_main_menu)
         self.guide_screen.request_back_menu.connect(self.show_main_menu)
@@ -223,6 +232,23 @@ if __name__ == '__main__':
     app.setWindowIcon(QIcon(resource_path("assets/app_icon.ico")))
 
     if check_or_request_license():
+        # Before launching main UI, require app password if enabled
+        # Ask for password up to 3 times
+        if is_enabled():
+            ok = False
+            for _ in range(3):
+                pwd, accepted = PasswordEntryDialog.get_password(None, "Yêu cầu mật khẩu", "Vui lòng nhập mật khẩu để mở ứng dụng:")
+                if not accepted:
+                    break
+                # PasswordEntryDialog verifies internally; also double-check here
+                if verify_password(pwd):
+                    ok = True
+                    break
+                else:
+                    QMessageBox.warning(None, "Sai mật khẩu", "Mật khẩu không đúng.")
+            if not ok:
+                sys.exit()
+
         controller = ApplicationController()
         app.aboutToQuit.connect(controller.cleanup_before_exit)
         controller.showMaximized()

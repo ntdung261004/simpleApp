@@ -6,10 +6,10 @@
     "right_logo": "right_logo.png",
     "yolo_confidence_threshold": 0.75,
     "labels": {
-        "customer_unit_name": "Tên đơn vị",
+        "customer_unit_name": "MÔ HÌNH HỖ TRỢ KIỂM TRA ĐƯỜNG NGẮM NÂNG CAO CHẤT LƯỢNG HUẤN LUYỆN",
         "app_title": "PHẦN MỀM KIỂM TRA ĐƯỜNG NGẮM",
         "app_subtitle": "SÚNG TIỂU LIÊN",
-        "app_footer": "Tên tác giả",
+        "app_footer": "Lữ Đoàn 679\nTrạm Điều Khiển",
         "trainee": "Chiến sĩ",
         "trainee_class": "Đơn vị",
         "trainee_list_title": "Danh sách Chiến sĩ",

@@ -118,12 +118,19 @@ class Ui_MainMenuWindow(object):
         self.guide_button.setCursor(Qt.PointingHandCursor)
         buttons_layout.addWidget(self.guide_button)
 
+        # 5. Settings (Cài đặt) - thêm nút cài đặt nằm ngoài menu
+        self.settings_button = QPushButton("CÀI ĐẶT MẬT KHẨU", buttons_container)
+        self.settings_button.setObjectName("btn_settings")
+        self.settings_button.setMinimumSize(btn_size)
+        self.settings_button.setCursor(Qt.PointingHandCursor)
+        buttons_layout.addWidget(self.settings_button)
         # 4. Exit
         self.exit_button = QPushButton("THOÁT CHƯƠNG TRÌNH", buttons_container)
         self.exit_button.setObjectName("btn_exit")
         self.exit_button.setMinimumSize(btn_size)
         self.exit_button.setCursor(Qt.PointingHandCursor)
         buttons_layout.addWidget(self.exit_button)
+
 
         self.content_layout.addWidget(buttons_container)
         self.content_layout.addStretch(1)
