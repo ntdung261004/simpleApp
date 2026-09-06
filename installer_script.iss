@@ -1,7 +1,7 @@
 ; === Shooting App Installer Script ===
 
 #define MyAppName "Kiểm Tra Đường Ngắm STL"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.2026"
 #define MyAppPublisher "LTSoftware"
 #define MyAppExeName "ShootingApp.exe"
 #define MyAppIconName "assets\app_icon.ico" 

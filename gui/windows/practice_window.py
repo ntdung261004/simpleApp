@@ -1,7 +1,7 @@
 # file: gui/windows/practice_window.py
 
 import logging
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QApplication, QInputDialog, QLineEdit
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QApplication, QInputDialog, QLineEdit, QPushButton
 from PySide6.QtCore import QTimer, Signal, QThread, Slot, QPoint
 import cv2
 import numpy as np
@@ -52,6 +52,22 @@ class PracticeWindow(QMainWindow):
         self.frame_read_failures = 0
         self.FRAME_FAILURE_THRESHOLD = 3
         
+        # --- CẤU HÌNH TÂM XANH LÁ (ĐƯỜNG NGẮM ĐÚNG) ---
+        self.is_green_crosshair_active = False
+        self.green_crosshair_offset_y = 20 # Mặc định nằm dưới tâm đỏ 20 pixel
+        
+        self.btn_green_crosshair = QPushButton("Thêm đường ngắm đúng")
+        self.btn_green_crosshair.setCheckable(True)
+        self.btn_green_crosshair.clicked.connect(self.toggle_green_crosshair)
+        
+        # Chèn nút vào layout chứa nút calibrate một cách an toàn
+        calibrate_parent = self.gui.calibrate_button.parentWidget()
+        if calibrate_parent and calibrate_parent.layout():
+            calibrate_parent.layout().addWidget(self.btn_green_crosshair)
+        elif self.gui.layout():
+            self.gui.layout().addWidget(self.btn_green_crosshair)
+        # -----------------------------------------------
+
         self.clean_zoomed_frame_for_processing = None
         self.shot_point_on_zoomed_frame = None
         
@@ -64,7 +80,6 @@ class PracticeWindow(QMainWindow):
         self.gui.calibrate_button.clicked.connect(self.toggle_calibration_mode)
         self.gui.zoom_slider.valueChanged.connect(self.on_zoom_changed)
         
-        # Kết nối mới cho Camera Selector và nút Refresh
         self.gui.camera_selector.currentIndexChanged.connect(self.on_camera_selected)
         self.gui.refresh_button.clicked.connect(self.refresh_camera_list)
         
@@ -75,7 +90,6 @@ class PracticeWindow(QMainWindow):
         self.populate_soldier_selector()
         self.reset_ui_state()
 
-        # Configured index (chỉ dùng để làm default khi refresh, không kết nối cứng ngay lập tức)
         try:
             self.configured_camera_index = int(self.config.get("camera_index", 0))
         except (ValueError, TypeError):
@@ -85,30 +99,38 @@ class PracticeWindow(QMainWindow):
         os.makedirs(self.save_dir, exist_ok=True)
         logger.info(f"Thư mục lưu ảnh được thiết lập tại: {self.save_dir}")
 
-    # --- CÁC HÀM XỬ LÝ CAMERA MỚI ---
-    
+    def toggle_green_crosshair(self):
+        self.is_green_crosshair_active = self.btn_green_crosshair.isChecked()
+        if self.is_green_crosshair_active:
+            self.btn_green_crosshair.setText("Tắt đường ngắm đúng")
+        else:
+            self.btn_green_crosshair.setText("Thêm đường ngắm đúng")
+
+    def wheelEvent(self, event):
+        # Can thiệp khi tâm xanh đang bật và chuột nằm trên vùng khung hình camera
+        if self.is_green_crosshair_active and self.gui.camera_view_label.underMouse():
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self.green_crosshair_offset_y -= 2
+            elif delta < 0:
+                self.green_crosshair_offset_y += 2
+            return
+        super().wheelEvent(event)
+
     def on_camera_selected(self, index):
-        """Được gọi khi người dùng chọn một camera khác từ ComboBox."""
-        # Lấy ID camera từ data của item
         cam_idx = self.gui.camera_selector.currentData()
-        
         if cam_idx is None:
             return
-
-        # Nếu camera này đang chạy rồi thì thôi
         if self.cam and hasattr(self.cam, 'index') and self.cam.index == cam_idx and self.cam.isOpened():
             return
 
         logger.info(f"Người dùng chọn chuyển sang Camera {cam_idx}")
         self.connect_camera(cam_idx)
-        
-        # Lưu vào ram config để dùng tạm trong phiên làm việc
         self.config["camera_index"] = cam_idx
 
     def refresh_camera_list(self):
-        """Quét danh sách camera, đổ vào ComboBox và tự động chọn camera."""
         logger.info("Đang làm mới danh sách camera...")
-        self.gui.camera_selector.blockSignals(True) # Chặn tín hiệu để không trigger loop
+        self.gui.camera_selector.blockSignals(True)
         self.gui.camera_selector.clear()
         
         available_indexes = find_available_cameras()
@@ -117,7 +139,6 @@ class PracticeWindow(QMainWindow):
             self.gui.camera_selector.addItem("Không tìm thấy Camera", None)
             self.disconnect_camera("Không tìm thấy thiết bị nào")
         else:
-            # Lấy index camera đang được chọn trong config
             target_index = self.config.get("camera_index", 0)
             best_match_index = 0 
             
@@ -129,34 +150,29 @@ class PracticeWindow(QMainWindow):
                     best_match_index = i
 
             self.gui.camera_selector.setCurrentIndex(best_match_index)
-            
-            # Kết nối ngay lập tức tới camera vừa tìm thấy
             selected_cam_idx = self.gui.camera_selector.itemData(best_match_index)
             self.connect_camera(selected_cam_idx)
 
-        self.gui.camera_selector.blockSignals(False) # Mở lại tín hiệu
+        self.gui.camera_selector.blockSignals(False)
 
     def start_camera(self):
         logger.info("Màn hình luyện tập: Kích hoạt camera và trigger...")
         self.populate_soldier_selector()
         if self.bt_trigger:
             self.bt_trigger.activate()
-        
-        # Gọi hàm refresh list để nó tự quét và connect thay vì kết nối thủ công
         self.refresh_camera_list()
 
     def connect_camera(self, index):
-        self.disconnect_camera() # Ngắt cái cũ trước
+        self.disconnect_camera()
         
         logger.info(f"Đang thử kết nối camera index {index}...")
-        self.cam = Camera(index) # Khởi tạo wrapper Camera
+        self.cam = Camera(index)
         
         if not self.cam.isOpened():
             logger.error(f"Lỗi driver camera {index}.")
             self.gui.clear_video_feed(f"Lỗi kết nối Camera {index}")
             return
 
-        # Thử đọc frame vài lần để chắc chắn camera hoạt động
         attempts = 0
         success = False
         while attempts < 5:
@@ -183,8 +199,6 @@ class PracticeWindow(QMainWindow):
         self.is_camera_connected = False
         self.gui.clear_video_feed(message)
         logger.info(f"Đã ngắt kết nối camera. Lý do: {message}")
-
-    # --- CÁC HÀM CŨ GIỮ NGUYÊN ---
 
     def update_frame(self):
         if not (self.cam and self.cam.isOpened()):
@@ -226,8 +240,15 @@ class PracticeWindow(QMainWindow):
         self.shot_point_on_zoomed_frame = point_to_draw
 
         frame_to_display = self.clean_zoomed_frame_for_processing.copy()
+        
         if self.shot_point_on_zoomed_frame:
             cv2.drawMarker(frame_to_display, self.shot_point_on_zoomed_frame, (0, 0, 255), cv2.MARKER_CROSS, 15, 1)
+            
+            if getattr(self, 'is_green_crosshair_active', False):
+                gx = self.shot_point_on_zoomed_frame[0]
+                gy = self.shot_point_on_zoomed_frame[1] + self.green_crosshair_offset_y
+                gy = max(0, min(gy, frame_to_display.shape[0] - 1))
+                cv2.drawMarker(frame_to_display, (gx, gy), (0, 255, 0), cv2.MARKER_CROSS, 15, 1)
         
         self.gui.display_frame(frame_to_display)
 
@@ -236,13 +257,23 @@ class PracticeWindow(QMainWindow):
             logger.warning("Shot blocked: Camera not connected.")
             return
 
-        frame_for_analysis = self.clean_zoomed_frame_for_processing
+        # Tạo bản sao từ frame sạch để vẽ đè tâm xanh (nếu có)
+        frame_for_analysis = self.clean_zoomed_frame_for_processing.copy()
         if frame_for_analysis is None:
             logger.error("Không có frame đã zoom (sạch) để phân tích.")
             return
 
         shot_center_for_analysis = self.shot_point_on_zoomed_frame
         
+        # --- BỔ SUNG: IN TÂM XANH LÊN ẢNH TRƯỚC KHI GỬI AI ---
+        if getattr(self, 'is_green_crosshair_active', False) and shot_center_for_analysis:
+            gx = shot_center_for_analysis[0]
+            gy = shot_center_for_analysis[1] + self.green_crosshair_offset_y
+            gy = max(0, min(gy, frame_for_analysis.shape[0] - 1))
+            # Vẽ đậm hơn (độ dày = 2) để không bị mờ nét khi bẻ cong ảnh (warp)
+            cv2.drawMarker(frame_for_analysis, (gx, gy), (0, 255, 0), cv2.MARKER_CROSS, 15, 2)
+        # -----------------------------------------------------
+
         self.audio_manager.play_sound('shot')
         
         try:
