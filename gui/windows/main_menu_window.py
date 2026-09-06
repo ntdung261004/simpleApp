@@ -33,7 +33,7 @@ class MainMenuWindow(QMainWindow):
         # Add "Cài đặt mật khẩu" menu in the window menu bar
         try:
             menu_bar = self.menuBar()
-            settings_menu = menu_bar.addMenu("Cài đặt")
+            settings_menu = menu_bar.addMenu("")
             pwd_action = QAction("Quản lý mật khẩu", self)
             pwd_action.triggered.connect(lambda: PasswordManagerDialog.open(self))
             settings_menu.addAction(pwd_action)
